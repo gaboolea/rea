@@ -25,7 +25,7 @@ html, body { height: 100%; margin: 0; background: var(--void); color: var(--bone
 .layer { position: fixed; inset: 0; pointer-events: none; }
 #vignette { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(4,2,6,0.92) 100%); opacity: 0.55; }
 #desat { background: #808080; mix-blend-mode: saturation; opacity: 0; }
-#grain { width: 100%; height: 100%; opacity: 0.06; mix-blend-mode: screen; image-rendering: pixelated; }
+#grain { width: 100%; height: 100%; opacity: 0.04; mix-blend-mode: overlay; }
 #glitch { opacity: 0; mix-blend-mode: difference; }
 #glitch i { position: absolute; left: 0; right: 0; background: var(--teal); }
 #flash { background: var(--blood); opacity: 0; }
@@ -51,8 +51,8 @@ html, body { height: 100%; margin: 0; background: var(--void); color: var(--bone
 #crosshair { position: fixed; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1px 0 0 -1px; background: rgba(239,230,210,0.35); border-radius: 50%; pointer-events: none; }
 
 /* Screens */
-.screen { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 22px; padding-block: 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); overflow-y: auto; }
-.screen .inner { width: 100%; max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.screen { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 22px; padding-block: 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); overflow-y: auto; }
+.screen .inner { width: 100%; max-width: 980px; margin: auto; display: flex; flex-direction: column; gap: 22px; }
 #menu { background: linear-gradient(90deg, rgba(7,6,10,0.86) 0%, rgba(7,6,10,0.55) 45%, rgba(7,6,10,0.05) 100%); }
 #menu h1 { font-family: var(--display); font-weight: 400; margin: 0; line-height: 0.92; font-size: clamp(44px, 9.5vw, 120px); letter-spacing: 0.01em; color: var(--bone); text-shadow: 4px 4px 0 rgba(154,24,40,0.75), -2px 0 rgba(111,214,207,0.45); }
 #menu h1 span { display: block; }
@@ -111,7 +111,7 @@ button.t.small { font-size: 26px; }
 <canvas id="scene" tabindex="0" aria-label="Escena del juego"></canvas>
 <div class="layer" id="vignette"></div>
 <div class="layer" id="desat"></div>
-<canvas class="layer" id="grain" width="160" height="90"></canvas>
+<canvas class="layer" id="grain" width="320" height="180"></canvas>
 <div class="layer" id="glitch"></div>
 <div class="layer" id="flash"></div>
 <div id="crosshair" hidden></div>
@@ -627,7 +627,7 @@ const LEVELS = [
     wall: 'brWall', floor: 'brCarpet', ceil: 'brCeil', floorRep: 3, fog: 0x625833, fogD: 0.046, hemi: [0xfff1b8, 0x4a3f1c, 0.62], light: 0xfff2c4, lightI: 1.05, fixture: 'panel', fixtureMod: 2, clownSpeed: 3.5, hum: 0.065, wind: 0.0,
     texts: ['¿YA DESPERTASTE?', 'NO MIRES ATRÁS', 'SIGUE CORRIENDO', 'ESTO YA PASÓ', '¿RECUERDAS ESTE LUGAR?'], textColor: 'rgba(122,16,26,0.9)' },
   { name: 'EL PARQUE INFANTIL', sub: 'aquí jugábamos', theme: 'playground', gen: 'maze', W: 17, H: 17, tile: 4, wallH: 2.4, loops: 0.34, rooms: 7, roomMin: 2, roomMax: 4, startCorridor: 4, hurdles: 3, crawls: 3,
-    wall: 'pgWall', floor: 'pgFloor', ceil: null, sky: 'sky', floorRep: 2, fog: 0x2b6b74, fogD: 0.034, hemi: [0xaef7ef, 0x6a2a4a, 0.85], light: 0xffc6dd, lightI: 1.1, fixture: 'lantern', fixtureMod: 3, clownSpeed: 3.8, hum: 0.0, wind: 0.09,
+    wall: 'pgWall', floor: 'pgFloor', ceil: null, sky: 'sky', floorRep: 2, fog: 0x2b6b74, fogD: 0.034, hemi: [0xaef7ef, 0x6a2a4a, 0.58], light: 0xffc6dd, lightI: 0.5, fixture: 'lantern', fixtureMod: 3, clownSpeed: 3.8, hum: 0.0, wind: 0.09,
     texts: ['AQUÍ JUGÁBAMOS', 'ÉL TE QUIERE', 'SONRÍE', '¿QUIÉN TE TRAJO?', 'NO ESTÁS SOLO'], textColor: 'rgba(40,40,120,0.85)' },
   { name: 'EL HOTEL DE LOS SUEÑOS', sub: 'busca la puerta sin número', theme: 'hotel', gen: 'hotel', W: 21, H: 21, tile: 3.4, wallH: 3.0, hurdles: 3, crawls: 2, fakeExits: 2,
     wall: 'hotelWall', floor: 'hotelCarpet', ceil: 'hotelCeil', floorRep: 2.4, fog: 0x3a1320, fogD: 0.042, hemi: [0xffb8cc, 0x2a0710, 0.6], light: 0xff92b2, lightI: 1.2, fixture: 'dome', fixtureMod: 2, clownSpeed: 4.1, hum: 0.03, wind: 0.0,
@@ -1121,9 +1121,9 @@ function buildClown() {
   const cheekL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), redM); cheekL.position.set(-0.24, 0.32, 0.19); cheekL.scale.set(1, 0.6, 0.5); head.add(cheekL);
   const cheekR = cheekL.clone(); cheekR.position.x = 0.25; head.add(cheekR);
   // ojos asimétricos: uno desviado
-  const eye = (x, y, r, px, py) => { const g = new THREE.Group(); const w = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), eyeM); g.add(w); const p = new THREE.Mesh(new THREE.SphereGeometry(r * 0.42, 8, 6), blackM); p.position.set(px, py, r * 0.8); g.add(p); const sp = new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 6, 4), pupilM); sp.position.set(px, py, r * 1.2); g.add(sp); const mk = new THREE.Mesh(new THREE.OctahedronGeometry(r * 1.9, 0), new THREE.MeshBasicMaterial({ color: 0x0f2a2a })); mk.scale.set(0.8, 1.6, 0.12); mk.position.z = -r * 0.5; g.add(mk); g.position.set(x, y, 0.24); head.add(g); return g; };
-  P.eyeL = eye(-0.11, 0.42, 0.066, 0.0, 0.0);
-  P.eyeR = eye(0.125, 0.47, 0.088, 0.035, -0.02);
+  const eye = (x, y, r, px, py) => { const g = new THREE.Group(); const w = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), eyeM); g.add(w); const p = new THREE.Mesh(new THREE.SphereGeometry(r * 0.42, 8, 6), blackM); p.position.set(px, py, r * 0.8); g.add(p); const sp = new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 6, 4), pupilM); sp.position.set(px, py, r * 1.2); g.add(sp); const mk = new THREE.Mesh(new THREE.OctahedronGeometry(r * 1.9, 0), new THREE.MeshBasicMaterial({ color: 0x0f2a2a })); mk.scale.set(0.8, 1.6, 0.12); mk.position.z = -r * 0.5; g.add(mk); g.position.set(x, y, 0.275); head.add(g); return g; };
+  P.eyeL = eye(-0.12, 0.43, 0.072, 0.0, 0.0);
+  P.eyeR = eye(0.13, 0.48, 0.095, 0.04, -0.025);
   const nose = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), redM); nose.position.set(0.02, 0.35, 0.31); head.add(nose);
   // pelo desordenado
   for (let k = 0; k < 22; k++) { const side = k % 2 ? 1 : -1; const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.09 + Math.random() * 0.07, 7, 6), hairMs[k % 3]); tuft.position.set(side * (0.27 + Math.random() * 0.14), 0.3 + Math.random() * 0.3, -0.05 - Math.random() * 0.18); head.add(tuft); }
@@ -1333,7 +1333,8 @@ function updateClown(dt) {
   clown.speedNow = damp(clown.speedNow, move, 6, dt);
   clown.yaw += angleDiff(clown.yaw, faceTarget) * Math.min(1, dt * (move > 0 ? 8 : 2));
   // captura
-  if (clownModel.root.visible && dist < 1.05 && clown.state !== 'hidden' && !clown.waiting) { capture(); return; }
+  const distNow = Math.hypot(player.pos.x - clown.pos.x, player.pos.z - clown.pos.z);
+  if (clownModel.root.visible && distNow < 1.05 && (clown.state === 'chase' || clown.state === 'stalk' || clown.state === 'watch' || clown.state === 'freeze') && !clown.waiting) { capture(); return; }
   animateClown(dt, ob, dist);
   // audio posicional
   if (A.ctx) {
@@ -1380,7 +1381,7 @@ function animateClown(dt, ob, dist) {
 
 /* ============================== EFECTOS ============================== */
 const fx = { glitch: 0, blur: 0, flash: 0, tension: 0, silence: 0, silenceCool: 50, eventCool: 18, dreamCool: 55, heartT: 0, lastBlur: -1, lastSat: -1 };
-const grainC = $('grain'), grainG = grainC.getContext('2d'); const grainImg = grainG.createImageData(160, 90);
+const grainC = $('grain'), grainG = grainC.getContext('2d'); const grainImg = grainG.createImageData(320, 180);
 const glitchEl = $('glitch');
 for (let i = 0; i < 6; i++) glitchEl.appendChild(document.createElement('i'));
 function updateFX(dt) {
@@ -1409,7 +1410,7 @@ function updateFX(dt) {
   if (Math.abs(blur - fx.lastBlur) > 0.1) { canvas.style.filter = blur > 0.1 ? `blur(${blur.toFixed(1)}px)` : 'none'; fx.lastBlur = blur; }
   // grano
   if ((fx.frame = (fx.frame || 0) + 1) % 2 === 0) { const p = grainImg.data; for (let i = 0; i < p.length; i += 4) { const v = Math.random() * 255; p[i] = p[i + 1] = p[i + 2] = v; p[i + 3] = 255; } grainG.putImageData(grainImg, 0, 0); }
-  grainC.style.opacity = (0.05 + fx.tension * 0.16 + (fx.glitch > 0 ? 0.1 : 0)).toFixed(3);
+  grainC.style.opacity = (0.06 + fx.tension * 0.18 + (fx.glitch > 0 ? 0.1 : 0)).toFixed(3);
   // estamina
   const sEl = $('stamina'); sEl.style.opacity = player.stamina < 0.99 ? '0.8' : '0'; sEl.firstChild.style.transform = `scaleX(${player.stamina.toFixed(3)})`; sEl.classList.toggle('tired', player.exhausted);
   // pulso de perspectiva
@@ -1498,7 +1499,7 @@ function startLevel(li, opts) {
     // el pasillo imposible: el payaso espera, inmóvil, al fondo del pasillo
     const wc = L.center(L.def.startCorridor, 1); placeClownAt(wc.x, wc.z); clown.yaw = Math.PI / 2 + Math.PI; showClown(true);
     setClownState('watch', opts.ending ? 999 : 7.5); clown.waiting = !!opts.ending;
-  } else { showClown(false); setClownState('appear', 4 + Math.random() * 3); }
+  } else { placeClownAt(-1000, -1000); showClown(false); setClownState('appear', 4 + Math.random() * 3); }
   $('pauseLevel').textContent = `FASE ${li + 1} · ${L.def.name}`;
   updateFrustum();
 }
@@ -1583,6 +1584,11 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (!G.level) return;
+  tick(dt);
+  A.listener(camera);
+  renderer.render(scene, camera);
+}
+function tick(dt) {
   const st = G.state;
   if (st === 'playing') {
     G.runTime += dt;
@@ -1601,8 +1607,6 @@ function frame(now) {
     camera.position.set(sc.x + Math.sin(G.runTime * 0.2) * 0.15, 1.6 + Math.sin(G.runTime * 0.5) * 0.02, sc.z); camera.rotation.set(Math.sin(G.runTime * 0.13) * 0.03, L.startYaw + Math.sin(G.runTime * 0.1) * 0.08, 0);
     updateFrustum(); clown.state = 'watch'; animateClown(dt, 0, 30); updateWorld(dt); updateFX(dt);
   } else if (st === 'transition' || st === 'paused') { updateFrustum(); }
-  A.listener(camera);
-  renderer.render(scene, camera);
 }
 
 /* ============================== ENTRADA ============================== */
@@ -1687,6 +1691,6 @@ startLevel(0, { ending: true }); G.state = 'menu'; show('menu');
 requestAnimationFrame(frame);
 
 // gancho de depuración/pruebas (sin efecto en el juego)
-window.__tcby = { G, player, clown, LEVELS, capture: () => capture(), toExit: () => { const e = G.level.exits[0]; player.pos.set(e.pos.x, 0, e.pos.z); }, gotoLevel: (i) => { G.seeds = G.seeds.length >= 4 ? G.seeds : [1, 2, 3, 4]; beginLevel(i); } };
+window.__tcby = { G, player, clown, LEVELS, capture: () => capture(), toExit: () => { const e = G.level.exits[0]; player.pos.set(e.pos.x, 0, e.pos.z); }, step: (sec) => { for (let t = 0; t < sec; t += 1 / 30) tick(1 / 30); }, gotoLevel: (i) => { G.seeds = G.seeds.length >= 4 ? G.seeds : [1, 2, 3, 4]; beginLevel(i); } };
 })();
 </script>
