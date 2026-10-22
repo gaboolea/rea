@@ -37,6 +37,13 @@ silencio. Las fuentes de Google son opcionales y tienen alternativas del sistema
 
 ## Controles
 
+El juego se juega siempre en horizontal. En el móvil, al pulsar JUGAR pasa a
+pantalla completa y bloquea la orientación horizontal donde el navegador lo
+permite (Chrome en Android). Donde no se puede bloquear (iPhone, o dentro de un
+visor incrustado), si sostienes el móvil en vertical todo el juego se gira 90°:
+gira el móvil y lo verás en horizontal, aunque tengas activado el bloqueo de
+rotación. Los controles táctiles se adaptan al giro.
+
 | Acción | PC | Móvil |
 | --- | --- | --- |
 | Moverse | W A S D o flechas | Joystick izquierdo |

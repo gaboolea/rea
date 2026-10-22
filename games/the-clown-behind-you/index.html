@@ -1,5 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="screen-orientation" content="landscape">
 <title>The Clown Behind You</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,6 +21,9 @@
   color-scheme: dark;
 }
 [hidden] { display: none !important; }
+/* El juego siempre es horizontal: si un móvil está en vertical, todo #app se gira 90° (--gw/--gh = tamaño del juego). */
+#app { position: fixed; inset: 0; overflow: hidden; }
+body.rotate #app { inset: auto; top: 0; left: 0; width: var(--gw); height: var(--gh); transform-origin: 0 0; transform: translateX(var(--gh)) rotate(90deg); }
 html, body { height: 100%; margin: 0; background: var(--void); color: var(--bone); overflow: hidden; font-family: var(--mono); font-size: 20px; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 .layer { position: fixed; inset: 0; pointer-events: none; }
@@ -128,9 +132,21 @@ button.t.small { font-size: 26px; }
   .menu-row { gap: 18px; }
   #osd { font-size: 18px; }
 }
+/* pantallas horizontales bajas (móvil apaisado): menús compactos */
+body.short #menu h1 { font-size: clamp(30px, 9vh, 56px); }
+body.short .screen, body.short .screen .inner { gap: 10px; }
+body.short .tagline { font-size: 18px; }
+body.short button.t { font-size: 22px; }
+body.short button.t.small { font-size: 19px; }
+body.short .field { font-size: 17px; }
+body.short .howto { font-size: 15px; line-height: 1.25; }
+body.short .howto .keys { display: none; } /* los controles ya los enseña el tutorial dentro del juego */
+body.short .panel h3 { font-size: 28px; }
+body.short #death h2, body.short #ending h2 { font-size: clamp(34px, 12vh, 72px); }
 @media (prefers-reduced-motion: reduce) { #menu h1 .you, #osd .rec::before { animation: none; } }
 </style>
 
+<div id="app">
 <canvas id="scene" tabindex="0" aria-label="Escena del juego"></canvas>
 <div class="layer" id="vignette"></div>
 <div class="layer" id="desat"></div>
@@ -178,13 +194,13 @@ button.t.small { font-size: 26px; }
         <b>Corre. Explora. Escapa.</b><br>
         Reúne 3 recuerdos para abrir la salida.<br>
         No tienes armas. No puedes vencerlo.<br>
-        Escucha: sus pasos dicen dónde está.<br><br>
+        Escucha: sus pasos dicen dónde está.<span class="keys"><br><br>
         <b>WASD</b> moverte · <b>RATÓN</b> mirar<br>
         <b>SHIFT</b> correr · <b>ESPACIO</b> saltar<br>
         <b>CTRL</b> o <b>C</b> agacharte · <b>ESC</b> pausa<br>
         <b>Q</b> o <b>CLIC DERECHO</b> (mantén) mirar atrás<br>
         <b>F</b> linterna · <b>E</b> esconderte<br>
-        <b>M</b> silenciar · usa auriculares
+        <b>M</b> silenciar · usa auriculares</span>
       </div>
     </div>
     <div id="err" hidden></div>
@@ -248,6 +264,7 @@ button.t.small { font-size: 26px; }
     </div>
   </div>
 </section>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>window.THREE || document.write('<script src="vendor/three.min.js"><\/script>');</script>
@@ -283,6 +300,21 @@ function shuffle(a, R) { for (let i = a.length - 1; i > 0; i--) { const j = (R()
 const pick = (a, R) => a[(R() * a.length) | 0];
 function angleDiff(a, b) { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; }
 const isTouch = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+// orientación horizontal: en un móvil en vertical se gira todo el juego 90° (ver #app en el CSS)
+let rotated = false;
+function viewSize() { return rotated ? { w: innerHeight, h: innerWidth } : { w: innerWidth, h: innerHeight }; }
+function toGame(cx, cy) { return rotated ? { x: cy, y: innerWidth - cx } : { x: cx, y: cy }; }
+function updateRotation() {
+  rotated = isTouch && innerHeight > innerWidth;
+  const b = document.body, v = viewSize(); b.classList.toggle('rotate', rotated);
+  b.style.setProperty('--gw', v.w + 'px'); b.style.setProperty('--gh', v.h + 'px'); b.classList.toggle('short', v.h < 520);
+}
+updateRotation();
+function goLandscape() { // pantalla completa + bloqueo horizontal donde el navegador lo permite (Android); si no, queda el giro por CSS
+  if (!isTouch) return;
+  const lock = () => { try { const p = screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'); if (p && p.catch) p.catch(() => {}); } catch (e) { /* no soportado */ } };
+  try { const el = document.documentElement; const p = !document.fullscreenElement && el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : null; if (p && p.then) p.then(lock, lock); else lock(); } catch (e) { lock(); }
+}
 
 /* ============================== AJUSTES ============================== */
 const SETTINGS_KEY = 'tcby-settings-v1';
@@ -329,23 +361,25 @@ const canvas = $('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality === 'high', powerPreference: 'high-performance' });
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 150);
+const camera = new THREE.PerspectiveCamera(72, viewSize().w / viewSize().h, 0.05, 150);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 function applyQuality() {
   const high = settings.quality === 'high';
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? 1.5 : 0.85));
-  renderer.setSize(innerWidth, innerHeight, false);
+  renderer.setSize(viewSize().w, viewSize().h, false);
   renderer.shadowMap.enabled = high;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   if (keyLight) keyLight.castShadow = high;
   scene.traverse((o) => { if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); } });
 }
 function onResize() {
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight, false);
+  updateRotation(); const v = viewSize();
+  camera.aspect = v.w / v.h; camera.updateProjectionMatrix();
+  renderer.setSize(v.w, v.h, false);
 }
 addEventListener('resize', onResize);
+addEventListener('orientationchange', () => setTimeout(onResize, 250));
 
 /* ============================== TEXTURAS PROCEDURALES ============================== */
 function canvasTex(w, h, draw) {
@@ -2254,7 +2288,7 @@ function updateEnding(dt) {
   if (t > 7.5 && G.state === 'playing') { G.state = 'ended'; fadeTo(true); setTimeout(() => { exitLock(); show('ending'); fadeTo(false); requestAnimationFrame(() => $('ending').classList.add('show')); }, 900); }
 }
 const bloodC = $('blood'), bloodG = bloodC.getContext('2d');
-function clearBlood() { bloodC.width = Math.min(1280, innerWidth); bloodC.height = Math.max(1, Math.round(bloodC.width * innerHeight / innerWidth)); bloodC.style.opacity = '0'; }
+function clearBlood() { const v = viewSize(); bloodC.width = Math.min(1280, v.w); bloodC.height = Math.max(1, Math.round(bloodC.width * v.h / v.w)); bloodC.style.opacity = '0'; }
 function bloodSplat(op) {
   const w = bloodC.width, h = bloodC.height; const g = bloodG;
   for (let k = 0; k < 2; k++) {
@@ -2409,12 +2443,12 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && G.s
 (function setupTouch() {
   const joyZone = $('joyZone'), base = $('joyBase'), knob = $('joyKnob'), lookZone = $('lookZone');
   let joyId = null, ox = 0, oy = 0, lookId = null, lx = 0, ly = 0;
-  joyZone.addEventListener('pointerdown', (e) => { if (joyId !== null) return; joyId = e.pointerId; joyZone.setPointerCapture(e.pointerId); const r = joyZone.getBoundingClientRect(); ox = e.clientX; oy = e.clientY; base.style.display = 'block'; base.style.left = (ox - r.left) + 'px'; base.style.top = (oy - r.top) + 'px'; e.preventDefault(); });
-  joyZone.addEventListener('pointermove', (e) => { if (e.pointerId !== joyId) return; let dx = e.clientX - ox, dy = e.clientY - oy; const l = Math.hypot(dx, dy), m = 55; if (l > m) { dx *= m / l; dy *= m / l; } knob.style.transform = `translate(${dx}px,${dy}px)`; touch.joyX = dx / m; touch.joyY = -dy / m; });
+  joyZone.addEventListener('pointerdown', (e) => { if (joyId !== null) return; joyId = e.pointerId; try { joyZone.setPointerCapture(e.pointerId); } catch (err) { /* puntero sintético */ } const p = toGame(e.clientX, e.clientY); ox = p.x; oy = p.y; base.style.display = 'block'; base.style.left = (ox - joyZone.offsetLeft) + 'px'; base.style.top = (oy - joyZone.offsetTop) + 'px'; e.preventDefault(); });
+  joyZone.addEventListener('pointermove', (e) => { if (e.pointerId !== joyId) return; const p = toGame(e.clientX, e.clientY); let dx = p.x - ox, dy = p.y - oy; const l = Math.hypot(dx, dy), m = 55; if (l > m) { dx *= m / l; dy *= m / l; } knob.style.transform = `translate(${dx}px,${dy}px)`; touch.joyX = dx / m; touch.joyY = -dy / m; });
   const joyEnd = (e) => { if (e.pointerId !== joyId) return; joyId = null; touch.joyX = touch.joyY = 0; knob.style.transform = ''; base.style.display = 'none'; };
   joyZone.addEventListener('pointerup', joyEnd); joyZone.addEventListener('pointercancel', joyEnd);
-  lookZone.addEventListener('pointerdown', (e) => { if (lookId !== null) return; lookId = e.pointerId; lookZone.setPointerCapture(e.pointerId); lx = e.clientX; ly = e.clientY; e.preventDefault(); });
-  lookZone.addEventListener('pointermove', (e) => { if (e.pointerId !== lookId) return; if (G.state === 'playing') look((e.clientX - lx) * 1.8, (e.clientY - ly) * 1.8); lx = e.clientX; ly = e.clientY; });
+  lookZone.addEventListener('pointerdown', (e) => { if (lookId !== null) return; lookId = e.pointerId; try { lookZone.setPointerCapture(e.pointerId); } catch (err) { /* puntero sintético */ } const p = toGame(e.clientX, e.clientY); lx = p.x; ly = p.y; e.preventDefault(); });
+  lookZone.addEventListener('pointermove', (e) => { if (e.pointerId !== lookId) return; const p = toGame(e.clientX, e.clientY); if (G.state === 'playing') look((p.x - lx) * 1.8, (p.y - ly) * 1.8); lx = p.x; ly = p.y; });
   const lookEnd = (e) => { if (e.pointerId === lookId) lookId = null; };
   lookZone.addEventListener('pointerup', lookEnd); lookZone.addEventListener('pointercancel', lookEnd);
   const run = $('btnRun'); run.addEventListener('pointerdown', (e) => { touch.run = true; run.classList.add('on'); e.preventDefault(); });
@@ -2449,7 +2483,7 @@ $('btnRecBack').addEventListener('click', () => { show('menu'); $('btnRecords').
 $('optQuality').addEventListener('change', (e) => { settings.quality = e.target.value; applyQuality(); saveSettings(); });
 function openOptions(from) { optionsReturn = from; show('options'); $('btnOptBack').focus(); }
 function closeOptions() { show(optionsReturn); }
-$('btnPlay').addEventListener('click', () => { A.init(); newRun(); });
+$('btnPlay').addEventListener('click', () => { goLandscape(); A.init(); newRun(); });
 $('btnOptions').addEventListener('click', () => openOptions('menu'));
 $('btnOptBack').addEventListener('click', closeOptions);
 $('btnResume').addEventListener('click', resume);
@@ -2459,10 +2493,10 @@ function toMenu() { G.state = 'menu'; G.ending = false; $('ending').classList.re
 $('btnToMenu').addEventListener('click', toMenu); $('btnDeathMenu').addEventListener('click', toMenu); $('btnEndMenu').addEventListener('click', toMenu);
 $('btnRetry').addEventListener('click', () => { A.init(); beginLevel(G.levelIndex); });
 $('btnSleepAgain').addEventListener('click', () => { $('ending').classList.remove('show'); A.init(); newRun(); });
-if (isTouch) $('howto').innerHTML = '<b>Corre. Explora. Escapa.</b><br>Reúne 3 recuerdos para abrir la salida.<br>No tienes armas. No puedes vencerlo.<br>Escucha: sus pasos dicen dónde está.<br><br><b>Joystick</b> izquierdo · moverte<br><b>Arrastra</b> a la derecha · mirar<br><b>ATRÁS</b> (mantén) mirar atrás<br><b>LUZ</b> linterna · <b>USAR</b> esconderte<br><b>CORRER</b> · <b>SALTAR</b> · <b>AGACHAR</b><br>Usa auriculares';
+if (isTouch) $('howto').innerHTML = '<b>Corre. Explora. Escapa.</b><br>Reúne 3 recuerdos para abrir la salida.<br>No tienes armas. No puedes vencerlo.<br>Escucha: sus pasos dicen dónde está.<span class="keys"><br><br><b>Joystick</b> izquierdo · moverte<br><b>Arrastra</b> a la derecha · mirar<br><b>ATRÁS</b> (mantén) mirar atrás<br><b>LUZ</b> linterna · <b>USAR</b> esconderte<br><b>CORRER</b> · <b>SALTAR</b> · <b>AGACHAR</b><br>Usa auriculares</span>';
 
 /* ============================== ARRANQUE ============================== */
-const fadeEl = document.createElement('div'); fadeEl.id = 'fade'; fadeEl.className = 'layer'; document.body.appendChild(fadeEl);
+const fadeEl = document.createElement('div'); fadeEl.id = 'fade'; fadeEl.className = 'layer'; $('app').appendChild(fadeEl);
 syncOptions();
 G.seeds = [((Math.random() * 1e9) | 0)];
 startLevel(0, { ending: true }); G.state = 'menu'; show('menu');
