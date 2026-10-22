@@ -98,6 +98,7 @@ button.t.small { font-size: 26px; }
 .tbtn.on { background: rgba(231,163,181,0.45); }
 #btnRun { right: calc(24px + env(safe-area-inset-right, 0px)); bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
 #btnJump { right: calc(110px + env(safe-area-inset-right, 0px)); bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
+#btnBack { right: calc(196px + env(safe-area-inset-right, 0px)); bottom: calc(40px + env(safe-area-inset-bottom, 0px)); font-size: 16px; }
 #btnCrouch { right: calc(24px + env(safe-area-inset-right, 0px)); bottom: calc(30px + env(safe-area-inset-bottom, 0px)); width: 64px; height: 64px; font-size: 15px; }
 #btnPause { right: calc(16px + env(safe-area-inset-right, 0px)); top: calc(54px + env(safe-area-inset-top, 0px)); width: 48px; height: 48px; border-radius: 4px; }
 @media (max-width: 600px) {
@@ -129,6 +130,7 @@ button.t.small { font-size: 26px; }
   <button class="tbtn" id="btnRun" type="button">CORRER</button>
   <button class="tbtn" id="btnJump" type="button">SALTAR</button>
   <button class="tbtn" id="btnCrouch" type="button">AGACHAR</button>
+  <button class="tbtn" id="btnBack" type="button">ATRÁS</button>
   <button class="tbtn" id="btnPause" type="button" aria-label="Pausa">II</button>
 </div>
 
@@ -150,6 +152,7 @@ button.t.small { font-size: 26px; }
         <b>WASD</b> moverte · <b>RATÓN</b> mirar<br>
         <b>SHIFT</b> correr · <b>ESPACIO</b> saltar<br>
         <b>CTRL</b> o <b>C</b> agacharte · <b>ESC</b> pausa<br>
+        <b>Q</b> o <b>CLIC DERECHO</b> (mantén) mirar atrás<br>
         <b>M</b> silenciar · usa auriculares
       </div>
     </div>
@@ -1301,8 +1304,8 @@ const clown = {
 };
 
 /* ============================== JUGADOR ============================== */
-const player = { pos: new V3(), vel: new V3(), feetY: 0, vy: 0, yaw: 0, pitch: 0, grounded: true, crouch: false, eye: 1.62, stamina: 1, exhausted: false, bob: 0, stepAcc: 0, radius: 0.32, camFeet: 0, landDip: 0, jumpBuf: 0, coyote: 0, bestProgress: 1e9, stallT: 0, sprinting: false, roll: 0 };
-const keys = {}; const touch = { joyX: 0, joyY: 0, run: false, crouchToggle: false, jump: false };
+const player = { pos: new V3(), vel: new V3(), feetY: 0, vy: 0, yaw: 0, pitch: 0, grounded: true, crouch: false, eye: 1.62, stamina: 1, exhausted: false, bob: 0, stepAcc: 0, radius: 0.32, lookBack: 0, camFeet: 0, landDip: 0, jumpBuf: 0, coyote: 0, bestProgress: 1e9, stallT: 0, sprinting: false, roll: 0 };
+const keys = {}; const touch = { joyX: 0, joyY: 0, back: false, run: false, crouchToggle: false, jump: false };
 let jumpQueued = false;
 let pointerLocked = false; let dragLook = false;
 
@@ -1382,7 +1385,10 @@ function updatePlayer(dt) {
   camera.position.set(p.pos.x + rx * bx, p.camFeet + p.eye + by - p.landDip - (p.exhausted ? Math.sin(G.runTime * 3) * 0.015 : 0), p.pos.z + rz * bx);
   let roll = -p.vel.x * rx * 0 + (mx * -0.012) + (L.def.tilt ? Math.sin(G.runTime * 0.23) * 0.07 : 0);
   p.roll = damp(p.roll, roll, 4, dt);
-  camera.rotation.set(p.pitch, p.yaw, p.roll);
+  // mirar atrás: mientras se mantiene, la cámara gira 180° pero sigues corriendo hacia delante
+  const wantBack = !locked && (keys.KeyQ || keys.Mouse2 || touch.back);
+  p.lookBack = damp(p.lookBack, wantBack ? 1 : 0, 10, dt);
+  camera.rotation.set(p.pitch * (1 - p.lookBack * 0.6), p.yaw + p.lookBack * Math.PI, p.roll);
   const targetFov = 72 + (p.sprinting ? 6 : 0) + fx_fovPulse;
   camera.fov = damp(camera.fov, targetFov, 4, dt); camera.updateProjectionMatrix();
   // progreso hacia la salida (para la presión del payaso)
@@ -1744,7 +1750,7 @@ function startLevel(li, opts) {
   opts = opts || {};
   G.levelIndex = li; G.level = buildLevel(li, G.seeds[li]); const L = G.level;
   const sc = L.center(L.start.x, L.start.y);
-  player.pos.set(sc.x, 0, sc.z); player.vel.set(0, 0, 0); player.feetY = 0; player.vy = 0; player.yaw = L.startYaw; player.pitch = 0; player.stamina = 1; player.exhausted = false; player.crouch = false; player.bestProgress = 1e9; player.stallT = 0; gndPrev = 0; player.camFeet = 0; player.landDip = 0; clearBlood();
+  player.pos.set(sc.x, 0, sc.z); player.vel.set(0, 0, 0); player.feetY = 0; player.vy = 0; player.yaw = L.startYaw; player.pitch = 0; player.stamina = 1; player.exhausted = false; player.crouch = false; player.bestProgress = 1e9; player.stallT = 0; gndPrev = 0; player.camFeet = 0; player.landDip = 0; player.lookBack = 0; clearBlood();
   G.pressure = 0; fx.tension = 0; fx.dreamCool = 45 + Math.random() * 30; fx.silenceCool = 30 + Math.random() * 30; fx.eventCool = 10; G.endDim = null; G.endQuiet = false;
   Object.assign(clown, { path: [], state: 'hidden', waiting: false, burst: 0, vanishCool: 25, freezeCool: 6, laughCool: 5, stuckT: 0, everSeen: false, speedNow: 0, lastLOS: 0 });
   clownModel.root.scale.set(1, 1, 1);
@@ -1821,7 +1827,7 @@ function capture() {
   if (G.state !== 'playing') return;
   G.state = 'dying'; G.dieT = 0; G.dieHits = 0; G.dieLaugh = false; G.kick = 0; exitLock();
   A.scream(); A.musicStop(); fx.glitch = 0.9; clearBlood(); $('hint').classList.remove('show'); $('card').classList.remove('show');
-  G.dieFrom = camera.position.clone(); G.dieYaw = player.yaw; G.dieFwd = new V3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+  G.dieFrom = camera.position.clone(); G.dieYaw = player.yaw + player.lookBack * Math.PI; G.dieFwd = new V3(-Math.sin(G.dieYaw), 0, -Math.cos(G.dieYaw));
 }
 function updateDying(dt) {
   G.dieT += dt; const t = G.dieT; const P = clownModel.P; const root = clownModel.root; const f = G.dieFwd; showClown(true);
@@ -1870,6 +1876,7 @@ function updateTutorial(dt) {
   const once = (k, cond, html, dur) => { if (!d[k] && cond) { d[k] = true; hint(html, dur); } };
   once('move', tutorial.t > 1.2, isTouch ? 'Joystick izquierdo para moverte · arrastra a la derecha para mirar' : '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> moverte · <kbd>RATÓN</kbd> mirar', 4.5);
   once('look', tutorial.t > 6.5, 'Al fondo del pasillo hay alguien.', 3);
+  once('back', tutorial.t > 16, isTouch ? 'Mantén <kbd>ATRÁS</kbd> para mirar a tu espalda sin dejar de correr' : 'Mantén <kbd>Q</kbd> o <kbd>CLIC DERECHO</kbd> para mirar atrás sin dejar de correr', 4.5);
   once('run', tutorial.t > 10, isTouch ? '<kbd>CORRER</kbd> mantén pulsado · se agota' : '<kbd>SHIFT</kbd> correr · tu aliento se agota', 4);
   const nearKind = (k) => L.obstacles.some((o) => o.kind === k && L.center(o.x, o.y).distanceTo(player.pos) < 7);
   once('jump', nearKind(1), isTouch ? '<kbd>SALTAR</kbd> para pasar por encima' : '<kbd>ESPACIO</kbd> saltar', 3.5);
@@ -1926,9 +1933,10 @@ function look(dx, dy) {
   const s = 0.0022 * settings.sens; player.yaw -= dx * s; player.pitch -= dy * s * (settings.invertY ? -1 : 1); player.pitch = clamp(player.pitch, -1.45, 1.45);
 }
 document.addEventListener('mousemove', (e) => { if (G.state !== 'playing' || G.ending && G.endT > 4.5) return; if (pointerLocked || dragLook) look(e.movementX || 0, e.movementY || 0); });
-canvas.addEventListener('mousedown', (e) => { if (G.state !== 'playing' || isTouch) return; if (!pointerLocked) { requestLock(); dragLook = true; } });
-addEventListener('mouseup', () => { dragLook = false; });
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+canvas.addEventListener('mousedown', (e) => { if (G.state !== 'playing' || isTouch) return; if (e.button === 2) { keys.Mouse2 = true; return; } if (!pointerLocked) { requestLock(); dragLook = true; } });
+addEventListener('mouseup', (e) => { if (e.button === 2) keys.Mouse2 = false; else dragLook = false; });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ']);
 addEventListener('keydown', (e) => {
   if (e.code === 'Escape') { if (G.state === 'playing') pause(); else if (G.state === 'paused' && performance.now() - (G.pausedAt || 0) > 400) resume(); else if (!$('options').hidden) closeOptions(); return; }
   if (e.code === 'KeyM' && !e.repeat) { settings.muted = !settings.muted; syncOptions(); A.applyVolume(); saveSettings(); if (G.state === 'playing') hint(settings.muted ? 'SONIDO SILENCIADO' : 'SONIDO ACTIVADO', 1.5); }
@@ -1954,6 +1962,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && G.s
   const run = $('btnRun'); run.addEventListener('pointerdown', (e) => { touch.run = true; run.classList.add('on'); e.preventDefault(); });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => run.addEventListener(ev, () => { touch.run = false; run.classList.remove('on'); }));
   $('btnJump').addEventListener('pointerdown', (e) => { touch.jump = true; e.preventDefault(); });
+  const bk = $('btnBack'); bk.addEventListener('pointerdown', (e) => { touch.back = true; bk.classList.add('on'); e.preventDefault(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => bk.addEventListener(ev, () => { touch.back = false; bk.classList.remove('on'); }));
   const cr = $('btnCrouch'); cr.addEventListener('pointerdown', (e) => { touch.crouchToggle = !touch.crouchToggle; cr.classList.toggle('on', touch.crouchToggle); e.preventDefault(); });
   $('btnPause').addEventListener('click', () => pause());
 })();
@@ -1981,7 +1991,7 @@ function toMenu() { G.state = 'menu'; G.ending = false; $('ending').classList.re
 $('btnToMenu').addEventListener('click', toMenu); $('btnDeathMenu').addEventListener('click', toMenu); $('btnEndMenu').addEventListener('click', toMenu);
 $('btnRetry').addEventListener('click', () => { A.init(); beginLevel(G.levelIndex); });
 $('btnSleepAgain').addEventListener('click', () => { $('ending').classList.remove('show'); A.init(); newRun(); });
-if (isTouch) $('howto').innerHTML = '<b>Corre. Explora. Escapa.</b><br>No tienes armas. No puedes vencerlo.<br>Escucha: sus pasos dicen dónde está.<br><br><b>Joystick</b> izquierdo · moverte<br><b>Arrastra</b> a la derecha · mirar<br><b>CORRER</b> · <b>SALTAR</b> · <b>AGACHAR</b><br>Usa auriculares';
+if (isTouch) $('howto').innerHTML = '<b>Corre. Explora. Escapa.</b><br>No tienes armas. No puedes vencerlo.<br>Escucha: sus pasos dicen dónde está.<br><br><b>Joystick</b> izquierdo · moverte<br><b>Arrastra</b> a la derecha · mirar<br><b>ATRÁS</b> (mantén) mirar atrás<br><b>CORRER</b> · <b>SALTAR</b> · <b>AGACHAR</b><br>Usa auriculares';
 
 /* ============================== ARRANQUE ============================== */
 const fadeEl = document.createElement('div'); fadeEl.id = 'fade'; fadeEl.className = 'layer'; document.body.appendChild(fadeEl);

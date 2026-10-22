@@ -44,6 +44,7 @@ silencio. Las fuentes de Google son opcionales y tienen alternativas del sistema
 | Correr (resistencia limitada) | SHIFT | Mantener CORRER |
 | Saltar | ESPACIO | SALTAR |
 | Agacharse | CTRL o C | AGACHAR (alterna) |
+| Mirar atrás sin dejar de correr | Mantener Q o clic derecho | Mantener ATRÁS |
 | Pausa y liberar el cursor | ESC | Botón II |
 | Silenciar | M | Opciones |
 
