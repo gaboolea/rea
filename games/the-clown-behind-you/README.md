@@ -74,9 +74,15 @@ pulsado.
 5. **Final**: la puerta blanca te devuelve al primer pasillo. El payaso te espera y
    aparece «NUNCA DESPERTASTE».
 
-**El payaso** se construye por código: cuerpo y extremidades demasiado largos, traje
-desteñido, gorguera, sonrisa enorme con dientes, ojos asimétricos (uno desviado),
-pelo de colores y un gorro torcido. Su IA es una máquina de estados sobre la
+**El payaso** se construye por código. Tiene el cuerpo consumido y encorvado, con la
+columna marcada, y brazos que le llegan a las rodillas, rematados en garras con
+uñas negras. La piel está agrietada y con venas, con lágrimas negras bajo los ojos.
+Una de sus cuencas está vacía, con un punto de luz; el otro ojo, inyectado en
+sangre, mira hacia otro lado. La boca le llega de oreja a oreja, con cortes en
+las mejillas y dientes afilados, y la mandíbula se le desencaja cuando se acerca.
+Lleva el traje sucio y manchado de sangre, el pelo apelmazado y un gorro aplastado.
+Tiene tics bruscos, la cabeza le gira casi media vuelta y, cuando te persigue,
+estira las garras hacia ti. Su IA es una máquina de estados sobre la
 cuadrícula del nivel:
 
 - **Observar**: se queda quieto mirándote, con la cabeza girando más de lo humanamente
@@ -92,13 +98,23 @@ cuadrícula del nivel:
   que no estás viendo.
 - **Presión**: si pasas más de 22 s sin acercarte a la salida, se vuelve más rápido
   y ríe más a menudo.
-- **Captura**: un susto breve (cara a centímetros, chillido y destello rojo) y
-  después la pantalla «TE ENCONTRÓ» con el botón para reintentar la fase.
+- **Captura**: si te alcanza, te mata. Se abalanza a tu cara con la mandíbula
+  desencajada y te golpea con las garras: la pantalla tiembla y se salpica de
+  sangre. Caes al suelo y lo ves inclinado sobre ti, riendo, hasta que todo se
+  funde a negro y aparece «TE ENCONTRÓ».
 
 Para pasar los obstáculos, el payaso se contorsiona: se aplasta bajo los huecos bajos
 (allí avanza más lento) y salta las vallas. No atraviesa muros ni muebles.
 
-**Sonido** (Web Audio, todo sintetizado): zumbido fluorescente, viento, dron de
+**Piano de fondo**: una nana en re menor, desafinada y con notas equivocadas,
+generada en tiempo real con reverberación. Cuanto más cerca está el payaso, más
+rápido se toca, hasta convertirse en arpegios frenéticos con golpes en los
+graves. Se detiene de golpe cuando te atrapa. Su volumen se ajusta en
+Opciones → PIANO.
+
+**Sonido** (Web Audio, todo sintetizado): risa desquiciada que se acelera y se
+superpone, con una voz infantil y otra grave, cuando el payaso está cerca;
+zumbido fluorescente, viento, dron de
 tensión que sube al acercarse el payaso, latidos, y respiración, pasos y risas
 infantiles distorsionadas con sonido posicional HRTF. Además hay silencios
 repentinos tras los que a veces suenan pasos a tu espalda, risas en habitaciones
@@ -110,6 +126,13 @@ grano, interferencias, desenfoque breve al verlo, desaturación cuando estás
 agotado, pulsos de perspectiva y cambios de color de la niebla. Los textos de las
 paredes, las ventanas a paisajes imposibles, los cuadros y las sombras cambian
 cuando dejas de mirarlos. Las figuras inmóviles desaparecen cuando te acercas.
+
+**Gráficos y físicas**: tonemapping fílmico, relieve en paredes y suelos, conos
+de luz en la niebla bajo los fluorescentes, motas de polvo flotando y sombra de
+contacto bajo el payaso. Hay objetos sueltos que se empujan, ruedan, rebotan y
+chocan entre sí (cajas, pelotas, maletas y cabezas de muñeca), y el payaso los
+patea al pasar. El salto tiene búfer y margen al borde, la cámara se hunde al
+aterrizar y los escalones suben con suavidad.
 
 **Rendimiento**: los muros y las luminarias usan geometría instanciada y solo se
 dibujan las caras expuestas. Las luces dinámicas son un grupo fijo que se reasigna a
