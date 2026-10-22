@@ -45,6 +45,9 @@ silencio. Las fuentes de Google son opcionales y tienen alternativas del sistema
 | Saltar | ESPACIO | SALTAR |
 | Agacharse | CTRL o C | AGACHAR (alterna) |
 | Mirar atrás sin dejar de correr | Mantener Q o clic derecho | Mantener ATRÁS |
+| Linterna (encender/apagar) | F | LUZ |
+| Esconderse / salir del escondite | E (junto a un armario) | USAR |
+| Contener la respiración (escondido) | Mantener ESPACIO | Mantener AGUANTAR |
 | Pausa y liberar el cursor | ESC | Botón II |
 | Silenciar | M | Opciones |
 
@@ -55,6 +58,56 @@ Si Pointer Lock no está disponible, puedes mirar arrastrando con el botón del 
 pulsado.
 
 ## Qué hay en el juego
+
+**Objetivo**: en cada fase hay 3 recuerdos repartidos lejos de la entrada, de la
+salida y entre sí: cintas de vídeo, juguetes, llaves de hotel y fotografías. La
+puerta de salida está tapiada hasta que los reúnes todos. Arriba a la izquierda
+ves cuántos llevas. El recuerdo más cercano suena como una campanilla y, al
+reunirlos, la salida empieza a cantar una nana. Recoger un recuerdo hace ruido, y
+eso atrae antes al payaso.
+
+**Historia**: cada recuerdo muestra un fragmento de la historia, y hay dibujos
+infantiles con ceras en las paredes que cambian cuando no los miras. Juntas, las
+piezas explican quién eres y por qué nunca despertaste.
+
+**Linterna**: tiene pilas limitadas (unos 75 s de luz con la carga completa) y en
+cada fase hay pilas de recambio. Si iluminas al payaso de frente, se tapa la cara
+y queda cegado unos segundos, pero las pilas se gastan tres veces más rápido y,
+después, vuelve a perseguirte con más fuerza. Tener la luz encendida también hace
+que reaparezca antes. La carga de las pilas se ve abajo a la izquierda.
+
+**Escondites**: en cada fase hay taquillas, casitas de juguete o armarios. Dentro
+miras entre las rendijas.
+- Si el payaso te ve entrar, viene directo a sacarte.
+- Si no te ve, te pierde la pista y empieza a buscarte: merodea y abre
+  escondites cercanos.
+- Cuando se detiene a olfatear delante del tuyo, tienes que contener la
+  respiración (con la misma resistencia de correr) hasta que se vaya. Si respiras
+  o te quedas sin aliento, te encuentra.
+- Esconderte mucho tiempo o repetir escondite hace que sospeche más.
+
+**Sustos que cambian en cada partida**: en cada fase se eligen al azar 4 de estos
+8, en momentos distintos:
+- imita la nana de la salida desde el lugar equivocado;
+- apagón de luces con un susurro a tu espalda;
+- se asoma un instante al fondo del pasillo;
+- aparece al otro lado de un hueco justo cuando te agachas;
+- una pelota o una cabeza de muñeca rueda hacia ti;
+- un mensaje aparece escrito en la pared a tu espalda;
+- un teléfono suena en una habitación lejana;
+- pasos que corren detrás de ti.
+
+**Dificultad y récords**: se elige en el menú.
+
+| Dificultad | Payaso | Pilas por fase | Escondites | Ayudas |
+| --- | --- | --- | --- | --- |
+| Sueño ligero | más lento | 3 | 5 | campanilla, nana y tutorial |
+| Pesadilla | normal | 2 | 4 | campanilla, nana y tutorial |
+| Terror nocturno | más rápido | 1 | 3 | ninguna; además te busca mejor y aguantas menos la respiración |
+
+El cronómetro de la cinta mide cada fase. El menú RÉCORDS guarda en el navegador
+el mejor tiempo de cada fase, de la partida completa y la partida con menos
+muertes, por dificultad. Al terminar una fase se ve tu tiempo frente al récord.
 
 **Fases** (los mapas se generan a partir de una semilla nueva en cada partida):
 
