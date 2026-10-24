@@ -1,45 +1,266 @@
-// Personaje gelatinoso: cuerpo con material brillante y vibración en el
-// shader, deformación elástica (squash & stretch), animaciones procedurales de
-// andar, saltar, atacar, bloquear, aturdimiento y eliminación.
+// Personaje gelatinoso: cuerpo en forma de gominola (torno), contorno de
+// dibujo animado, cara pintada en una textura con expresiones (parpadeo,
+// golpe, mareo, alegría), bracitos elásticos y sombra de contacto. Todo opaco
+// y con pocas llamadas de dibujo para que vaya fluido en móviles.
 import * as THREE from 'three';
-import { WEAPONS, type Look, type WeaponType } from '../../shared/constants.ts';
+import { WEAPONS, type EyeStyle, type Look, type WeaponType } from '../../shared/constants.ts';
 
 const tmpColor = new THREE.Color();
 
-export function makeJellyMaterial(color: string): THREE.MeshPhysicalMaterial & { userData: { uniforms?: { uTime: { value: number }; uWobble: { value: number } } } } {
-  const mat = new THREE.MeshPhysicalMaterial({
-    color,
-    roughness: 0.28,
-    metalness: 0,
-    clearcoat: 1,
-    clearcoatRoughness: 0.15,
-    sheen: 0.6,
-    sheenColor: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.6),
-    emissive: new THREE.Color(color).multiplyScalar(0.12),
-    transparent: true,
-    opacity: 0.94,
-  });
-  const uniforms = { uTime: { value: 0 }, uWobble: { value: 0.02 } };
+type Uniforms = { uTime: { value: number }; uWobble: { value: number } };
+
+/** Añade la vibración gelatinosa (vértices) y un brillo de borde (fresnel). */
+function jellify<M extends THREE.Material>(mat: M, opts: { rim?: THREE.Color; extrude?: number }): M & { userData: { uniforms: Uniforms } } {
+  const uniforms: Uniforms = { uTime: { value: 0 }, uWobble: { value: 0.015 } };
   mat.userData.uniforms = uniforms;
+  const rim = opts.rim;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
     shader.uniforms.uWobble = uniforms.uWobble;
+    if (rim) shader.uniforms.uRim = { value: rim };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWobble;')
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
-        float w = sin(position.y * 7.0 + uTime * 9.0) * 0.6 + sin(position.x * 5.0 - uTime * 7.0) * 0.4;
-        transformed += normal * w * uWobble;`,
+        float jw = sin(position.y * 6.0 + uTime * 9.0) * 0.6 + sin(position.x * 5.0 - uTime * 7.0) * 0.4;
+        transformed += normal * (jw * uWobble + ${(opts.extrude ?? 0).toFixed(3)});`,
       );
+    if (rim) {
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 uRim;')
+        .replace(
+          '#include <opaque_fragment>',
+          `float rimF = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 2.6);
+          outgoingLight += uRim * rimF * 0.65;
+          #include <opaque_fragment>`,
+        );
+    }
   };
+  mat.customProgramCacheKey = () => (rim ? 'jelly-rim' : `jelly-${opts.extrude ?? 0}`);
   return mat as never;
+}
+
+// ------------------------------------------------------------ Geometrías
+
+/** Perfil de gominola: base ancha, cabeza redondeada. */
+const PROFILE = new THREE.SplineCurve([
+  new THREE.Vector2(0.0, 0.0),
+  new THREE.Vector2(0.38, 0.02),
+  new THREE.Vector2(0.55, 0.13),
+  new THREE.Vector2(0.6, 0.38),
+  new THREE.Vector2(0.575, 0.72),
+  new THREE.Vector2(0.5, 1.02),
+  new THREE.Vector2(0.37, 1.25),
+  new THREE.Vector2(0.19, 1.39),
+  new THREE.Vector2(0.0, 1.43),
+]).getSpacedPoints(30);
+
+const FACE_PHI = (150 * Math.PI) / 180;
+
+const GEO = {
+  body: new THREE.LatheGeometry(PROFILE, 32),
+  face: new THREE.LatheGeometry(PROFILE.map((p) => new THREE.Vector2(p.x * 1.012 + 0.002, p.y)), 18, Math.PI - FACE_PHI / 2, FACE_PHI),
+  sphere: new THREE.SphereGeometry(1, 14, 10),
+  arm: new THREE.CylinderGeometry(0.075, 0.085, 1, 8, 1),
+  star: new THREE.OctahedronGeometry(0.12),
+  shadow: new THREE.CircleGeometry(0.62, 24),
+};
+// El torno empieza en -z: girar la cara para que quede mirando a +z.
+GEO.face.rotateY(Math.PI);
+
+/** Posición en la textura de la cara para un punto del cuerpo (x lateral, y altura). */
+function faceUV(x: number, y: number): [number, number] {
+  // v: índice del punto del perfil a esa altura en el lateral.
+  let idx = 0;
+  for (let i = 1; i < PROFILE.length; i++) {
+    const a = PROFILE[i - 1]!;
+    const b = PROFILE[i]!;
+    if (a.y <= y && b.y >= y && b.x > 0.15) {
+      idx = i - 1 + (y - a.y) / Math.max(1e-4, b.y - a.y);
+      break;
+    }
+  }
+  const v = idx / (PROFILE.length - 1);
+  const r = Math.max(0.2, PROFILE[Math.round(idx)]?.x ?? 0.5);
+  const ang = Math.asin(Math.max(-1, Math.min(1, x / r)));
+  const u = 0.5 + ang / FACE_PHI;
+  return [u, v];
+}
+
+const FACE_W = 256;
+const FACE_H = 448;
+export type Expression = 'normal' | 'blink' | 'hurt' | 'dizzy' | 'happy';
+const faceCache = new Map<string, THREE.CanvasTexture>();
+
+function faceTexture(eyes: EyeStyle, expr: Expression): THREE.CanvasTexture {
+  const key = `${eyes}|${expr}`;
+  const hit = faceCache.get(key);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = FACE_W;
+  c.height = FACE_H;
+  const g = c.getContext('2d')!;
+  const P = (x: number, y: number): [number, number] => {
+    const [u, v] = faceUV(x, y);
+    return [u * FACE_W, (1 - v) * FACE_H];
+  };
+  const S = 195; // píxeles por unidad (aprox.)
+  const ink = '#24163d';
+  const ellipse = (x: number, y: number, rx: number, ry: number, fill: string, rot = 0) => {
+    const [px, py] = P(x, y);
+    g.beginPath();
+    g.ellipse(px, py, rx * S, ry * S, rot, 0, Math.PI * 2);
+    g.fillStyle = fill;
+    g.fill();
+  };
+
+  // Barriga más clara y brillo especular (lo que da el aspecto de gominola).
+  {
+    const [bx, by] = P(0, 0.42);
+    const grd = g.createRadialGradient(bx, by, 4, bx, by, 0.36 * S);
+    grd.addColorStop(0, 'rgba(255,255,255,0.32)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.beginPath();
+    g.ellipse(bx, by, 0.36 * S, 0.3 * S, 0, 0, Math.PI * 2);
+    g.fill();
+    const [hx, hy] = P(-0.24, 1.2);
+    const hl = g.createRadialGradient(hx, hy, 2, hx, hy, 0.16 * S);
+    hl.addColorStop(0, 'rgba(255,255,255,0.85)');
+    hl.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = hl;
+    g.beginPath();
+    g.ellipse(hx, hy, 0.16 * S, 0.09 * S, -0.5, 0, Math.PI * 2);
+    g.fill();
+    ellipse(-0.33, 1.06, 0.03, 0.03, 'rgba(255,255,255,0.8)');
+  }
+
+  const EY = 0.94;
+  const EX = 0.18;
+  // Mejillas
+  ellipse(-0.33, EY - 0.17, 0.075, 0.045, 'rgba(255,110,150,0.55)');
+  ellipse(0.33, EY - 0.17, 0.075, 0.045, 'rgba(255,110,150,0.55)');
+
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  const stroke = (pts: [number, number][], w: number, color = ink) => {
+    g.beginPath();
+    pts.forEach(([x, y], i) => {
+      const [px, py] = P(x, y);
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    });
+    g.strokeStyle = color;
+    g.lineWidth = w;
+    g.stroke();
+  };
+  const arc = (cx: number, cy: number, rx: number, ry: number, a0: number, a1: number, w: number) => {
+    const pts: [number, number][] = [];
+    for (let i = 0; i <= 12; i++) {
+      const a = a0 + ((a1 - a0) * i) / 12;
+      pts.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]);
+    }
+    stroke(pts, w);
+  };
+
+  for (const s of [-1, 1]) {
+    const x = EX * s;
+    if (expr === 'blink' || (expr === 'happy' && eyes !== 'angry')) {
+      if (expr === 'happy') arc(x, EY - 0.03, 0.09, 0.08, 0.15, Math.PI - 0.15, 9);
+      else arc(x, EY + 0.02, 0.1, 0.05, Math.PI + 0.2, Math.PI * 2 - 0.2, 8);
+    } else if (expr === 'hurt') {
+      stroke([[x - 0.08 * s, EY + 0.07], [x + 0.07 * s, EY], [x - 0.08 * s, EY - 0.07]], 9);
+    } else if (expr === 'dizzy') {
+      const pts: [number, number][] = [];
+      for (let i = 0; i < 40; i++) {
+        const a = i * 0.45 * s;
+        const r = 0.012 + i * 0.0024;
+        pts.push([x + Math.cos(a) * r, EY + Math.sin(a) * r]);
+      }
+      stroke(pts, 5);
+    } else if (eyes === 'happy') {
+      arc(x, EY - 0.03, 0.09, 0.08, 0.15, Math.PI - 0.15, 9);
+    } else {
+      // Ojos abiertos con pupila grande y brillos.
+      const rx = 0.12;
+      const ry = eyes === 'sleepy' ? 0.1 : 0.14;
+      ellipse(x, EY, rx + 0.018, ry + 0.018, ink);
+      ellipse(x, EY, rx, ry, '#ffffff');
+      ellipse(x + 0.02 * -s, EY - 0.02, 0.075, eyes === 'angry' ? 0.07 : 0.09, ink);
+      ellipse(x + 0.01 * -s - 0.03, EY + 0.03, 0.03, 0.035, '#ffffff');
+      ellipse(x + 0.01 * -s + 0.03, EY - 0.05, 0.014, 0.014, '#ffffff');
+      if (eyes === 'sleepy') {
+        // Párpado: tapa la mitad superior.
+        const [px, py] = P(x, EY + 0.012);
+        g.fillStyle = ink;
+        g.beginPath();
+        g.ellipse(px, py, (rx + 0.02) * S, (ry + 0.02) * S, 0, Math.PI, Math.PI * 2);
+        g.fill();
+      }
+      if (eyes === 'angry') stroke([[x + 0.13 * s, EY + 0.2], [x - 0.08 * s, EY + 0.13]], 10);
+    }
+  }
+
+  // Boca
+  const MY = EY - 0.2;
+  if (expr === 'hurt') {
+    ellipse(0, MY - 0.02, 0.07, 0.06, ink);
+    ellipse(0, MY - 0.05, 0.04, 0.025, '#ff6b8a');
+  } else if (expr === 'dizzy') {
+    stroke([[-0.09, MY], [-0.045, MY + 0.025], [0, MY], [0.045, MY + 0.025], [0.09, MY]], 7);
+  } else if (expr === 'happy') {
+    const pts: [number, number][] = [];
+    for (let i = 0; i <= 12; i++) {
+      const a = Math.PI + (Math.PI * i) / 12;
+      pts.push([Math.cos(a) * 0.1, MY + 0.03 + Math.sin(a) * 0.08]);
+    }
+    const [sx, sy] = P(pts[0]![0], pts[0]![1]);
+    g.beginPath();
+    g.moveTo(sx, sy);
+    for (const [x, y] of pts) g.lineTo(...P(x, y));
+    g.closePath();
+    g.fillStyle = ink;
+    g.fill();
+    ellipse(0, MY - 0.03, 0.05, 0.025, '#ff6b8a');
+  } else if (eyes === 'angry') {
+    arc(0, MY - 0.05, 0.07, 0.04, 0.3, Math.PI - 0.3, 7);
+  } else {
+    arc(0, MY + 0.03, 0.08, 0.06, Math.PI + 0.35, Math.PI * 2 - 0.35, 7);
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  faceCache.set(key, tex);
+  return tex;
+}
+
+/** Sube a la GPU todas las caras de unos estilos de ojos (evita tirones al cambiar de expresión). */
+export function preloadFaces(renderer: THREE.WebGLRenderer, eyes: Iterable<EyeStyle>): void {
+  for (const e of new Set(eyes)) {
+    for (const x of ['normal', 'blink', 'hurt', 'dizzy', 'happy'] as Expression[]) renderer.initTexture(faceTexture(e, x));
+  }
+}
+
+let shadowTex: THREE.CanvasTexture | null = null;
+function blobShadowTexture(): THREE.CanvasTexture {
+  if (shadowTex) return shadowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(32, 32, 4, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(20,10,40,0.55)');
+  grd.addColorStop(0.6, 'rgba(20,10,40,0.3)');
+  grd.addColorStop(1, 'rgba(20,10,40,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  shadowTex = new THREE.CanvasTexture(c);
+  return shadowTex;
 }
 
 const SHARED = {
   white: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3 }),
   black: new THREE.MeshStandardMaterial({ color: '#1a1030', roughness: 0.2 }),
-  cheek: new THREE.MeshBasicMaterial({ color: '#ff8fb1', transparent: true, opacity: 0.55 }),
   gold: new THREE.MeshStandardMaterial({ color: '#ffcf33', metalness: 0.6, roughness: 0.3, emissive: '#553300' }),
   steel: new THREE.MeshStandardMaterial({ color: '#dfe8f5', metalness: 0.8, roughness: 0.2 }),
   wood: new THREE.MeshStandardMaterial({ color: '#8a5a2b', roughness: 0.8 }),
@@ -50,15 +271,9 @@ const SHARED = {
   shield: new THREE.MeshBasicMaterial({ color: '#7fe7ff', transparent: true, opacity: 0.28, depthWrite: false }),
   star: new THREE.MeshBasicMaterial({ color: '#ffe14d' }),
 };
+const lowSphere = new THREE.SphereGeometry(1, 10, 8);
 
-const GEO = {
-  sphere: new THREE.SphereGeometry(1, 20, 14),
-  lowSphere: new THREE.SphereGeometry(1, 10, 8),
-  body: new THREE.CapsuleGeometry(0.5, 0.42, 10, 24),
-  star: new THREE.OctahedronGeometry(0.12),
-};
 
-/** Construye la malla de un arma (para la mano o para el suelo). */
 export function makeWeaponMesh(type: WeaponType): THREE.Group {
   const g = new THREE.Group();
   if (type === 'sword') {
@@ -118,7 +333,7 @@ function makeAccessory(kind: Look['accessory'], color: string): THREE.Object3D |
       const c = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.55, 16), new THREE.MeshStandardMaterial({ color: '#3bb4ff', roughness: 0.5 }));
       c.position.y = 0.25;
       c.rotation.z = -0.25;
-      const pom = new THREE.Mesh(GEO.lowSphere, SHARED.star);
+      const pom = new THREE.Mesh(lowSphere, SHARED.star);
       pom.scale.setScalar(0.09);
       pom.position.set(0.13, 0.52, 0);
       g.add(c, pom);
@@ -127,7 +342,7 @@ function makeAccessory(kind: Look['accessory'], color: string): THREE.Object3D |
     case 'antenna': {
       const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 6), SHARED.black);
       stick.position.y = 0.22;
-      const ball = new THREE.Mesh(GEO.lowSphere, new THREE.MeshStandardMaterial({ color: tmpColor.set(color).offsetHSL(0.5, 0, 0).getStyle(), emissive: '#333333' }));
+      const ball = new THREE.Mesh(lowSphere, new THREE.MeshStandardMaterial({ color: tmpColor.set(color).offsetHSL(0.5, 0, 0).getStyle(), emissive: '#333333' }));
       ball.scale.setScalar(0.1);
       ball.position.y = 0.48;
       g.add(stick, ball);
@@ -141,7 +356,7 @@ function makeAccessory(kind: Look['accessory'], color: string): THREE.Object3D |
       const r = l.clone();
       r.rotation.z = -Math.PI / 2;
       r.position.x = 0.12;
-      const k = new THREE.Mesh(GEO.lowSphere, m);
+      const k = new THREE.Mesh(lowSphere, m);
       k.scale.setScalar(0.06);
       g.add(l, r, k);
       g.position.set(0.18, 0, 0.1);
@@ -172,7 +387,7 @@ function makeAccessory(kind: Look['accessory'], color: string): THREE.Object3D |
     case 'leaf': {
       const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.2, 6), SHARED.green);
       stem.position.y = 0.1;
-      const leaf = new THREE.Mesh(GEO.lowSphere, SHARED.green);
+      const leaf = new THREE.Mesh(lowSphere, SHARED.green);
       leaf.scale.set(0.16, 0.04, 0.08);
       leaf.position.set(0.12, 0.2, 0);
       leaf.rotation.z = 0.5;
@@ -224,21 +439,33 @@ export interface JellyPose {
   blocking: boolean;
   stun: number;
   invuln: number;
+  /** Clasificado o ganador: cara feliz. */
+  happy?: boolean;
 }
+
+const UP = new THREE.Vector3(0, 1, 0);
+const tmpA = new THREE.Vector3();
+const tmpB = new THREE.Vector3();
+const tmpDir = new THREE.Vector3();
 
 export class Jelly {
   root = new THREE.Group();
   private body = new THREE.Group();
-  private bodyMesh: THREE.Mesh;
-  private mat: ReturnType<typeof makeJellyMaterial>;
+  private bodyMat: ReturnType<typeof jellify<THREE.MeshStandardMaterial>>;
+  private outlineMat: ReturnType<typeof jellify<THREE.MeshBasicMaterial>>;
+  private faceMat: THREE.MeshBasicMaterial;
+  private face: THREE.Mesh;
+  private expr: Expression = 'normal';
   private handL = new THREE.Group();
   private handR = new THREE.Group();
+  private armL: THREE.Mesh;
+  private armR: THREE.Mesh;
   private footL: THREE.Mesh;
   private footR: THREE.Mesh;
-  private eyes = new THREE.Group();
   private weapons: Record<WeaponType, THREE.Object3D | null>;
   private shield: THREE.Mesh;
   private stars = new THREE.Group();
+  private shadow: THREE.Mesh;
   private tag: THREE.Sprite | null = null;
   private squash = 1;
   private squashV = 0;
@@ -247,70 +474,52 @@ export class Jelly {
   private yawShown = 0;
   private wasGrounded = true;
   private time = Math.random() * 10;
+  private nextBlink = 2 + Math.random() * 3;
+  private hurtUntil = 0;
+  private restL = new THREE.Vector3();
+  private restR = new THREE.Vector3();
 
   constructor(public look: Look, name?: string, opts: { bot?: boolean; me?: boolean } = {}) {
-    this.mat = makeJellyMaterial(look.color);
-    this.bodyMesh = new THREE.Mesh(GEO.body, this.mat);
-    this.bodyMesh.position.y = 0.72;
-    this.bodyMesh.scale.set(1, 1, 0.92);
-    this.bodyMesh.castShadow = true;
-    this.body.add(this.bodyMesh);
+    const base = new THREE.Color(look.color);
+    const rim = base.clone().lerp(new THREE.Color('#ffffff'), 0.65);
+    this.bodyMat = jellify(new THREE.MeshStandardMaterial({
+      color: base, roughness: 0.3, metalness: 0, emissive: base.clone().multiplyScalar(0.18),
+    }), { rim });
+    const dark = base.clone().offsetHSL(0, 0.05, -0.32);
+    this.outlineMat = jellify(new THREE.MeshBasicMaterial({ color: dark, side: THREE.BackSide }), { extrude: 0.035 });
+    const footMat = new THREE.MeshStandardMaterial({ color: base.clone().offsetHSL(0, 0, -0.12), roughness: 0.5 });
 
-    // Ojos
-    const eyeY = 0.98;
-    for (const s of [-1, 1]) {
-      const white = new THREE.Mesh(GEO.sphere, SHARED.white);
-      white.scale.set(0.13, look.eyes === 'sleepy' ? 0.07 : 0.15, 0.08);
-      white.position.set(0.16 * s, eyeY, 0.42);
-      const pupil = new THREE.Mesh(GEO.sphere, SHARED.black);
-      pupil.scale.set(0.065, look.eyes === 'sleepy' ? 0.035 : 0.075, 0.05);
-      pupil.position.set(0.16 * s, eyeY - 0.01, 0.48);
-      this.eyes.add(white, pupil);
-      if (look.eyes === 'angry') {
-        const brow = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.04), SHARED.black);
-        brow.position.set(0.16 * s, eyeY + 0.15, 0.45);
-        brow.rotation.z = 0.35 * s;
-        this.eyes.add(brow);
-      }
-      if (look.eyes === 'happy') {
-        pupil.scale.set(0.09, 0.03, 0.05);
-        pupil.position.y = eyeY + 0.03;
-        white.visible = false;
-      }
-      const cheek = new THREE.Mesh(GEO.lowSphere, SHARED.cheek);
-      cheek.scale.set(0.08, 0.05, 0.03);
-      cheek.position.set(0.28 * s, eyeY - 0.17, 0.4);
-      this.eyes.add(cheek);
-    }
-    // Boca
-    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 12, Math.PI), SHARED.black);
-    mouth.position.set(0, eyeY - 0.17, 0.47);
-    mouth.rotation.z = Math.PI;
-    this.eyes.add(mouth);
-    this.body.add(this.eyes);
+    const bodyMesh = new THREE.Mesh(GEO.body, this.bodyMat);
+    const outline = new THREE.Mesh(GEO.body, this.outlineMat);
+    this.faceMat = new THREE.MeshBasicMaterial({ map: faceTexture(look.eyes, 'normal'), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    this.face = new THREE.Mesh(GEO.face, this.faceMat);
+    this.face.renderOrder = 2;
+    this.body.add(outline, bodyMesh, this.face);
 
     const acc = makeAccessory(look.accessory, look.color);
     if (acc) {
-      acc.position.y += 1.33;
+      acc.position.y += 1.36;
       this.body.add(acc);
     }
 
-    // Manos y pies
-    const limbMat = makeJellyMaterial(look.color);
-    for (const [hand, s] of [[this.handL, -1], [this.handR, 1]] as const) {
-      const m = new THREE.Mesh(GEO.sphere, limbMat);
+    // Bracitos elásticos (se estiran del hombro a la mano) y manos.
+    this.armL = new THREE.Mesh(GEO.arm, this.bodyMat);
+    this.armR = new THREE.Mesh(GEO.arm, this.bodyMat);
+    this.body.add(this.armL, this.armR);
+    for (const hand of [this.handL, this.handR]) {
+      const m = new THREE.Mesh(lowSphere, this.bodyMat);
       m.scale.setScalar(0.13);
-      m.castShadow = true;
       hand.add(m);
-      hand.position.set(0.55 * s, 0.62, 0.05);
       this.body.add(hand);
     }
-    this.footL = new THREE.Mesh(GEO.sphere, limbMat);
-    this.footR = new THREE.Mesh(GEO.sphere, limbMat);
+    this.handL.position.set(-0.62, 0.55, 0.05);
+    this.handR.position.set(0.62, 0.55, 0.05);
+
+    this.footL = new THREE.Mesh(lowSphere, footMat);
+    this.footR = new THREE.Mesh(lowSphere, footMat);
     for (const [f, s] of [[this.footL, -1], [this.footR, 1]] as const) {
-      f.scale.set(0.15, 0.09, 0.2);
-      f.position.set(0.2 * s, 0.08, 0.05);
-      f.castShadow = true;
+      f.scale.set(0.17, 0.1, 0.22);
+      f.position.set(0.22 * s, 0.08, 0.06);
       this.root.add(f);
     }
 
@@ -334,9 +543,14 @@ export class Jelly {
       st.position.set(Math.cos(a) * 0.4, 0, Math.sin(a) * 0.4);
       this.stars.add(st);
     }
-    this.stars.position.y = 1.6;
+    this.stars.position.y = 1.65;
     this.stars.visible = false;
     this.body.add(this.stars);
+
+    this.shadow = new THREE.Mesh(GEO.shadow, new THREE.MeshBasicMaterial({ map: blobShadowTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+    this.shadow.rotation.x = -Math.PI / 2;
+    this.shadow.renderOrder = 1;
+    this.root.add(this.shadow);
 
     this.root.add(this.body);
     if (name) {
@@ -349,18 +563,45 @@ export class Jelly {
   /** Impulso de deformación (aterrizaje, golpe). */
   poke(amount: number): void {
     this.squashV -= amount;
+    if (amount >= 3) this.hurtUntil = this.time + 0.45;
   }
 
   setTagVisible(v: boolean): void {
     if (this.tag) this.tag.visible = v;
   }
 
+  /** Altura del suelo bajo el personaje para la sombra de contacto (null = vacío). */
+  setGround(y: number | null): void {
+    if (y === null || !Number.isFinite(y)) {
+      this.shadow.visible = false;
+      return;
+    }
+    const h = this.root.position.y - y;
+    this.shadow.visible = h > -0.3 && h < 14;
+    this.shadow.position.y = -h + 0.03;
+    const k = Math.max(0.35, 1 - h * 0.08);
+    this.shadow.scale.setScalar(k);
+    (this.shadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.25, 1 - h * 0.07);
+  }
+
+  private setExpr(e: Expression): void {
+    if (e === this.expr) return;
+    this.expr = e;
+    this.faceMat.map = faceTexture(this.look.eyes, e);
+  }
+
+  private placeArm(arm: THREE.Mesh, shoulder: THREE.Vector3, hand: THREE.Vector3): void {
+    tmpDir.subVectors(hand, shoulder);
+    const len = Math.max(0.05, tmpDir.length());
+    arm.position.copy(shoulder).addScaledVector(tmpDir, 0.5);
+    arm.quaternion.setFromUnitVectors(UP, tmpDir.divideScalar(len));
+    arm.scale.set(1, len, 1);
+  }
+
   update(dt: number, p: JellyPose): void {
     this.time += dt;
-    const u = this.mat.userData.uniforms;
     const hSpeed = Math.hypot(p.vx, p.vz);
 
-    // Orientación suave.
     let dy = p.yaw - this.yawShown;
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     this.yawShown += dy * Math.min(1, dt * 14);
@@ -375,24 +616,32 @@ export class Jelly {
     this.squash += this.squashV * dt;
     const sq = THREE.MathUtils.clamp(this.squash, 0.6, 1.45);
     this.body.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
-    if (u) {
+    const wob = 0.012 + Math.min(0.05, Math.abs(this.squashV) * 0.01) + (p.stun > 0 ? 0.03 : 0);
+    for (const u of [this.bodyMat.userData.uniforms, this.outlineMat.userData.uniforms]) {
       u.uTime.value = this.time;
-      u.uWobble.value = 0.015 + Math.min(0.05, Math.abs(this.squashV) * 0.01) + (p.stun > 0 ? 0.03 : 0);
+      u.uWobble.value = wob;
     }
+
+    // Expresión facial.
+    if (this.time > this.nextBlink + 0.13) this.nextBlink = this.time + 2 + Math.random() * 3.5;
+    if (p.stun > 0.25) this.setExpr('dizzy');
+    else if (this.time < this.hurtUntil) this.setExpr('hurt');
+    else if (p.happy) this.setExpr('happy');
+    else if (this.time > this.nextBlink) this.setExpr('blink');
+    else this.setExpr('normal');
 
     // Caminar.
     const moving = p.grounded && hSpeed > 0.5;
     this.walkPhase += dt * (moving ? 4 + hSpeed * 1.4 : 0);
     const sw = moving ? Math.sin(this.walkPhase) : 0;
-    this.footL.position.z = 0.05 + sw * 0.22;
-    this.footR.position.z = 0.05 - sw * 0.22;
+    this.footL.position.z = 0.06 + sw * 0.22;
+    this.footR.position.z = 0.06 - sw * 0.22;
     this.footL.position.y = 0.08 + Math.max(0, -sw) * 0.1;
     this.footR.position.y = 0.08 + Math.max(0, sw) * 0.1;
-    this.body.position.y = moving ? Math.abs(Math.cos(this.walkPhase)) * 0.08 : 0;
+    this.body.position.y = moving ? Math.abs(Math.cos(this.walkPhase)) * 0.08 : Math.sin(this.time * 2.2) * 0.012;
     const targetLean = p.stun > 0 ? 0 : Math.min(0.25, hSpeed * 0.025);
     this.lean += (targetLean - this.lean) * Math.min(1, dt * 8);
 
-    // Aturdido: tambaleo.
     if (p.stun > 0) {
       this.body.rotation.x = Math.sin(this.time * 14) * 0.35;
       this.body.rotation.z = Math.cos(this.time * 11) * 0.35;
@@ -408,48 +657,51 @@ export class Jelly {
       this.footR.position.y = 0.2;
     }
 
-    // Armas visibles.
     for (const [k, m] of Object.entries(this.weapons)) {
       if (m) m.visible = k === p.weapon || (p.atk >= 0 && k === p.atkW && k !== 'fists');
     }
 
-    // Brazos: reposo, ataque o bloqueo.
-    const restL = new THREE.Vector3(-0.55, 0.62 + (moving ? -sw * 0.06 : 0), 0.05 + (moving ? -sw * 0.15 : 0));
-    const restR = new THREE.Vector3(0.55, 0.62 + (moving ? sw * 0.06 : 0), 0.05 + (moving ? sw * 0.15 : 0));
+    // Brazos: reposo (balanceo; en el aire, arriba), ataque o bloqueo.
+    const air = !p.grounded && p.stun <= 0;
+    const restL = this.restL.set(-0.66, air ? 1.0 : 0.5 + (moving ? -sw * 0.06 : Math.sin(this.time * 2.2) * 0.02), 0.06 + (moving ? -sw * 0.18 : 0));
+    const restR = this.restR.set(0.66, air ? 1.0 : 0.5 + (moving ? sw * 0.06 : Math.sin(this.time * 2.2 + 1) * 0.02), 0.06 + (moving ? sw * 0.18 : 0));
     this.handR.rotation.set(0, 0, 0);
-    if (p.weapon !== 'fists' && p.atk < 0) this.handR.rotation.x = 0.5;
+    if (p.weapon !== 'fists' && p.atk < 0) { this.handR.rotation.x = 0.5; restR.y = Math.min(restR.y, 0.6); }
     if (p.atk >= 0) {
       const st = WEAPONS[p.atkW];
       const k = p.atk < st.windup ? p.atk / Math.max(0.001, st.windup) : 1 + (p.atk - st.windup) / 0.3;
       if (p.atkW === 'fists') {
-        const ext = k < 1 ? -0.1 * k : Math.sin(Math.min(1, k - 1) * Math.PI) * 0.6;
-        restR.set(0.35, 0.75, 0.25 + ext);
-        restL.set(-0.4, 0.7, 0.3);
+        const ext = k < 1 ? -0.1 * k : Math.sin(Math.min(1, k - 1) * Math.PI) * 0.65;
+        restR.set(0.35, 0.75, 0.3 + ext);
+        restL.set(-0.45, 0.7, 0.35);
       } else if (p.atkW === 'sword') {
-        // Tajo horizontal de derecha a izquierda.
         const a = k < 1 ? -1.2 * k : -1.2 + Math.min(1, k - 1) * 3;
-        restR.set(Math.cos(a) * 0.55, 0.75, Math.sin(-a) * 0.35 + 0.25);
+        restR.set(Math.cos(a) * 0.6, 0.75, Math.sin(-a) * 0.35 + 0.3);
         this.handR.rotation.set(1.4, 0, -a);
       } else {
-        // Golpe vertical por encima de la cabeza.
         const a = k < 1 ? -2.6 * k : -2.6 + Math.min(1, (k - 1) * 2.2) * 4.2;
-        restR.set(0.3, 0.9, 0.2);
+        restR.set(0.35, 0.95, 0.25);
         this.handR.rotation.x = -a * 0.8 - 0.4;
       }
     } else if (p.blocking) {
-      restL.set(-0.25, 0.85, 0.45);
-      restR.set(0.25, 0.85, 0.45);
+      restL.set(-0.28, 0.85, 0.5);
+      restR.set(0.28, 0.85, 0.5);
     }
     this.handL.position.lerp(restL, Math.min(1, dt * 20));
     this.handR.position.lerp(restR, Math.min(1, dt * 25));
+    this.placeArm(this.armL, tmpA.set(-0.5, 0.72, 0.02), this.handL.position);
+    this.placeArm(this.armR, tmpB.set(0.5, 0.72, 0.02), this.handR.position);
     this.shield.visible = p.blocking;
 
-    // Parpadeo de invulnerabilidad.
-    this.mat.opacity = p.invuln > 0 && p.invuln < 50 ? (Math.sin(this.time * 30) > 0 ? 0.35 : 0.9) : 0.94;
+    // Parpadeo de invulnerabilidad (sin transparencias: alterna visibilidad).
+    this.body.visible = !(p.invuln > 0 && p.invuln < 50 && Math.sin(this.time * 30) < -0.2);
   }
 
   dispose(): void {
     this.root.removeFromParent();
     this.tag?.material.map?.dispose();
+    this.bodyMat.dispose();
+    this.outlineMat.dispose();
+    this.faceMat.dispose();
   }
 }

@@ -20,10 +20,22 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Comprobar errores de shader obliga a esperar a cada compilación (bloquea el
+// hilo principal): solo se hace en desarrollo.
+renderer.debug.checkShaderErrors = import.meta.env.DEV;
+
+// Resolución dinámica: la calidad fija el máximo y, si los fotogramas no
+// llegan a tiempo, se reduce la resolución interna hasta recuperar fluidez.
+let maxRatio = 1;
+let curRatio = 1;
+let fpsTime = 0;
+let fpsFrames = 0;
 
 function applyQuality(): void {
   renderer.shadowMap.enabled = options.quality !== 'low';
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, options.quality === 'high' ? 2 : options.quality === 'medium' ? 1.25 : 1));
+  maxRatio = Math.min(window.devicePixelRatio, options.quality === 'high' ? 2 : options.quality === 'medium' ? 1.25 : 1);
+  curRatio = maxRatio;
+  renderer.setPixelRatio(curRatio);
   game?.applyQuality();
   renderer.shadowMap.needsUpdate = true;
 }
@@ -345,6 +357,17 @@ let last = performance.now();
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  fpsTime += dt;
+  fpsFrames++;
+  if (fpsTime >= 1.5) {
+    const fps = fpsFrames / fpsTime;
+    const before = curRatio;
+    if (fps < 50) curRatio = Math.max(0.7, curRatio * 0.85);
+    else if (fps > 57) curRatio = Math.min(maxRatio, curRatio + 0.1);
+    if (Math.abs(before - curRatio) > 0.01) renderer.setPixelRatio(curRatio);
+    fpsTime = 0;
+    fpsFrames = 0;
+  }
   if (game) game.frame(dt, renderer);
   else menu.frame(dt, renderer);
   requestAnimationFrame(loop);

@@ -3,10 +3,13 @@
 import * as THREE from 'three';
 import { ACCESSORIES, DT, EYES, PALETTE, type Look } from '../../shared/constants.ts';
 import { MAPS } from '../../shared/maps.ts';
-import { type PhysState, buildSolids, newPhysState, stepPlayer } from '../../shared/physics.ts';
+import { type PhysState, buildSolids, groundHeightAt, newPhysState, stepPlayer } from '../../shared/physics.ts';
 import { Fx } from './fx.ts';
 import { Jelly } from './jelly.ts';
 import { WorldView } from './world.ts';
+
+/** Isla lateral del mapa 1 donde posa la vista previa del personaje. */
+const PREVIEW = { x: -25, y: 0.5, z: 0 };
 
 interface Npc { jelly: Jelly; s: PhysState; dir: number; nextTurn: number; jumpAt: number; yaw: number }
 
@@ -41,7 +44,7 @@ export class MenuScene {
     this.previewMode = !!look;
     if (look) {
       this.preview = new Jelly(look);
-      this.preview.root.position.set(0, 1, 0);
+      this.preview.root.position.set(PREVIEW.x, PREVIEW.y, PREVIEW.z);
       this.preview.root.scale.setScalar(1.6);
       this.scene.add(this.preview.root);
       this.preview.poke(6);
@@ -58,20 +61,22 @@ export class MenuScene {
     }
     for (const n of this.npcs) {
       n.jelly.root.position.set(n.s.x, n.s.y, n.s.z);
+      n.jelly.setGround(groundHeightAt(this.solids, n.s.x, n.s.z, n.s.y + 0.3, 0.3));
       n.jelly.update(dt, { vx: n.s.vx, vy: n.s.vy, vz: n.s.vz, grounded: n.s.grounded, yaw: n.yaw, atk: -1, atkW: 'fists', weapon: 'fists', blocking: false, stun: n.s.stun, invuln: 0 });
     }
     this.world.update(this.t, dt, '', this.t);
     this.fx.update(dt);
 
     if (this.preview) {
-      this.preview.root.rotation.y = 0;
-      this.preview.update(dt, { vx: 0, vy: 0, vz: 0, grounded: true, yaw: Math.sin(this.t * 0.8) * 0.6 - 0.35, atk: -1, atkW: 'fists', weapon: 'fists', blocking: false, stun: 0, invuln: 0 });
+      this.preview.setGround(PREVIEW.y);
+      this.preview.update(dt, { vx: 0, vy: 0, vz: 0, grounded: true, yaw: Math.sin(this.t * 0.8) * 0.5 + 0.35, happy: Math.sin(this.t * 0.9) > 0.7, atk: -1, atkW: 'fists', weapon: 'fists', blocking: false, stun: 0, invuln: 0 });
       if (Math.sin(this.t * 2.2) > 0.995) this.preview.poke(3);
     }
 
     if (this.previewMode) {
-      this.camera.position.lerp(new THREE.Vector3(-2.2, 3.2, 7.5), Math.min(1, dt * 4));
-      this.camera.lookAt(-1.4, 2.2, 0);
+      // La gominola de muestra está en la isla lateral, a la izquierda del panel.
+      this.camera.position.lerp(new THREE.Vector3(PREVIEW.x + 2.4, PREVIEW.y + 2.1, PREVIEW.z + 6.5), Math.min(1, dt * 4));
+      this.camera.lookAt(PREVIEW.x + 1.9, PREVIEW.y + 1.1, PREVIEW.z);
     } else {
       const a = this.t * 0.06;
       this.camera.position.set(Math.cos(a) * 24, 9, Math.sin(a) * 24);

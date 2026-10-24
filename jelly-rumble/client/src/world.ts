@@ -1,8 +1,9 @@
 // Construcción visual de los mapas a partir de las mismas definiciones que usa
 // la física, y actualización de sus partes dinámicas en cada fotograma.
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
-  type BoxDef, type MapDef, SECTOR_PHASE, SECTOR_START, SECTOR_WARN, TILE_GONE, TILE_SHAKE,
+  type BoxDef, type MapDef, SECTOR_PHASE, SECTOR_START, SECTOR_WARN, TILE_SHAKE, TILE_SOLID,
   barAngle, boxOffset, cylRadius, sectorState, vanishState,
 } from '../../shared/maps.ts';
 
@@ -112,6 +113,15 @@ type MatSet = THREE.Material | THREE.Material[];
 export class WorldView {
   group = new THREE.Group();
   private boxMeshes: (THREE.Mesh | null)[] = [];
+  /** Baldosas de la ronda 4: una malla instanciada por estilo. */
+  private tileInst: { mesh: THREE.InstancedMesh; slot: number; base: THREE.Vector3 }[] = [];
+  private tileMeshes: THREE.InstancedMesh[] = [];
+  private tileMatrix = new THREE.Matrix4();
+  private tileQuat = new THREE.Quaternion();
+  private tileScale = new THREE.Vector3(1, 1, 1);
+  private tilePos = new THREE.Vector3();
+  private tileColor = new THREE.Color();
+  private tileEuler = new THREE.Euler();
   private boxBase: THREE.Vector3[] = [];
   private cylMeshes: { mesh: THREE.Object3D; def: MapDef['cyls'][number]; sectors?: THREE.Mesh[] }[] = [];
   private barMeshes: { pivot: THREE.Object3D; def: MapDef['bars'][number] }[] = [];
@@ -127,6 +137,8 @@ export class WorldView {
     this.tileFall = new Float32Array(map.tileCount ?? 0);
     this.buildEnvironment();
     map.boxes.forEach((b, i) => this.buildBox(b, i));
+    this.buildTiles();
+    this.buildDecor();
     for (const c of map.cyls) this.buildCyl(c);
     for (const b of map.bars) this.buildBar(b);
     if (map.goalZ !== undefined) this.buildGoal();
@@ -275,31 +287,16 @@ export class WorldView {
   }
 
   private buildBox(b: BoxDef, i: number): void {
-    const geo = new THREE.BoxGeometry(b.w, b.h, b.d);
-    // Texturas repetidas según el tamaño.
-    const uv = geo.attributes.uv as THREE.BufferAttribute;
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const nrm = geo.attributes.normal as THREE.BufferAttribute;
-    if (b.style !== 'grass' && b.style !== 'goal') {
-      for (let k = 0; k < uv.count; k++) {
-        const nx = Math.abs(nrm.getX(k)); const ny = Math.abs(nrm.getY(k));
-        const [u, v] = nx > 0.5 ? [pos.getZ(k), pos.getY(k)] : ny > 0.5 ? [pos.getX(k), pos.getZ(k)] : [pos.getX(k), pos.getY(k)];
-        uv.setXY(k, u / 2, v / 2);
-      }
-    } else {
-      for (let k = 0; k < uv.count; k++) {
-        const ny = Math.abs(nrm.getY(k));
-        if (ny > 0.5) uv.setXY(k, pos.getX(k) / 2, pos.getZ(k) / 2);
-        else uv.setXY(k, (Math.abs(nrm.getX(k)) > 0.5 ? pos.getZ(k) : pos.getX(k)) / 2, (pos.getY(k) + b.h / 2) / Math.max(1, b.h) * 0.999);
-      }
-    }
+    if (b.kind === 'tile') return;
+    const geo = roundedBox(b.w, b.h, b.d);
+    remapUv(geo, b, b.style);
     let mat = this.mat(b.style);
-    if (b.kind === 'vanish' || b.kind === 'tile') {
+    if (b.kind === 'vanish') {
       mat = Array.isArray(mat) ? mat.map((m) => m.clone()) : mat.clone();
     }
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(b.x, b.y, b.z);
-    mesh.castShadow = b.kind !== 'tile';
+    mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.group.add(mesh);
     this.boxMeshes[i] = mesh;
@@ -406,6 +403,135 @@ export class WorldView {
     this.group.add(banner);
   }
 
+  private buildTiles(): void {
+    const groups = new Map<string, BoxDef[]>();
+    for (const b of this.map.boxes) {
+      if (b.kind !== 'tile' || b.tile === undefined) continue;
+      if (!groups.has(b.style)) groups.set(b.style, []);
+      groups.get(b.style)!.push(b);
+    }
+    for (const [style, list] of groups) {
+      const first = list[0]!;
+      const geo = roundedBox(first.w, first.h, first.d);
+      remapUv(geo, first, style);
+      const mesh = new THREE.InstancedMesh(geo, this.mat(style), list.length);
+      mesh.receiveShadow = true;
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      list.forEach((b, k) => {
+        const base = new THREE.Vector3(b.x, b.y, b.z);
+        this.tileMatrix.makeTranslation(base.x, base.y, base.z);
+        mesh.setMatrixAt(k, this.tileMatrix);
+        mesh.setColorAt(k, this.tileColor.set('#ffffff'));
+        this.tileInst[b.tile!] = { mesh, slot: k, base };
+      });
+      this.group.add(mesh);
+      this.tileMeshes.push(mesh);
+    }
+  }
+
+  private updateTiles(dt: number, tiles: string, now: number): void {
+    if (!this.tileMeshes.length) return;
+    let dirty = false;
+    for (let i = 0; i < this.tileInst.length; i++) {
+      const ti = this.tileInst[i];
+      if (!ti) continue;
+      const st = tiles[i];
+      if (st === TILE_SOLID || st === undefined) {
+        if (this.tileFall[i] !== -1) {
+          this.tileFall[i] = -1;
+          this.tileMatrix.makeTranslation(ti.base.x, ti.base.y, ti.base.z);
+          ti.mesh.setMatrixAt(ti.slot, this.tileMatrix);
+          ti.mesh.setColorAt(ti.slot, this.tileColor.set('#ffffff'));
+          dirty = true;
+        }
+        continue;
+      }
+      if (st === TILE_SHAKE) {
+        this.tileFall[i] = 0;
+        this.tilePos.set(ti.base.x + (Math.random() - 0.5) * 0.12, ti.base.y, ti.base.z + (Math.random() - 0.5) * 0.12);
+        this.tileQuat.identity();
+        this.tileScale.set(1, 1, 1);
+        const k = 0.5 + Math.sin(now * 25) * 0.5;
+        this.tileColor.setRGB(1.3 + k * 0.6, 0.55, 0.35);
+      } else {
+        if (this.tileFall[i]! >= 2.2) continue;
+        this.tileFall[i] = Math.max(0, this.tileFall[i]!) + dt;
+        const f = this.tileFall[i]!;
+        this.tilePos.set(ti.base.x, ti.base.y - f * f * 9, ti.base.z);
+        this.tileQuat.setFromEuler(this.tileEuler.set(f * 0.8, 0, f * 0.3));
+        this.tileScale.setScalar(f >= 2.2 ? 0 : 1);
+        this.tileColor.setRGB(1, 0.5, 0.4);
+      }
+      this.tileMatrix.compose(this.tilePos, this.tileQuat, this.tileScale);
+      ti.mesh.setMatrixAt(ti.slot, this.tileMatrix);
+      ti.mesh.setColorAt(ti.slot, this.tileColor);
+      dirty = true;
+    }
+    if (dirty) {
+      for (const m of this.tileMeshes) {
+        m.instanceMatrix.needsUpdate = true;
+        if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      }
+    }
+  }
+
+  /** Matas de hierba y flores (decoración instanciada sobre el césped). */
+  private buildDecor(): void {
+    const spots: [number, number, number][] = [];
+    const rand = mulberry(this.map.id * 31 + 5);
+    for (const c of this.map.cyls) {
+      if (c.style !== 'grass') continue;
+      for (let k = 0; k < 160; k++) {
+        const a = rand() * Math.PI * 2;
+        const r = Math.sqrt(rand()) * (c.r - 0.6);
+        const x = c.x + Math.cos(a) * r;
+        const z = c.z + Math.sin(a) * r;
+        if (Math.abs(x) < 3.2 && Math.abs(z) < 4.2) continue;
+        spots.push([x, c.top, z]);
+      }
+    }
+    for (const b of this.map.boxes) {
+      if (b.style !== 'grass' || b.kind !== 'static' || b.w * b.d < 20) continue;
+      const n = Math.floor(b.w * b.d * 0.35);
+      for (let k = 0; k < n; k++) spots.push([b.x + (rand() - 0.5) * (b.w - 0.6), b.y + b.h / 2, b.z + (rand() - 0.5) * (b.d - 0.6)]);
+    }
+    if (!spots.length) return;
+    const tuftGeo = new THREE.ConeGeometry(0.07, 0.32, 4);
+    tuftGeo.translate(0, 0.16, 0);
+    const tufts = new THREE.InstancedMesh(tuftGeo, new THREE.MeshLambertMaterial({ color: '#ffffff' }), spots.length * 3);
+    const flowerGeo = new THREE.IcosahedronGeometry(0.09, 0);
+    flowerGeo.translate(0, 0.24, 0);
+    const flowers = new THREE.InstancedMesh(flowerGeo, new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#222222' }), spots.length);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const sc = new THREE.Vector3();
+    const pos = new THREE.Vector3();
+    const greens = ['#4fbf3a', '#62d24a', '#3fa830', '#7ee05e'];
+    const petals = ['#ff7ab8', '#ffe14d', '#ffffff', '#b28cff', '#ff9a4d'];
+    let ti = 0;
+    let fi = 0;
+    for (const [x, y, z] of spots) {
+      for (let k = 0; k < 3; k++) {
+        pos.set(x + (rand() - 0.5) * 0.25, y, z + (rand() - 0.5) * 0.25);
+        q.setFromEuler(e.set((rand() - 0.5) * 0.6, rand() * 6, (rand() - 0.5) * 0.6));
+        sc.setScalar(0.7 + rand() * 0.6);
+        tufts.setMatrixAt(ti, m.compose(pos, q, sc));
+        tufts.setColorAt(ti++, this.tileColor.set(greens[Math.floor(rand() * greens.length)]!));
+      }
+      if (rand() < 0.35) {
+        pos.set(x, y, z);
+        q.identity();
+        sc.setScalar(0.8 + rand() * 0.5);
+        flowers.setMatrixAt(fi, m.compose(pos, q, sc));
+        flowers.setColorAt(fi++, this.tileColor.set(petals[Math.floor(rand() * petals.length)]!));
+      }
+    }
+    tufts.count = ti;
+    flowers.count = fi;
+    this.group.add(tufts, flowers);
+  }
+
   /** Actualiza las piezas dinámicas para el tiempo de ronda t. */
   update(t: number, dt: number, tiles: string, now: number): void {
     const map = this.map;
@@ -424,28 +550,6 @@ export class WorldView {
         m.opacity = st.solid ? (st.warn > 0 && Math.sin(now * 30) > 0 ? 0.35 : 0.9) : 0.08;
         m.emissive.set(st.warn > 0 ? '#ff3b5c' : '#1a6a8a');
       }
-      if (b.kind === 'tile' && b.tile !== undefined) {
-        const s = tiles[b.tile];
-        const m = mesh.material as THREE.MeshStandardMaterial;
-        if (s === TILE_SHAKE) {
-          mesh.position.set(base.x + (Math.random() - 0.5) * 0.12, base.y, base.z + (Math.random() - 0.5) * 0.12);
-          m.emissive.set('#ff3b1a');
-          m.emissiveIntensity = 0.5 + Math.sin(now * 25) * 0.4;
-          this.tileFall[b.tile] = 0;
-        } else if (s === TILE_GONE) {
-          this.tileFall[b.tile]! += dt;
-          const f = this.tileFall[b.tile]!;
-          mesh.position.y = base.y - f * f * 9;
-          mesh.rotation.x = f * 0.8;
-          mesh.visible = f < 2;
-        } else {
-          mesh.position.copy(base);
-          mesh.rotation.set(0, 0, 0);
-          mesh.visible = true;
-          m.emissive.set('#000000');
-          this.tileFall[b.tile] = 0;
-        }
-      }
       if (b.kind === 'bounce') {
         const arrow = mesh.children[0];
         if (arrow) {
@@ -454,6 +558,8 @@ export class WorldView {
         }
       }
     });
+
+    this.updateTiles(dt, tiles, now);
 
     for (const c of this.cylMeshes) {
       if (c.def.shrink) {
@@ -521,4 +627,27 @@ export function mulberry(seed: number): () => number {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+function roundedBox(w: number, h: number, d: number): THREE.BufferGeometry {
+  const r = Math.min(0.14, Math.min(w, h, d) * 0.22);
+  return new RoundedBoxGeometry(w, h, d, 2, r);
+}
+
+/** UV en unidades de mundo (las texturas se repiten según el tamaño). */
+function remapUv(geo: THREE.BufferGeometry, b: Pick<BoxDef, 'h'>, style: string): void {
+  const uv = geo.attributes.uv as THREE.BufferAttribute;
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const nrm = geo.attributes.normal as THREE.BufferAttribute;
+  for (let k = 0; k < uv.count; k++) {
+    const nx = Math.abs(nrm.getX(k));
+    const ny = Math.abs(nrm.getY(k));
+    if (style === 'grass' || style === 'goal') {
+      if (ny > 0.5) uv.setXY(k, pos.getX(k) / 2, pos.getZ(k) / 2);
+      else uv.setXY(k, (nx > 0.5 ? pos.getZ(k) : pos.getX(k)) / 2, ((pos.getY(k) + b.h / 2) / Math.max(1, b.h)) * 0.999);
+    } else {
+      const [u, v] = nx > 0.5 ? [pos.getZ(k), pos.getY(k)] : ny > 0.5 ? [pos.getX(k), pos.getZ(k)] : [pos.getX(k), pos.getY(k)];
+      uv.setXY(k, u / 2, v / 2);
+    }
+  }
 }

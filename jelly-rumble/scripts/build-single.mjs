@@ -19,3 +19,11 @@ const out = join(root, 'dist-single', 'jelly-rumble.html');
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, html);
 console.log(`Generado ${out} (${(html.length / 1024).toFixed(0)} KB)`);
+
+// Variante sin <html>/<head>/<body> para publicarla como página de Claude
+// (la plataforma añade su propio esqueleto de documento).
+const page = html
+  .replace(/<!doctype html>/i, '')
+  .replace(/<html[^>]*>|<\/html>|<head>|<\/head>|<body>|<\/body>/gi, '')
+  .trim();
+writeFileSync(join(root, 'dist-single', 'jelly-rumble-page.html'), `${page}\n`);

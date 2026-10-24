@@ -4,14 +4,14 @@
 import * as THREE from 'three';
 import { DT, PICKUP_RANGE, WEAPONS, type WeaponType } from '../../shared/constants.ts';
 import { MAPS, ROUND_COUNT, cylRadius, type MapDef } from '../../shared/maps.ts';
-import { type MoveInput, type PhysState, buildSolids, clonePhys, groundHeightAt, stepPlayer } from '../../shared/physics.ts';
+import { type MoveInput, type PhysState, type Solid, buildSolids, clonePhys, groundHeightAt, stepPlayer } from '../../shared/physics.ts';
 import {
   type GameEvent, INPUT_ATTACK, INPUT_BLOCK, INPUT_INTERACT, INPUT_JUMP, INPUT_RUN, type NetPlayer, type RoomInfo,
   STATUS_ALIVE, STATUS_OUT, STATUS_QUALIFIED, STATUS_RESPAWNING, type Snapshot, WEAPON_CODES, decodePlayer,
 } from '../../shared/protocol.ts';
 import { audio } from './audio.ts';
 import { Fx } from './fx.ts';
-import { Jelly, makeWeaponMesh } from './jelly.ts';
+import { Jelly, makeWeaponMesh, preloadFaces } from './jelly.ts';
 import type { Net } from './net.ts';
 import { options } from './settings.ts';
 import { $, banner, feed, toast } from './ui.ts';
@@ -50,6 +50,10 @@ export class GameView {
   private pred: PhysState | null = null;
   private pending: Pending[] = [];
   private offset = new THREE.Vector3();
+  /** Posición predicha antes del último paso fijo: se interpola hacia la actual para dibujar a 60+ fps. */
+  private prevPos = new THREE.Vector3();
+  private alpha = 0;
+  private tmpV = new THREE.Vector3();
   private acc = 0;
   private localAtk = -1;
   private localAtkW: WeaponType = 'fists';
@@ -74,6 +78,9 @@ export class GameView {
   private touch: TouchControls | null = null;
   /** El navegador no permite capturar el ratón (p. ej. dentro de un iframe). */
   private lockFailed = false;
+  /** Pendiente de precompilar shaders tras cargar una ronda. */
+  private needWarm = false;
+  private warmGroup: THREE.Group | null = null;
 
   constructor(private canvas: HTMLCanvasElement, private net: Net, public myId: number, private onPause: () => void) {
     this.fx = new Fx(this.scene);
@@ -245,6 +252,7 @@ export class GameView {
     this.tiles = this.map.tileCount ? '0'.repeat(this.map.tileCount) : '';
     this.frames = [];
     this.lastCountdown = -1;
+    this.needWarm = true;
     $('hud-map').textContent = `${this.map.name} — ${this.map.rules}`;
     audio.playMusic(this.map.theme.music + 1);
     // Cámara detrás del jugador mirando al centro.
@@ -377,12 +385,18 @@ export class GameView {
     const before = this.pred ? new THREE.Vector3(this.pred.x, this.pred.y, this.pred.z) : null;
     const s = clonePhys(me);
     for (const p of this.pending) {
-      stepPlayer(s, p.inp, this.map, buildSolids(this.map, p.t, this.tiles), p.t, DT);
+      stepPlayer(s, p.inp, this.map, solidsAt(this.map, p.t, this.tiles), p.t, DT);
     }
     this.pred = s;
     if (before) {
-      this.offset.add(before.sub(new THREE.Vector3(s.x, s.y, s.z)));
+      const dx = s.x - before.x;
+      const dy = s.y - before.y;
+      const dz = s.z - before.z;
+      this.prevPos.x += dx; this.prevPos.y += dy; this.prevPos.z += dz;
+      this.offset.x -= dx; this.offset.y -= dy; this.offset.z -= dz;
       if (this.offset.length() > 3.5) this.offset.set(0, 0, 0);
+    } else {
+      this.prevPos.set(s.x, s.y, s.z);
     }
   }
 
@@ -422,7 +436,10 @@ export class GameView {
 
     const me = this.latest.get(this.myId);
     if (!control || !me) return;
-    if (!this.pred) this.pred = clonePhys(me);
+    if (!this.pred) {
+      this.pred = clonePhys(me);
+      this.prevPos.set(me.x, me.y, me.z);
+    }
 
     // Ataque predicho localmente para que la animación sea inmediata.
     this.localCd = Math.max(0, this.localCd - DT);
@@ -440,7 +457,8 @@ export class GameView {
     }
     const t = this.serverT + (this.seq - this.ack) * DT;
     const inp: MoveInput = { mx, mz, jump: (b & INPUT_JUMP) !== 0, run: (b & INPUT_RUN) !== 0, block: blocking };
-    const ev = stepPlayer(this.pred, inp, this.map, buildSolids(this.map, t, this.tiles), t, DT);
+    this.prevPos.set(this.pred.x, this.pred.y, this.pred.z);
+    const ev = stepPlayer(this.pred, inp, this.map, solidsAt(this.map, t, this.tiles), t, DT);
     this.pending.push({ seq: this.seq, inp, t });
     if (this.pending.length > 90) this.pending.shift();
     if (this.localAtk < 0 && (mx !== 0 || mz !== 0) && this.pred.stun <= 0) this.faceYaw = Math.atan2(mx, mz);
@@ -496,8 +514,38 @@ export class GameView {
     return j;
   }
 
+  /**
+   * Compila de antemano todos los shaders que pueden aparecer en la ronda
+   * (personajes, armas, escudos, marcadores, partículas). En móviles cada
+   * compilación a mitad de partida congela la imagen un instante.
+   */
+  private warmup(renderer: THREE.WebGLRenderer): void {
+    this.needWarm = false;
+    const warm = new THREE.Group();
+    const info = this.room?.players[0];
+    const j = new Jelly(info?.look ?? { color: '#ff5a7a', accessory: 'crown', eyes: 'round' }, 'warm');
+    j.root.traverse((o) => { o.visible = true; });
+    warm.add(j.root);
+    for (const t of ['sword', 'hammer', 'quake'] as const) warm.add(makeWeaponMesh(t));
+    const marker = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.9, 8), new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+    warm.add(marker);
+    // Delante de la cámara para dibujarlo de verdad una vez (enlaza los programas).
+    const dir = this.camera.getWorldDirection(new THREE.Vector3());
+    warm.position.copy(this.camera.position).addScaledVector(dir, 6);
+    this.scene.add(warm);
+    this.fx.ring(warm.position, '#ffffff', 1, 0.01);
+    preloadFaces(renderer, (this.room?.players ?? []).map((p) => p.look.eyes));
+    renderer.compile(this.scene, this.camera);
+    renderer.render(this.scene, this.camera);
+    // Se queda oculto (no se libera) para que three.js conserve los programas compilados.
+    warm.visible = false;
+    this.warmGroup?.removeFromParent();
+    this.warmGroup = warm;
+  }
+
   frame(dt: number, renderer: THREE.WebGLRenderer): void {
     if (this.disposed) return;
+    if (this.needWarm && this.world) this.warmup(renderer);
     const now = performance.now() / 1000;
     this.acc += dt;
     let steps = 0;
@@ -507,9 +555,14 @@ export class GameView {
       steps++;
     }
     if (steps === 5) this.acc = 0;
+    this.alpha = Math.min(1, this.acc / DT);
 
-    const mapT = this.mapT = this.pred ? this.serverT + (this.seq - this.ack) * DT : this.serverT + (this.phase === 'playing' ? Math.min(0.25, now - this.serverTAt) : 0);
+    // Con predicción, el escenario se dibuja en el mismo instante interpolado que el jugador.
+    const mapT = this.mapT = this.pred
+      ? this.serverT + (this.seq - this.ack - 1 + this.alpha) * DT
+      : this.serverT + (this.phase === 'playing' ? Math.min(0.25, now - this.serverTAt) : 0);
     this.world?.update(mapT, dt, this.tiles, now);
+    const solids = solidsAt(this.map, mapT, this.tiles);
 
     // Personajes.
     const renderTime = now - INTERP_DELAY;
@@ -527,30 +580,32 @@ export class GameView {
       if (!visible) continue;
       if (id === this.myId && this.pred) {
         const p = this.pred;
-        j.root.position.set(p.x + this.offset.x, p.y + this.offset.y, p.z + this.offset.z);
+        this.tmpV.set(p.x, p.y, p.z).sub(this.prevPos).multiplyScalar(this.alpha).add(this.prevPos).add(this.offset);
+        j.root.position.copy(this.tmpV);
         j.update(dt, {
           vx: p.vx, vy: p.vy, vz: p.vz, grounded: p.grounded, yaw: this.faceYaw,
           atk: this.localAtk, atkW: this.localAtkW, weapon: server.weapon,
           blocking: (this.mouseR || this.keys.has('KeyF') || !!this.touch?.block) && this.localAtk < 0 && p.stun <= 0,
-          stun: p.stun, invuln: server.invuln,
+          stun: p.stun, invuln: server.invuln, happy: server.status === STATUS_QUALIFIED,
         });
       } else {
         const p = (id === this.myId ? server : this.interpolated(id, renderTime)) ?? server;
         j.root.position.set(p.x, p.y, p.z);
-        j.update(dt, p);
+        j.update(dt, { ...p, happy: p.status === STATUS_QUALIFIED });
       }
+      const rp = j.root.position;
+      j.setGround(groundHeightAt(solids, rp.x, rp.z, rp.y + 0.3, 0.3));
     }
 
     // Armas en el escenario.
     for (const w of this.weapons.values()) {
-      const target = new THREE.Vector3(w.x, w.y, w.z);
-      w.group.position.lerp(target, Math.min(1, dt * 15));
+      w.group.position.lerp(this.tmpV.set(w.x, w.y, w.z), Math.min(1, dt * 15));
       w.mesh.rotation.y += dt * 2.5;
       w.mesh.position.y = w.landed ? 0.35 + Math.sin(now * 3) * 0.12 : 0;
       w.mesh.rotation.z = w.landed ? 0.35 : now * 6;
       (w.beam.material as THREE.MeshBasicMaterial).opacity = w.landed ? 0.12 : 0.3;
       w.beam.position.y = w.landed ? 15 : 12;
-      const g = groundHeightAt(buildSolidsCached(this.map, mapT, this.tiles), w.x, w.z, w.y + 0.5, 0.3);
+      const g = groundHeightAt(solids, w.x, w.z, w.y + 0.5, 0.3);
       w.marker.visible = g > -Infinity;
       w.marker.position.set(w.x, g + 0.06, w.z);
       w.marker.scale.setScalar(w.landed ? 1 : 1 + Math.sin(now * 10) * 0.15);
@@ -595,7 +650,7 @@ export class GameView {
       target.z - Math.cos(this.camYaw) * this.camDist * cp,
     );
     // No dejar que la cámara atraviese el suelo.
-    const g = groundHeightAt(buildSolidsCached(this.map, this.mapT, this.tiles), desired.x, desired.z, target.y + 0.5, 0.4);
+    const g = groundHeightAt(solidsAt(this.map, this.mapT, this.tiles), desired.x, desired.z, target.y + 0.5, 0.4);
     if (g > -Infinity && desired.y < g + 0.8) desired.y = g + 0.8;
     this.camera.position.lerp(desired, Math.min(1, dt * 12));
     if (this.shake > 0) {
@@ -698,20 +753,23 @@ function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
 }
 
-// Cache de sólidos para consultas visuales (marcadores de armas).
-let cacheKey = '';
-let cacheVal: ReturnType<typeof buildSolids> = [];
-function buildSolidsCached(map: MapDef, t: number, tiles: string): ReturnType<typeof buildSolids> {
-  const key = `${map.id}|${t.toFixed(2)}|${tiles.length ? hashStr(tiles) : 0}`;
-  if (key !== cacheKey) {
-    cacheKey = key;
-    cacheVal = buildSolids(map, t, tiles);
+// Caché pequeña de sólidos por paso de simulación: el escenario solo cambia
+// una vez por tick, así que no se reconstruye en cada fotograma ni en cada
+// repetición de la reconciliación.
+const solidCache = new Map<string, Solid[]>();
+let tilesRef = '';
+let tilesKey = 0;
+function solidsAt(map: MapDef, t: number, tiles: string): Solid[] {
+  if (tiles !== tilesRef) {
+    tilesRef = tiles;
+    tilesKey++;
   }
-  return cacheVal;
-}
-
-function hashStr(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return h;
+  const key = `${map.id}|${Math.round(t / DT)}|${tilesKey}`;
+  let v = solidCache.get(key);
+  if (!v) {
+    v = buildSolids(map, Math.round(t / DT) * DT, tiles);
+    solidCache.set(key, v);
+    if (solidCache.size > 24) solidCache.delete(solidCache.keys().next().value!);
+  }
+  return v;
 }
