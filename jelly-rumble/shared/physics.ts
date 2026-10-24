@@ -27,6 +27,8 @@ export interface MoveInput {
   jump: boolean;
   run: boolean;
   block: boolean;
+  /** Multiplicador de velocidad por carga (núcleos); 1 = sin carga. No afecta al salto. */
+  load?: number;
 }
 
 export interface StepEvents {
@@ -170,10 +172,17 @@ function resolveWalls(s: PhysState, solids: Solid[]): void {
   }
 }
 
+/** Medidas de la cabeza de los martillos gigantes (físicas y visuales). */
+export const HAMMER_HALF = 0.5;
+export const HAMMER_RADIUS = 0.5;
+export const HAMMER_HEAD_LEN = 0.9;
+
 function applyBars(s: PhysState, map: MapDef, t: number, ev: StepEvents): void {
   if (s.barCd > 0) return;
   for (const b of map.bars) {
-    if (b.y < s.y - 0.15 || b.y > s.y + PLAYER_HEIGHT) continue;
+    // Los martillos gigantes tienen una cabeza alta en la punta (HAMMER_HALF de alto a cada lado).
+    const half = b.hammer ? HAMMER_HALF : 0;
+    if (b.y - half > s.y + PLAYER_HEIGHT || b.y + half < s.y - 0.15) continue;
     const a = barAngle(b, t);
     const dirX = Math.cos(a);
     const dirZ = Math.sin(a);
@@ -186,7 +195,10 @@ function applyBars(s: PhysState, map: MapDef, t: number, ev: StepEvents): void {
     const ex = px - qx;
     const ez = pz - qz;
     const dist = Math.hypot(ex, ez);
-    if (dist > PLAYER_RADIUS + b.thick) continue;
+    const onHead = b.hammer && u > b.len - HAMMER_HEAD_LEN;
+    if (dist > PLAYER_RADIUS + (onHead ? HAMMER_RADIUS : b.thick)) continue;
+    // Fuera de la cabeza, el brazo del martillo es una barra normal.
+    if (b.hammer && !onHead && (b.y < s.y - 0.15 || b.y > s.y + PLAYER_HEIGHT)) continue;
     // Velocidad tangencial de la barra en el punto de contacto.
     let tx = -dirZ * b.speed * u;
     let tz = dirX * b.speed * u;
@@ -230,7 +242,7 @@ export function stepPlayer(
   let mz = Number.isFinite(inp.mz) ? inp.mz : 0;
   const ml = Math.hypot(mx, mz);
   if (ml > 1) { mx /= ml; mz /= ml; }
-  const speed = (inp.run ? RUN_SPEED : WALK_SPEED) * (inp.block ? BLOCK_SPEED_FACTOR : 1);
+  const speed = (inp.run ? RUN_SPEED : WALK_SPEED) * (inp.block ? BLOCK_SPEED_FACTOR : 1) * Math.min(1, Math.max(0.5, inp.load ?? 1));
   const tx = mx * speed;
   const tz = mz * speed;
 

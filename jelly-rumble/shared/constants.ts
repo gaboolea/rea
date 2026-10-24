@@ -4,7 +4,7 @@
 export const TICK_RATE = 30;
 export const DT = 1 / TICK_RATE;
 export const MAX_PLAYERS = 12;
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export const PLAYER_RADIUS = 0.55;
 export const PLAYER_HEIGHT = 1.45;
@@ -30,7 +30,9 @@ export const SPAWN_INVULNERABILITY = 2.5;
 export const KO_CREDIT_WINDOW = 6;
 export const MAX_DAMAGE = 300;
 
-export type WeaponType = 'fists' | 'sword' | 'hammer' | 'quake';
+export type WeaponType = 'fists' | 'sword' | 'hammer' | 'quake' | 'gloves';
+/** Objetos que caen del cielo: armas y el escudo temporal (no ocupa la mano). */
+export type PickupType = Exclude<WeaponType, 'fists'> | 'shield';
 
 export interface WeaponStats {
   name: string;
@@ -57,7 +59,21 @@ export const WEAPONS: Record<WeaponType, WeaponStats> = {
   sword: { name: 'Espada', windup: 0.1, cooldown: 0.5, range: 2.5, arc: 110, knockback: 10, lift: 4.5, damage: 11, stun: 0.5, uses: 10, blockPierce: 0.35 },
   hammer: { name: 'Martillo', windup: 0.42, cooldown: 1.1, range: 2.8, arc: 140, knockback: 17, lift: 7.5, damage: 22, stun: 0.85, uses: 6, blockPierce: 0.7 },
   quake: { name: 'Mazo Sísmico', windup: 0.5, cooldown: 1.5, range: 4.8, arc: 360, knockback: 15, lift: 10, damage: 18, stun: 0.9, uses: 3, blockPierce: 0.5 },
+  gloves: { name: 'Guantes de Impacto', windup: 0.12, cooldown: 0.75, range: 2, arc: 90, knockback: 16, lift: 5, damage: 8, stun: 0.6, uses: 8, blockPierce: 0.5 },
 };
+
+export const PICKUP_NAMES: Record<PickupType, string> = {
+  sword: 'Espada', hammer: 'Martillo', quake: 'Mazo Sísmico', gloves: 'Guantes de Impacto', shield: 'Escudo Temporal',
+};
+
+/** Escudo temporal: anula casi todo el empuje durante un tiempo o unos golpes. */
+export const SHIELD_TIME = 8;
+export const SHIELD_HITS = 3;
+/** Núcleos de energía (ronda 3). */
+export const CORE_MAX_CARRY = 3;
+export const CORE_SLOW = 0.08;
+export const CORE_PICK_RANGE = 1.2;
+export const EMOTE_COOLDOWN = 2;
 
 export const BLOCK_KNOCK_FACTOR = 0.3;
 export const BLOCK_DAMAGE_FACTOR = 0.5;
@@ -72,10 +88,11 @@ export const PALETTE = [
   '#6d7bff', '#b06dff', '#ff7ae0', '#f4f4f4', '#ff7b3b', '#5e5e6e',
 ];
 
-export const ACCESSORIES = ['none', 'crown', 'cone', 'antenna', 'bow', 'horns', 'tophat', 'leaf'] as const;
+export const ACCESSORIES = ['none', 'crown', 'cone', 'antenna', 'bow', 'horns', 'tophat', 'leaf', 'halo', 'chef', 'viking', 'flowers'] as const;
 export type Accessory = (typeof ACCESSORIES)[number];
 export const ACCESSORY_NAMES: Record<Accessory, string> = {
   none: 'Nada', crown: 'Corona', cone: 'Gorro fiesta', antenna: 'Antena', bow: 'Lazo', horns: 'Cuernos', tophat: 'Chistera', leaf: 'Brote',
+  halo: 'Aureola', chef: 'Gorro de chef', viking: 'Casco vikingo', flowers: 'Corona de flores',
 };
 
 export const EYES = ['round', 'happy', 'angry', 'sleepy'] as const;
@@ -86,14 +103,30 @@ export interface Look {
   color: string;
   accessory: Accessory;
   eyes: EyeStyle;
+  /** Título elegido (id de cosmético, opcional). */
+  title?: string;
+  /** Efecto de celebración al ganar (id de cosmético, opcional). */
+  fx?: string;
 }
 
-export function sanitizeLook(raw: unknown): Look {
+/** Accesorios gratuitos (los originales); el resto se desbloquea con monedas. */
+export const FREE_ACCESSORIES: readonly Accessory[] = ['none', 'crown', 'cone', 'antenna', 'bow', 'horns', 'tophat', 'leaf'];
+
+/**
+ * Valida un aspecto recibido. `owns` decide si un cosmético de pago está
+ * desbloqueado; sin él solo se aceptan los elementos gratuitos.
+ */
+export function sanitizeLook(raw: unknown, owns: (id: string) => boolean = () => false): Look {
   const r = (raw ?? {}) as Partial<Record<keyof Look, unknown>>;
-  const color = typeof r.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(r.color) ? r.color : PALETTE[0]!;
-  const accessory = ACCESSORIES.includes(r.accessory as Accessory) ? (r.accessory as Accessory) : 'none';
+  const hex = typeof r.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(r.color) ? r.color.toLowerCase() : '';
+  const color = hex && (PALETTE.includes(hex) || owns(`color:${hex}`)) ? hex : PALETTE[0]!;
+  const acc = ACCESSORIES.includes(r.accessory as Accessory) ? (r.accessory as Accessory) : 'none';
+  const accessory = FREE_ACCESSORIES.includes(acc) || owns(`acc:${acc}`) ? acc : 'none';
   const eyes = EYES.includes(r.eyes as EyeStyle) ? (r.eyes as EyeStyle) : 'round';
-  return { color, accessory, eyes };
+  const look: Look = { color, accessory, eyes };
+  if (typeof r.title === 'string' && owns(r.title)) look.title = r.title;
+  if (typeof r.fx === 'string' && owns(r.fx)) look.fx = r.fx;
+  return look;
 }
 
 export function sanitizeName(raw: unknown): string {

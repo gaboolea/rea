@@ -7,7 +7,7 @@ export function $(id: string): HTMLElement {
   return el;
 }
 
-const SCREENS = ['screen-menu', 'screen-play', 'screen-customize', 'screen-options', 'screen-lobby', 'hud', 'screen-pause', 'screen-round', 'screen-final', 'screen-quit'];
+const SCREENS = ['screen-menu', 'screen-play', 'screen-customize', 'screen-options', 'screen-lobby', 'hud', 'screen-pause', 'screen-round', 'screen-final', 'screen-quit', 'screen-progress'];
 
 export function show(...ids: string[]): void {
   for (const s of SCREENS) $(s).classList.toggle('on', ids.includes(s));

@@ -6,6 +6,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ServerMsg } from '../shared/protocol.ts';
+import { FileProfileStore } from './fileStore.ts';
 import { Hub } from './hub.ts';
 
 const PORT = Number(process.env.PORT ?? 2567);
@@ -17,7 +18,8 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
 };
 
-const hub = new Hub();
+const store = new FileProfileStore();
+const hub = new Hub(store);
 
 const http = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
@@ -62,3 +64,11 @@ setInterval(() => hub.pump(performance.now()), 1000 / 120);
 http.listen(PORT, () => {
   console.log(`Jelly Rumble escuchando en http://localhost:${PORT} (WebSocket en /ws)`);
 });
+
+// Guardar perfiles pendientes antes de salir.
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    store.flush();
+    process.exit(0);
+  });
+}

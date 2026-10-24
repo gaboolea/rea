@@ -1,7 +1,7 @@
 // IA de entrenamiento. Los bots solo existen si el anfitrión los añade y se
 // marcan como bots en todas las listas, para no confundirlos con jugadores.
 import { PLAYER_HEIGHT, WEAPONS } from '../shared/constants.ts';
-import { type MapDef, barAngle, cylRadius, sectorIndexAt, sectorState } from '../shared/maps.ts';
+import { type MapDef, barAngle, cylRadius, energyZoneIndex, sectorIndexAt, sectorState, vanishState } from '../shared/maps.ts';
 import { type Solid, groundHeightAt } from '../shared/physics.ts';
 import { INPUT_ATTACK, INPUT_BLOCK, INPUT_INTERACT, INPUT_JUMP, INPUT_RUN, STATUS_ALIVE, STATUS_QUALIFIED } from '../shared/protocol.ts';
 
@@ -16,6 +16,7 @@ export interface BotView {
   atk: number;
   grounded: boolean;
   invuln: number;
+  carry: number;
 }
 
 export interface BotWorld {
@@ -24,6 +25,7 @@ export interface BotWorld {
   solids: Solid[];
   players: BotView[];
   weapons: { x: number; y: number; z: number; landed: boolean }[];
+  cores: { x: number; y: number; z: number }[];
 }
 
 export interface BotInput {
@@ -39,6 +41,7 @@ export class BotBrain {
   private aggression: number;
   private interactToggle = false;
   private blockUntil = 0;
+  private jumpPressed = false;
 
   constructor(seed: number) {
     this.reaction = 0.15 + (seed % 5) * 0.06;
@@ -78,8 +81,36 @@ export class BotBrain {
       this.targetId = best;
     }
 
+    // En la carrera apenas se desvían del centro (y nada al llegar al trampolín).
     let tx = gx + this.wanderX;
     let tz = map.goalZ !== undefined ? gz : gz + this.wanderZ;
+    // Carrera: seguir la ruta y esperar si el siguiente tramo no tiene suelo todavía.
+    let waitForGround = false;
+    if (map.path) {
+      // Salida escalonada para no ir todos en pelotón contra la primera barra.
+      if (t < (this.reaction - 0.15) * 6) waitForGround = true;
+      const wp = map.path.find(([, z]) => z > me.z + 0.8) ?? map.path[map.path.length - 1]!;
+      tx = wp[0];
+      tz = wp[1];
+      wantFight = false;
+      const g = groundHeightAt(w.solids, wp[0], wp[1], me.y + 5, 0.3);
+      const dist = Math.hypot(wp[0] - me.x, wp[1] - me.z);
+      if (g === -Infinity && me.grounded && dist < 5) waitForGround = true;
+      // Plataformas que desaparecen: elegir el lado (izquierda/derecha) que seguirá
+      // firme un rato; si ninguno, esperar antes de saltar.
+      const steady = (x: number, z: number) => {
+        const vb = map.boxes.find((bx) => bx.kind === 'vanish' && Math.abs(bx.x - x) < bx.w / 2 && Math.abs(bx.z - z) < bx.d / 2);
+        if (!vb) return null;
+        const later = vanishState(vb, t + 1);
+        return vanishState(vb, t).solid && later.solid && later.warn === 0;
+      };
+      const here = steady(wp[0], wp[1]);
+      if (here !== null && dist < 7) {
+        if (here) { tx = wp[0]; }
+        else if (steady(-wp[0], wp[1])) { tx = -wp[0]; }
+        else if (me.grounded) waitForGround = true;
+      }
+    }
     let attack = false;
     let interact = false;
 
@@ -111,9 +142,29 @@ export class BotBrain {
       }
     }
 
+    // Ronda de energía: recoger, entregar o robar a quien lleva núcleos.
+    if (map.energy) {
+      const zone = map.energy.zones[energyZoneIndex(map.energy, t)]!;
+      let core: { x: number; z: number; d: number } | null = null;
+      for (const c of w.cores) {
+        if (Math.abs(c.y - me.y) > 3) continue;
+        const d = Math.hypot(c.x - me.x, c.z - me.z);
+        if (!core || d < core.d) core = { x: c.x, z: c.z, d };
+      }
+      const carrier = w.players.find((p) => p.id !== me.id && p.carry > 0 && p.status === STATUS_ALIVE && Math.hypot(p.x - me.x, p.z - me.z) < 5);
+      if (carrier && me.carry < 2) {
+        tx = carrier.x; tz = carrier.z;
+        if (Math.hypot(carrier.x - me.x, carrier.z - me.z) < WEAPONS[me.weapon].range + 0.3 && Math.random() < 0.5) attack = true;
+      } else if (me.carry >= 2 || (me.carry > 0 && (!core || core.d > 9))) {
+        tx = zone[0]; tz = zone[1];
+      } else if (core) {
+        tx = core.x; tz = core.z;
+      }
+    }
+
     // Mantenerse dentro de zonas seguras.
     const cyl = map.cyls[0];
-    if (cyl) {
+    if (cyl && !map.energy) {
       const r = cylRadius(cyl, t);
       const d = Math.hypot(me.x - cyl.x, me.z - cyl.z);
       if (d > r - 2.2 && Math.hypot(tx, tz) > r - 2.5) {
@@ -133,7 +184,7 @@ export class BotBrain {
     let dx = tx - me.x;
     let dz = tz - me.z;
     const dl = Math.hypot(dx, dz);
-    if (dl > 0.4) { dx /= dl; dz /= dl; } else { dx = 0; dz = 0; }
+    if (dl > 0.4 && !waitForGround) { dx /= dl; dz /= dl; } else { dx = 0; dz = 0; }
 
     // Evitar bordes: comprobar el suelo delante.
     let jump = false;
@@ -163,27 +214,43 @@ export class BotBrain {
       if (step > me.y + 0.45 && step < me.y + 2 && me.grounded) jump = true;
     }
 
-    // Saltar barras que se acercan.
+    // Barras giratorias: saltarlas justo a tiempo o esperar fuera a que pasen.
     for (const b of map.bars) {
       if (b.y < me.y - 0.2 || b.y > me.y + PLAYER_HEIGHT) continue;
-      const a = barAngle(b, t + 0.25);
-      const ux = Math.cos(a);
-      const uz = Math.sin(a);
-      const px = me.x - b.x;
-      const pz = me.z - b.z;
-      const lo = b.oneSided ? 0 : -b.len;
-      const u = Math.max(lo, Math.min(b.len, px * ux + pz * uz));
-      const d = Math.hypot(px - ux * u, pz - uz * u);
-      if (d < 1.3 && me.grounded && Math.random() < 0.85) jump = true;
+      // Posición futura propia (vamos corriendo) contra la barra futura.
+      let near = Infinity;
+      for (const k of [0.08, 0.16, 0.26, 0.36]) near = Math.min(near, barDist(b, t + k, me.x + me.vx * k, me.z + me.vz * k));
+      if (near < 1.5 && me.grounded) jump = true;
+      const outside = Math.hypot(me.x - b.x, me.z - b.z) > b.len + 0.4;
+      if (outside && (dx !== 0 || dz !== 0) && me.grounded) {
+        const nx = me.x + dx * 1.6;
+        const nz = me.z + dz * 1.6;
+        for (const k of [0.2, 0.45, 0.7, 0.95]) {
+          if (barDist(b, t + k, nx, nz) < 1.6) { dx = 0; dz = 0; break; }
+        }
+      }
     }
 
     out.mx = dx;
     out.mz = dz;
     out.yaw = target ? Math.atan2(target.x - me.x, target.z - me.z) : Math.atan2(dx, dz);
-    if (jump) out.b |= INPUT_JUMP;
+    // El salto se activa al pulsar: soltar un tick entre saltos seguidos.
+    if (jump && !this.jumpPressed) out.b |= INPUT_JUMP;
+    this.jumpPressed = jump && !this.jumpPressed;
     if (attack) out.b |= INPUT_ATTACK;
     if (interact) out.b |= INPUT_INTERACT;
     if (t < this.blockUntil) out.b |= INPUT_BLOCK;
     return out;
   }
+}
+
+/** Distancia horizontal de un punto a una barra giratoria en el instante t. */
+function barDist(b: MapDef['bars'][number], t: number, x: number, z: number): number {
+  const a = barAngle(b, t);
+  const ux = Math.cos(a);
+  const uz = Math.sin(a);
+  const px = x - b.x;
+  const pz = z - b.z;
+  const u = Math.max(b.oneSided ? 0 : -b.len, Math.min(b.len, px * ux + pz * uz));
+  return Math.hypot(px - ux * u, pz - uz * u);
 }

@@ -1,16 +1,21 @@
 // Sala de juego autoritativa: simula a todos los jugadores con la física
-// compartida, valida ataques y recogidas, gestiona rondas, eliminaciones y la
-// elección del ganador. Los clientes solo envían entradas.
+// compartida, valida ataques, recogidas y entregas, y dirige el torneo de
+// cinco rondas (plazas, clasificación, eliminaciones y campeón). Los clientes
+// solo envían entradas.
 import {
-  DT, KO_CREDIT_WINDOW, MAX_DAMAGE, MAX_PLAYERS, PALETTE, PICKUP_RANGE, PLAYER_RADIUS, RESPAWN_DELAY,
-  SPAWN_INVULNERABILITY, WEAPONS, WEAPON_GROUND_LIFETIME, ACCESSORIES, EYES,
-  type Look, type WeaponType, knockbackScale,
+  CORE_MAX_CARRY, CORE_PICK_RANGE, CORE_SLOW, DT, EMOTE_COOLDOWN, EYES, FREE_ACCESSORIES, GRAVITY,
+  KO_CREDIT_WINDOW, MAX_DAMAGE, MAX_PLAYERS, PALETTE, PICKUP_RANGE, PLAYER_RADIUS, RESPAWN_DELAY,
+  SHIELD_HITS, SHIELD_TIME, SPAWN_INVULNERABILITY, WEAPONS, WEAPON_GROUND_LIFETIME,
+  type Look, type PickupType, type WeaponType, knockbackScale,
 } from '../shared/constants.ts';
-import { MAPS, R4_GRID, ROUND_COUNT, TILE_GONE, TILE_SHAKE, TILE_SOLID, type MapDef } from '../shared/maps.ts';
+import type { MatchResult } from '../shared/cosmetics.ts';
+import {
+  MAPS, R4_GRID, ROUND_COUNT, TILE_GONE, TILE_SHAKE, TILE_SOLID, type MapDef, energyZoneIndex,
+} from '../shared/maps.ts';
 import { type PhysState, type Solid, buildSolids, groundHeightAt, newPhysState, separatePlayers, stepPlayer } from '../shared/physics.ts';
 import {
   type FinalResult, type GameEvent, INPUT_ATTACK, INPUT_BLOCK, INPUT_INTERACT, INPUT_JUMP, INPUT_RUN,
-  type NetPlayer, type RoomInfo, type RoomPhase, type RoundResult, STATUS_ALIVE, STATUS_OUT,
+  type NetCore, type NetPlayer, PICKUP_CODES, type RoomInfo, type RoomPhase, type RoundResult, STATUS_ALIVE, STATUS_OUT,
   STATUS_QUALIFIED, STATUS_RESPAWNING, STATUS_SPECTATOR, type ServerMsg, type Snapshot, type Standing,
   encodePlayer,
 } from '../shared/protocol.ts';
@@ -44,6 +49,11 @@ export class Player implements NetPlayer {
   invuln = 0;
   kos = 0;
   wins = 0;
+  carry = 0;
+  score = 0;
+  shield = 0;
+  shieldHits = 0;
+  rank = 0;
   queue: QueuedInput[] = [];
   last: QueuedInput = { s: 0, mx: 0, mz: 0, yaw: 0, b: 0 };
   ack = 0;
@@ -51,11 +61,26 @@ export class Player implements NetPlayer {
   lastHitBy = -1;
   lastHitAt = -100;
   respawnAt = 0;
-  checkpoint = 0;
   outRound = 0;
   outTime = 0;
+  /** Datos de la ronda en curso. */
+  best = 0;
+  finishedAt = Infinity;
+  finishPlace = 0;
+  kosRound = 0;
+  dmgRound = 0;
+  repesca = false;
+  lastGX = 0; lastGY = 0; lastGZ = 0;
+  /** Acumulados del torneo (recompensas). */
+  roundsCleared = 0;
+  coresTotal = 0;
   totalDamageDealt = 0;
   participant = false;
+  inRound = false;
+  lastEmoteAt = -100;
+  /** Perfil persistente: identificador y cosméticos desbloqueados. */
+  token: string | null = null;
+  owned = new Set<string>();
   brain: BotBrain | null = null;
 
   constructor(
@@ -80,15 +105,27 @@ export class Player implements NetPlayer {
   }
 }
 
-interface Weapon { id: number; type: WeaponType; x: number; y: number; z: number; landed: boolean; landedAt: number }
+interface Weapon { id: number; type: PickupType; x: number; y: number; z: number; landed: boolean; landedAt: number }
+interface Core { id: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; landed: boolean }
+
+export interface MatchEndEntry {
+  player: Player;
+  result: MatchResult;
+}
 
 const PUBLIC_COUNTDOWN = 15;
 const START_COUNTDOWN = 4;
-const INTRO_TIME = 4;
-const ROUND_END_TIME = 7;
-const FINAL_TIME = 14;
-/** Fracción máxima de jugadores (por encima de 2) eliminable en las rondas 1-4. */
-const ROUND_CUT = [0.35, 0.4, 0.45, 0.6];
+const INTRO_TIME = 6;
+const ROUND_END_TIME = 8;
+const FINAL_TIME = 16;
+const SUDDEN_KNOCK = 1.6;
+
+/** Plazas de una ronda: siempre elimina a alguien si hay más de 2 y nunca deja menos de 1. */
+export function roundSlots(map: MapDef, n: number): number {
+  if (map.mode === 'final') return 1;
+  if (n <= 2) return 1;
+  return Math.min(n - 1, Math.max(2, Math.round(n * map.keep)));
+}
 
 export class Room {
   players = new Map<number, Player>();
@@ -99,8 +136,14 @@ export class Room {
   t = 0;
   clock = 0;
   weapons: Weapon[] = [];
+  cores: Core[] = [];
+  slots = 0;
+  private finishers = 0;
+  private sudden = false;
   private nextWeaponId = 1;
+  private nextCoreId = 1;
   private nextWeaponAt = 0;
+  private nextCoreAt = 0;
   tiles = '';
   private tileStand: Float32Array = new Float32Array(0);
   private tileShake: Float32Array = new Float32Array(0);
@@ -111,10 +154,8 @@ export class Room {
   private solids: Solid[] = [];
   private roomDirty = true;
   private lastResult: RoundResult | FinalResult | null = null;
-  /** Eliminaciones permitidas en esta ronda (rondas 1-4) y las ya ocurridas. */
-  roundCap = 0;
-  private roundOuts = 0;
-  private pendingEnd: string | null = null;
+  /** Recompensas al terminar el torneo (lo gestiona el registro de salas). */
+  onMatchEnd: ((entries: MatchEndEntry[]) => void) | null = null;
 
   constructor(public code: string, public isPublic: boolean) {}
 
@@ -134,12 +175,17 @@ export class Room {
     return this.players.size < MAX_PLAYERS;
   }
 
+  private roundPlayers(): Player[] {
+    return [...this.players.values()].filter((p) => p.inRound);
+  }
+
   // ------------------------------------------------------------- Miembros
 
   addHuman(p: Player): void {
     this.players.set(p.id, p);
     p.status = STATUS_SPECTATOR;
     p.participant = false;
+    p.inRound = false;
     if (this.hostId < 0 || !this.players.get(this.hostId) || this.players.get(this.hostId)!.bot) this.hostId = p.id;
     if (this.phase !== 'lobby' && this.phase !== 'countdown') {
       this.pushMsg(`${p.name} mira la partida y jugará en la siguiente`);
@@ -151,14 +197,15 @@ export class Room {
   removePlayer(id: number): void {
     const p = this.players.get(id);
     if (!p) return;
-    if (p.participant && p.inPlay && this.isMatchRunning()) {
+    if (p.inRound && p.inPlay && this.isMatchRunning()) {
       this.eliminate(p, 'left', true);
     }
+    p.inRound = false;
     this.players.delete(id);
     if (this.hostId === id) {
       this.hostId = this.humans()[0]?.id ?? -1;
     }
-    if (this.phase === 'countdown' && this.isPublic && this.participantsReady() < 2) {
+    if (this.phase === 'countdown' && this.isPublic && this.players.size < 2) {
       this.phase = 'lobby';
     }
     this.roomDirty = true;
@@ -179,7 +226,7 @@ export class Room {
       const nm = BOT_NAMES.find((n2) => !used.has(`Bot ${n2}`)) ?? `${i}`;
       const look: Look = {
         color: PALETTE[(i * 5 + 3) % PALETTE.length]!,
-        accessory: ACCESSORIES[(i * 3 + 1) % ACCESSORIES.length]!,
+        accessory: FREE_ACCESSORIES[(i * 3 + 1) % FREE_ACCESSORIES.length]!,
         eyes: EYES[i % EYES.length]!,
       };
       const b = new Player(allocId(), `Bot ${nm}`, look, null);
@@ -202,8 +249,12 @@ export class Room {
     return null;
   }
 
-  private participantsReady(): number {
-    return this.players.size;
+  /** Gesto: solo si el jugador lo tiene desbloqueado y respetando un tiempo de espera. */
+  emote(id: number, e: string): void {
+    const p = this.players.get(id);
+    if (!p || !p.owned.has(`emote:${e}`) || this.clock - p.lastEmoteAt < EMOTE_COOLDOWN) return;
+    p.lastEmoteAt = this.clock;
+    this.events.push({ k: 'emote', p: id, e });
   }
 
   isMatchRunning(): boolean {
@@ -288,6 +339,8 @@ export class Room {
       p.outRound = 0;
       p.outTime = 0;
       p.totalDamageDealt = 0;
+      p.roundsCleared = 0;
+      p.coresTotal = 0;
     }
     this.lastResult = null;
     this.beginRound(0);
@@ -299,7 +352,11 @@ export class Room {
     this.phase = 'intro';
     this.phaseTimer = INTRO_TIME;
     this.weapons = [];
+    this.cores = [];
+    this.finishers = 0;
+    this.sudden = false;
     this.nextWeaponAt = 2.5;
+    this.nextCoreAt = 0;
     const map = this.map;
     this.tiles = map.tileCount ? TILE_SOLID.repeat(map.tileCount) : '';
     this.tileStand = new Float32Array(map.tileCount ?? 0);
@@ -308,15 +365,13 @@ export class Room {
     this.tilesDirty = true;
     this.solids = buildSolids(map, 0, this.tiles);
     const alive = [...this.players.values()].filter((p) => p.participant && p.status !== STATUS_OUT && p.status !== STATUS_SPECTATOR);
-    // Cupo: nunca se elimina a tanta gente como para que no lleguen 2 a la final.
-    this.roundCap = r >= ROUND_COUNT - 1 ? Infinity : Math.floor(Math.max(0, alive.length - 2) * ROUND_CUT[r]!);
-    this.roundOuts = 0;
-    this.pendingEnd = null;
+    this.slots = roundSlots(map, alive.length);
     alive.forEach((p, i) => {
       const sp = map.spawns[i % map.spawns.length]!;
       Object.assign(p, newPhysState(sp[0], sp[1], sp[2]));
-      p.yaw = Math.atan2(-sp[0], -sp[2]);
+      p.yaw = map.goalZ !== undefined ? 0 : Math.atan2(-sp[0], -sp[2]);
       p.status = STATUS_ALIVE;
+      p.inRound = true;
       p.lives = map.lives;
       p.damage = 0;
       p.weapon = 'fists';
@@ -324,10 +379,21 @@ export class Room {
       p.atk = -1;
       p.atkCd = 0;
       p.invuln = 0;
-      p.checkpoint = 0;
       p.lastHitBy = -1;
+      p.carry = 0;
+      p.score = 0;
+      p.shield = 0;
+      p.shieldHits = 0;
+      p.best = sp[2];
+      p.finishedAt = Infinity;
+      p.finishPlace = 0;
+      p.kosRound = 0;
+      p.dmgRound = 0;
+      p.repesca = false;
+      p.lastGX = sp[0]; p.lastGY = sp[1]; p.lastGZ = sp[2];
       p.queue.length = 0;
     });
+    for (const p of this.players.values()) if (!alive.includes(p)) p.inRound = false;
     this.pushMsg(`RONDA ${r + 1}/${ROUND_COUNT}: ${map.name}`);
     this.roomDirty = true;
   }
@@ -337,9 +403,11 @@ export class Room {
     this.round = 0;
     this.t = 0;
     this.weapons = [];
+    this.cores = [];
     for (const p of this.players.values()) {
       p.status = STATUS_SPECTATOR;
       p.participant = false;
+      p.inRound = false;
     }
     this.roomDirty = true;
   }
@@ -355,11 +423,11 @@ export class Room {
     if (live) {
       const views: BotView[] = actors.map((p) => ({
         id: p.id, x: p.x, y: p.y, z: p.z, vx: p.vx, vz: p.vz, status: p.status,
-        weapon: p.weapon, atk: p.atk, grounded: p.grounded, invuln: p.invuln,
+        weapon: p.weapon, atk: p.atk, grounded: p.grounded, invuln: p.invuln, carry: p.carry,
       }));
-      const world = { map, t: this.t, solids: this.solids, players: views, weapons: this.weapons };
+      const world = { map, t: this.t, solids: this.solids, players: views, weapons: this.weapons, cores: this.cores };
       for (const p of actors) {
-        if (p.brain && p.inPlay) {
+        if (p.brain && p.inPlay && p.inRound) {
           const bi = p.brain.think(views.find((v) => v.id === p.id)!, world);
           p.queue = [{ s: p.ack + 1, ...bi }];
         }
@@ -375,7 +443,7 @@ export class Room {
       } else {
         inp = { ...p.last, b: p.last.b & ~(INPUT_ATTACK | INPUT_INTERACT) };
       }
-      if (!p.participant || p.status === STATUS_OUT || p.status === STATUS_SPECTATOR) continue;
+      if (!p.inRound || p.status === STATUS_OUT || p.status === STATUS_SPECTATOR) continue;
       if (p.status === STATUS_RESPAWNING) {
         if (this.t >= p.respawnAt) this.respawn(p);
         continue;
@@ -386,12 +454,14 @@ export class Room {
       const yaw = Number.isFinite(inp.yaw) ? inp.yaw : p.yaw;
       p.blocking = (b & INPUT_BLOCK) !== 0 && p.atk < 0 && p.stun <= 0;
       const ev = stepPlayer(p, {
-        mx, mz, jump: (b & INPUT_JUMP) !== 0, run: (b & INPUT_RUN) !== 0, block: p.blocking,
+        mx, mz, jump: (b & INPUT_JUMP) !== 0, run: (b & INPUT_RUN) !== 0, block: p.blocking, load: 1 - CORE_SLOW * p.carry,
       }, map, this.solids, this.t, DT);
       if (ev.barHit) this.events.push({ k: 'bar', p: p.id });
       if (p.atk < 0 && (mx !== 0 || mz !== 0) && p.stun <= 0) p.yaw = Math.atan2(mx, mz);
       p.invuln = Math.max(0, p.invuln - DT);
       p.atkCd = Math.max(0, p.atkCd - DT);
+      if (p.shield > 0) p.shield = Math.max(0, p.shield - DT);
+      if (p.grounded) { p.lastGX = p.x; p.lastGY = p.y; p.lastGZ = p.z; }
 
       if (!live) continue;
       const interact = (b & INPUT_INTERACT) !== 0;
@@ -403,16 +473,23 @@ export class Room {
     }
 
     // Colisiones entre cuerpos.
-    const bodies = actors.filter((p) => p.participant && (p.status === STATUS_ALIVE || p.status === STATUS_QUALIFIED));
+    const bodies = actors.filter((p) => p.inRound && (p.status === STATUS_ALIVE || p.status === STATUS_QUALIFIED));
     for (let i = 0; i < bodies.length; i++) {
       for (let j = i + 1; j < bodies.length; j++) separatePlayers(bodies[i]!, bodies[j]!);
     }
 
     if (!live) return;
+    if (map.mode === 'final' && !this.sudden && this.t >= map.timeLimit) {
+      this.sudden = true;
+      this.events.push({ k: 'sudden' });
+      this.pushMsg('¡MUERTE SÚBITA! Los empujones son mucho más fuertes');
+    }
     for (const p of bodies) this.updateAttack(p, bodies);
     this.updateWeapons();
+    if (map.energy) this.updateEnergy(bodies);
     if (map.tileCount) this.updateTiles(bodies);
     for (const p of bodies) this.checkFall(p);
+    this.updateRanks();
   }
 
   private startAttack(p: Player, yaw: number): void {
@@ -440,7 +517,7 @@ export class Room {
       }
       this.resolveHit(p, st, bodies);
       if (p.atkW !== 'fists' && p.uses <= 0 && p.weapon === p.atkW) {
-        this.events.push({ k: 'break', p: p.id, w: p.weapon });
+        this.events.push({ k: 'break', p: p.id, w: p.atkW });
         p.weapon = 'fists';
         p.uses = Infinity;
       }
@@ -468,7 +545,7 @@ export class Room {
       let dirZ = st.arc >= 360 ? nz : nz * 0.55 + fz * 0.45;
       const dl = Math.hypot(dirX, dirZ) || 1;
       dirX /= dl; dirZ /= dl;
-      const scale = knockbackScale(o.damage);
+      const scale = knockbackScale(o.damage) * (this.sudden ? SUDDEN_KNOCK : 1);
       let kb = st.knockback * scale;
       let lift = st.lift * (0.75 + 0.25 * scale);
       let dmg = st.damage;
@@ -476,8 +553,17 @@ export class Room {
       // Bloqueo: solo funciona mirando hacia el atacante.
       const ofx = Math.sin(o.yaw);
       const ofz = Math.cos(o.yaw);
-      const blocked = o.blocking && (ofx * -nx + ofz * -nz) > 0.2;
-      if (blocked) {
+      let blocked = o.blocking && (ofx * -nx + ofz * -nz) > 0.2;
+      if (o.shield > 0) {
+        // Escudo temporal: absorbe el golpe venga de donde venga.
+        blocked = true;
+        kb *= 0.15;
+        lift *= 0.3;
+        dmg = 0;
+        stun = 0;
+        o.shieldHits--;
+        if (o.shieldHits <= 0) o.shield = 0;
+      } else if (blocked) {
         const f = Math.max(0.3, st.blockPierce);
         kb *= f;
         lift *= f;
@@ -495,7 +581,13 @@ export class Room {
       o.lastHitAt = this.t;
       if (p.atkW === 'hammer' || p.atkW === 'quake') o.atk = -1;
       p.totalDamageDealt += dmg;
+      p.dmgRound += dmg;
       this.events.push({ k: 'hit', a: p.id, v: o.id, x: o.x, y: o.y + 0.8, z: o.z, w: p.atkW, blocked, power: kb });
+      // Un golpe que entra hace soltar núcleos: así se roban.
+      if (o.carry > 0 && o.shield <= 0 && !blocked) {
+        const n = Math.min(o.carry, p.atkW === 'fists' || p.atkW === 'sword' ? 1 : 2);
+        this.dropCores(o, n, dirX, dirZ);
+      }
     }
   }
 
@@ -509,17 +601,25 @@ export class Room {
     }
     if (!best) return;
     this.weapons = this.weapons.filter((w) => w !== best);
-    p.weapon = best.type;
-    p.uses = WEAPONS[best.type].uses;
-    p.atk = -1;
+    if (best.type === 'shield') {
+      p.shield = SHIELD_TIME;
+      p.shieldHits = SHIELD_HITS;
+    } else {
+      p.weapon = best.type;
+      p.uses = WEAPONS[best.type].uses;
+      p.atk = -1;
+    }
     this.events.push({ k: 'pick', p: p.id, w: best.type });
   }
 
   private updateWeapons(): void {
     const map = this.map;
-    if (this.t >= this.nextWeaponAt) {
-      this.nextWeaponAt = this.t + map.weaponInterval * (0.8 + Math.random() * 0.4);
-      if (this.weapons.length < map.maxWeapons) this.spawnWeapon();
+    if (map.maxWeapons > 0 && this.t >= this.nextWeaponAt) {
+      // En la final las armas caen a intervalos fijos; en el resto, con algo de variación.
+      const jitter = map.mode === 'final' ? 1 : 0.85 + Math.random() * 0.3;
+      this.nextWeaponAt = this.t + map.weaponInterval * jitter;
+      const wave = map.weaponWave ?? 1;
+      for (let i = 0; i < wave && this.weapons.length < map.maxWeapons; i++) this.spawnWeapon();
     }
     for (const w of this.weapons) {
       const ground = groundHeightAt(this.solids, w.x, w.z, w.y + 0.3, 0.3);
@@ -539,28 +639,121 @@ export class Room {
     this.weapons = this.weapons.filter((w) => w.y > map.killY && !(w.landed && this.t - w.landedAt > WEAPON_GROUND_LIFETIME));
   }
 
-  private spawnWeapon(): void {
-    const map = this.map;
-    const pool = Object.entries(map.weaponPool) as [WeaponType, number][];
+  /** Elige el tipo según el mapa, sin repetir armas especiales a la vez (reparto equilibrado). */
+  private pickWeaponType(): PickupType | null {
+    const pool = (Object.entries(this.map.weaponPool) as [PickupType, number][]).filter(([k]) => {
+      if (k === 'quake' || k === 'shield') return !this.weapons.some((w) => w.type === k);
+      return true;
+    });
     const total = pool.reduce((s, [, n]) => s + n, 0);
+    if (total <= 0) return null;
     let r = Math.random() * total;
-    let type: WeaponType = 'sword';
     for (const [k, n] of pool) {
       r -= n;
-      if (r <= 0) { type = k; break; }
+      if (r <= 0) return k;
     }
+    return pool[0]![0];
+  }
+
+  private spawnWeapon(): void {
+    const map = this.map;
+    const type = this.pickWeaponType();
+    if (!type) return;
+    // Lugar libre y lo más alejado posible de las armas que ya hay.
     const spots = [...map.weaponSpots].sort(() => Math.random() - 0.5);
+    let chosen: [number, number, number] | null = null;
+    let bestScore = -Infinity;
     for (const [x, z] of spots) {
-      if (this.weapons.some((w) => Math.hypot(w.x - x, w.z - z) < 2)) continue;
       const g = groundHeightAt(this.solids, x, z, 50, 0.3);
       if (g < map.killY + 5 || (map.tileCount && g < -1)) continue;
-      const jx = x + (Math.random() - 0.5) * 1.2;
-      const jz = z + (Math.random() - 0.5) * 1.2;
-      this.weapons.push({ id: this.nextWeaponId++, type, x: jx, y: g + 22, z: jz, landed: false, landedAt: 0 });
-      this.events.push({ k: 'wspawn', w: type, x: jx, z: jz });
-      return;
+      const near = this.weapons.reduce((m, w) => Math.min(m, Math.hypot(w.x - x, w.z - z)), 99);
+      if (near < 2) continue;
+      if (near > bestScore) { bestScore = near; chosen = [x, g, z]; }
+    }
+    if (!chosen) return;
+    const jx = chosen[0] + (Math.random() - 0.5) * 1.2;
+    const jz = chosen[2] + (Math.random() - 0.5) * 1.2;
+    this.weapons.push({ id: this.nextWeaponId++, type, x: jx, y: chosen[1] + 22, z: jz, landed: false, landedAt: 0 });
+    this.events.push({ k: 'wspawn', w: type, x: jx, z: jz });
+  }
+
+  // ------------------------------------------------------- Ronda de energía
+
+  private updateEnergy(bodies: Player[]): void {
+    const e = this.map.energy!;
+    const zone = e.zones[energyZoneIndex(e, this.t)]!;
+    // Aparición de núcleos lejos de la zona de entrega.
+    const cap = Math.min(16, this.roundPlayers().length + 4);
+    if (this.t >= this.nextCoreAt && this.cores.length < cap) {
+      this.nextCoreAt = this.t + e.coreInterval;
+      const spots = [...e.coreSpots].sort(() => Math.random() - 0.5);
+      for (const [x, z] of spots) {
+        if (Math.hypot(x - zone[0], z - zone[1]) < 7) continue;
+        if (this.cores.some((c) => Math.hypot(c.x - x, c.z - z) < 2)) continue;
+        const g = groundHeightAt(this.solids, x, z, 50, 0.3);
+        if (g < this.map.killY + 5) continue;
+        this.cores.push({ id: this.nextCoreId++, x, y: g + 0.6, z, vx: 0, vy: 0, vz: 0, landed: true });
+        break;
+      }
+    }
+    // Física de los núcleos sueltos.
+    for (const c of this.cores) {
+      if (c.landed) continue;
+      c.vy += GRAVITY * DT;
+      c.x += c.vx * DT; c.y += c.vy * DT; c.z += c.vz * DT;
+      const g = groundHeightAt(this.solids, c.x, c.z, c.y, 0.2);
+      if (c.vy <= 0 && c.y - 0.6 <= g) {
+        c.y = g + 0.6;
+        c.vx = c.vz = c.vy = 0;
+        c.landed = true;
+      }
+    }
+    // Los que caen al vacío reaparecen en un punto de la arena.
+    for (const c of this.cores) {
+      if (c.y > this.map.killY) continue;
+      const [x, z] = e.coreSpots[Math.floor(Math.random() * e.coreSpots.length)]!;
+      const g = groundHeightAt(this.solids, x, z, 50, 0.3);
+      Object.assign(c, { x, y: (g > -Infinity ? g : 0) + 0.6, z, vx: 0, vy: 0, vz: 0, landed: true });
+    }
+    // Recogida (al tocarlos) y entrega.
+    for (const p of bodies) {
+      if (p.status !== STATUS_ALIVE) continue;
+      if (p.carry < CORE_MAX_CARRY) {
+        for (let i = this.cores.length - 1; i >= 0 && p.carry < CORE_MAX_CARRY; i--) {
+          const c = this.cores[i]!;
+          if (Math.hypot(c.x - p.x, c.z - p.z) > CORE_PICK_RANGE || Math.abs(c.y - (p.y + 0.7)) > 1.4) continue;
+          this.cores.splice(i, 1);
+          p.carry++;
+          this.events.push({ k: 'core', p: p.id, a: 'pick', n: 1, pts: p.score });
+        }
+      }
+      if (p.carry > 0 && p.grounded && Math.hypot(p.x - zone[0], p.z - zone[1]) < e.zoneRadius) {
+        const pts = p.carry + (p.carry === CORE_MAX_CARRY ? 1 : 0);
+        p.score += pts;
+        p.coresTotal += p.carry;
+        this.events.push({ k: 'core', p: p.id, a: 'deliver', n: p.carry, pts: p.score });
+        p.carry = 0;
+      }
     }
   }
+
+  private dropCores(p: Player, n: number, dirX: number, dirZ: number, fell = false): void {
+    if (n <= 0) return;
+    p.carry -= n;
+    for (let i = 0; i < n; i++) {
+      if (fell) {
+        // Cayó al vacío: los núcleos quedan en el último suelo que pisó.
+        this.cores.push({ id: this.nextCoreId++, x: p.lastGX + (Math.random() - 0.5), y: p.lastGY + 0.6, z: p.lastGZ + (Math.random() - 0.5), vx: 0, vy: 0, vz: 0, landed: true });
+      } else {
+        const a = Math.atan2(dirZ, dirX) + (Math.random() - 0.5) * 1.6;
+        const sp = 4 + Math.random() * 3;
+        this.cores.push({ id: this.nextCoreId++, x: p.x, y: p.y + 1.2, z: p.z, vx: Math.cos(a) * sp, vy: 7, vz: Math.sin(a) * sp, landed: false });
+      }
+    }
+    this.events.push({ k: 'core', p: p.id, a: 'drop', n, pts: p.score });
+  }
+
+  // ------------------------------------------------------------ Baldosas
 
   private updateTiles(bodies: Player[]): void {
     const map = this.map;
@@ -616,19 +809,20 @@ export class Room {
     }
   }
 
+  // ------------------------------------------------------- Caídas y meta
+
   private checkFall(p: Player): void {
     const map = this.map;
     if (p.y >= map.killY) {
-      // Clasificación en la meta (ronda 2).
-      if (map.goalZ !== undefined && p.status === STATUS_ALIVE && p.grounded && p.z >= map.goalZ) {
-        p.status = STATUS_QUALIFIED;
-        p.invuln = 999;
-        this.events.push({ k: 'qual', p: p.id });
-        this.pushMsg(`${p.name} ha llegado a la meta`);
-      }
-      if (map.checkpoints) {
-        for (let i = map.checkpoints.length - 1; i > p.checkpoint; i--) {
-          if (p.z >= map.checkpoints[i]!.z && p.grounded) { p.checkpoint = i; break; }
+      if (map.mode === 'race' && p.grounded) {
+        p.best = Math.max(p.best, p.z);
+        if (p.status === STATUS_ALIVE && map.goalZ !== undefined && p.z >= map.goalZ) {
+          p.status = STATUS_QUALIFIED;
+          p.invuln = 999;
+          p.finishedAt = this.t;
+          p.finishPlace = ++this.finishers;
+          this.events.push({ k: 'qual', p: p.id, place: p.finishPlace });
+          this.pushMsg(`${p.name} cruza la meta en ${p.finishPlace}º lugar`);
         }
       }
       return;
@@ -645,25 +839,16 @@ export class Room {
     let by = -1;
     if (p.lastHitBy >= 0 && this.t - p.lastHitAt < KO_CREDIT_WINDOW && reason !== 'left') {
       const k = this.players.get(p.lastHitBy);
-      if (k && k !== p) { by = k.id; k.kos++; }
+      if (k && k !== p) { by = k.id; k.kos++; k.kosRound++; }
     }
+    if (p.carry > 0) this.dropCores(p, p.carry, 0, 0, true);
     p.lives = forceOut ? 0 : p.lives - 1;
     p.weapon = 'fists';
     p.uses = Infinity;
     p.atk = -1;
+    p.shield = 0;
     p.lastHitBy = -1;
-    let final = p.lives <= 0;
-    if (final && reason !== 'left' && this.round < ROUND_COUNT - 1) {
-      if (this.roundOuts < this.roundCap) {
-        this.roundOuts++;
-        if (this.roundOuts >= this.roundCap) this.pendingEnd = `Cupo de eliminados alcanzado (${this.roundCap})`;
-      } else {
-        // Sin cupo: la ronda termina y el jugador se salva para no dejar la final sin rivales.
-        final = false;
-        p.lives = 1;
-        this.pendingEnd = `${p.name} perdió su última vida: fin de la ronda (se salva por la regla de finalistas)`;
-      }
-    }
+    const final = p.lives <= 0;
     if (final) {
       p.status = STATUS_OUT;
       p.outRound = this.round + 1;
@@ -678,14 +863,10 @@ export class Room {
   private respawn(p: Player): void {
     const map = this.map;
     let sp: [number, number, number] | null = null;
-    if (map.checkpoints) {
-      sp = map.checkpoints[p.checkpoint]!.spawn;
-    } else {
-      const order = [...map.spawns].sort(() => Math.random() - 0.5);
-      for (const s of order) {
-        const g = groundHeightAt(this.solids, s[0], s[2], s[1] + 1, 0.3);
-        if (g > s[1] - 1) { sp = s; break; }
-      }
+    const order = [...map.spawns].sort(() => Math.random() - 0.5);
+    for (const s of order) {
+      const g = groundHeightAt(this.solids, s[0], s[2], s[1] + 1, 0.3);
+      if (g > s[1] - 1) { sp = s; break; }
     }
     const s = sp ?? map.spawns[0]!;
     Object.assign(p, newPhysState(s[0], s[1] + 0.5, s[2]));
@@ -695,69 +876,117 @@ export class Room {
     this.events.push({ k: 'respawn', p: p.id });
   }
 
-  // --------------------------------------------------------- Fin de ronda
+  // ------------------------------------------------- Clasificación
+
+  /** Orden provisional de la ronda según su objetivo (el mismo que decide las plazas). */
+  private ranked(): Player[] {
+    const mode = this.map.mode;
+    const ps = this.roundPlayers();
+    const alive = (p: Player) => (p.inPlay ? 1 : 0);
+    const combat = (p: Player) => p.kosRound * 100 + p.dmgRound;
+    return ps.sort((a, b) => {
+      switch (mode) {
+        case 'race':
+          return (a.finishedAt - b.finishedAt) || (alive(b) - alive(a)) || (b.best - a.best);
+        case 'energy':
+          return (b.score - a.score) || (alive(b) - alive(a)) || (b.lives - a.lives) || (b.kosRound - a.kosRound);
+        case 'brawl':
+          return (alive(b) - alive(a)) || (alive(a) ? combat(b) - combat(a) : b.outTime - a.outTime) || (a.damage - b.damage);
+        default:
+          return (alive(b) - alive(a)) || (alive(a) ? a.damage - b.damage : b.outTime - a.outTime) || (b.kosRound - a.kosRound);
+      }
+    });
+  }
+
+  private updateRanks(): void {
+    this.ranked().forEach((p, i) => { p.rank = i + 1; });
+  }
 
   private checkRoundEnd(): void {
     const map = this.map;
-    const parts = [...this.players.values()].filter((p) => p.participant && p.status !== STATUS_SPECTATOR);
-    const remaining = parts.filter((p) => p.inPlay);
+    const parts = this.roundPlayers();
+    const alive = parts.filter((p) => p.inPlay);
     const timeUp = this.t >= map.timeLimit;
-    if (this.pendingEnd) return this.endRound(this.pendingEnd);
-    if (remaining.length === 0) return this.endRound('Todos han caído');
-    if (remaining.length === 1 && parts.length > 1) return this.endRound('Solo queda uno en pie');
-    if (map.goalZ !== undefined && remaining.every((p) => p.status === STATUS_QUALIFIED)) {
-      return this.endRound('Todos los supervivientes han llegado a la meta');
+    switch (map.mode) {
+      case 'race': {
+        const racing = alive.filter((p) => p.status !== STATUS_QUALIFIED);
+        if (this.finishers >= this.slots) return this.finishRound('¡Plazas cubiertas en la meta!');
+        if (racing.length === 0) return this.finishRound(this.finishers ? 'Todos han terminado la carrera' : 'Nadie sigue en carrera');
+        if (timeUp) return this.finishRound('¡Se acabó el tiempo!');
+        return;
+      }
+      case 'brawl':
+      case 'survival':
+        if (alive.length <= this.slots) return this.finishRound(alive.length ? 'Solo quedan los clasificados' : 'Todos han caído');
+        if (timeUp) return this.finishRound('¡Se acabó el tiempo!');
+        return;
+      case 'energy':
+        if (alive.length === 0) return this.finishRound('Todos han caído');
+        if (timeUp) return this.finishRound('¡Se acabó el tiempo!');
+        return;
+      case 'final':
+        if (alive.length <= 1) return this.finishFinal(alive.length ? 'Último en pie en la Gran Final' : '');
+        if (this.t >= map.timeLimit + (map.suddenDeath ?? 0)) return this.finishFinal('timeout');
+        return;
     }
-    if (timeUp) return this.endRound('¡Se acabó el tiempo!');
   }
 
-  private endRound(reason: string): void {
-    const parts = [...this.players.values()].filter((p) => p.participant && p.status !== STATUS_SPECTATOR);
-    let survivors = parts.filter((p) => p.inPlay);
-    if (survivors.length === 0) {
-      // Nadie en pie: se salvan los últimos en caer en esta ronda.
-      const thisRound = parts.filter((p) => p.outRound === this.round + 1);
-      const lastTime = Math.max(...thisRound.map((p) => p.outTime));
-      survivors = thisRound.filter((p) => lastTime - p.outTime < 0.5);
-      for (const p of survivors) {
+  private detail(p: Player): string {
+    const mode = this.map.mode;
+    const alive = p.inPlay;
+    switch (mode) {
+      case 'race':
+        if (p.finishedAt < Infinity) return `Meta en ${p.finishPlace}º lugar (${p.finishedAt.toFixed(1)} s)`;
+        return `${alive ? 'Llegó' : 'Cayó'} a los ${Math.max(0, Math.round(p.best))} m`;
+      case 'energy':
+        return `${p.score} puntos${alive ? '' : ' · sin vidas'}`;
+      case 'brawl':
+        return `${alive ? 'Sobrevivió' : 'Cayó'} · ${p.kosRound} KO · ${Math.round(p.dmgRound)} de daño hecho`;
+      default:
+        return alive ? `Sobrevivió con ${Math.round(p.damage)}% de daño` : 'Cayó a la lava';
+    }
+  }
+
+  private finishRound(reason: string): void {
+    const map = this.map;
+    const order = this.ranked();
+    const eligible = (p: Player) => {
+      switch (map.mode) {
+        case 'race': return p.inPlay;
+        case 'energy': return true;
+        default: return p.inPlay;
+      }
+    };
+    const qualified = new Set<Player>();
+    // Supervivencia: pasan todos los que siguen vivos; resto de modos: hasta llenar plazas.
+    const cap = map.mode === 'survival' ? order.length : this.slots;
+    for (const p of order) if (qualified.size < cap && eligible(p)) qualified.add(p);
+    // Repesca: siempre deben seguir al menos 2 (si hay 2 en la ronda).
+    const minNext = Math.min(2, order.length);
+    for (const p of order) {
+      if (qualified.size >= minNext) break;
+      if (!qualified.has(p)) { qualified.add(p); p.repesca = true; }
+    }
+    const standings: Standing[] = order.map((p, i) => ({
+      id: p.id, name: p.name, bot: p.bot, status: qualified.has(p) ? STATUS_ALIVE : STATUS_OUT, kos: p.kos,
+      damage: Math.round(p.damage), outRound: qualified.has(p) ? 0 : this.round + 1, place: i + 1,
+      qualified: qualified.has(p), detail: this.detail(p) + (p.repesca ? ' · repesca' : ''),
+      ...(p.look.title ? { title: p.look.title } : {}),
+    }));
+    for (const p of order) {
+      if (qualified.has(p)) {
         p.status = STATUS_ALIVE;
         p.outRound = 0;
-      }
-      reason = `${reason}: se salvan los últimos en caer`;
-    }
-    for (const p of survivors) p.status = STATUS_ALIVE;
-
-    const isLast = this.round >= ROUND_COUNT - 1;
-    if (isLast || survivors.length <= 1) {
-      let winner: Player;
-      let why: string;
-      if (survivors.length === 1) {
-        winner = survivors[0]!;
-        why = isLast ? 'Último en pie en la Gran Final' : `Único superviviente tras la ronda ${this.round + 1}`;
+        p.roundsCleared++;
       } else {
-        survivors.sort((a, b) => a.damage - b.damage || b.kos - a.kos || b.lives - a.lives || b.totalDamageDealt - a.totalDamageDealt);
-        winner = survivors[0]!;
-        why = 'Tiempo agotado: gana el superviviente con menos daño recibido';
-        for (const p of survivors.slice(1)) {
-          p.status = STATUS_OUT;
-          p.outRound = this.round + 1;
-          p.outTime = this.clock;
-        }
+        if (p.status !== STATUS_OUT) p.outTime = this.clock;
+        p.status = STATUS_OUT;
+        p.outRound = this.round + 1;
       }
-      winner.wins++;
-      const res: FinalResult = {
-        type: 'final', winnerId: winner.id, winnerName: winner.name, reason: why,
-        standings: this.standings(winner.id),
-      };
-      this.lastResult = res;
-      this.broadcast(res);
-      this.phase = 'final';
-      this.phaseTimer = FINAL_TIME;
-      this.roomDirty = true;
-      return;
+      p.carry = 0;
     }
     const res: RoundResult = {
-      type: 'roundEnd', round: this.round + 1, reason, standings: this.standings(-1),
+      type: 'roundEnd', round: this.round + 1, name: map.name, reason, standings,
       next: `Siguiente: ronda ${this.round + 2} — ${MAPS[this.round + 1]!.name}`,
     };
     this.lastResult = res;
@@ -767,7 +996,60 @@ export class Room {
     this.roomDirty = true;
   }
 
-  private standings(winnerId: number): Standing[] {
+  private finishFinal(reason: string): void {
+    const parts = this.roundPlayers();
+    const alive = parts.filter((p) => p.inPlay);
+    let winner: Player;
+    let why: string;
+    if (alive.length === 1) {
+      winner = alive[0]!;
+      why = reason;
+    } else if (alive.length > 1) {
+      alive.sort((a, b) => a.damage - b.damage || b.kosRound - a.kosRound || b.dmgRound - a.dmgRound);
+      winner = alive[0]!;
+      why = 'Fin de la muerte súbita: gana el superviviente con menos daño recibido';
+    } else {
+      // Caída simultánea: desempatan los últimos en caer (menos daño, luego más KO).
+      const lastTime = Math.max(...parts.map((p) => p.outTime));
+      const last = parts.filter((p) => lastTime - p.outTime < 0.5);
+      last.sort((a, b) => a.damage - b.damage || b.kosRound - a.kosRound);
+      winner = last[0]!;
+      why = 'Cayeron a la vez: gana el último en caer con menos daño';
+    }
+    for (const p of parts) {
+      if (p !== winner && p.status !== STATUS_OUT) {
+        p.status = STATUS_OUT;
+        p.outRound = this.round + 1;
+        p.outTime = this.clock;
+      }
+    }
+    winner.status = STATUS_ALIVE;
+    winner.outRound = 0;
+    winner.roundsCleared++;
+    winner.wins++;
+    const standings = this.matchStandings(winner.id);
+    const res: FinalResult = {
+      type: 'final', winnerId: winner.id, winnerName: winner.name, winnerFx: winner.look.fx ?? 'fx:confetti',
+      reason: why, standings,
+    };
+    this.lastResult = res;
+    this.broadcast(res);
+    this.phase = 'final';
+    this.phaseTimer = FINAL_TIME;
+    this.roomDirty = true;
+    const entries: MatchEndEntry[] = [];
+    for (const s of standings) {
+      const p = this.players.get(s.id);
+      if (!p || p.bot) continue;
+      entries.push({
+        player: p,
+        result: { place: s.place, players: standings.length, roundsCleared: p.roundsCleared, kos: p.kos, cores: p.coresTotal, won: p === winner },
+      });
+    }
+    this.onMatchEnd?.(entries);
+  }
+
+  private matchStandings(winnerId: number): Standing[] {
     const parts = [...this.players.values()].filter((p) => p.participant);
     parts.sort((a, b) => {
       if (a.id === winnerId) return -1;
@@ -778,7 +1060,9 @@ export class Room {
     });
     return parts.map((p, i) => ({
       id: p.id, name: p.name, bot: p.bot, status: p.status, kos: p.kos, damage: Math.round(p.damage),
-      outRound: p.outRound, place: i + 1,
+      outRound: p.outRound, place: i + 1, qualified: p.id === winnerId,
+      detail: p.id === winnerId ? `Campeón · ${p.kos} KO` : `Eliminado en la ronda ${p.outRound} · ${p.kos} KO`,
+      ...(p.look.title ? { title: p.look.title } : {}),
     }));
   }
 
@@ -813,13 +1097,18 @@ export class Room {
       this.broadcast(this.roomInfo());
     }
     const inMatch = this.isMatchRunning() || this.phase === 'final';
+    const parts = this.roundPlayers();
     const base: Snapshot = {
       type: 's', t: Math.round(this.t * 1000) / 1000, phase: this.phase, round: this.round,
       timeLeft: this.phase === 'playing' ? Math.max(0, this.map.timeLimit - this.t) : this.phaseTimer,
       ack: 0,
       p: inMatch ? [...this.players.values()].filter((p) => p.participant).map((p) => encodePlayer(p)) : [],
-      w: this.weapons.map((w) => [w.id, ['fists', 'sword', 'hammer', 'quake'].indexOf(w.type), round2(w.x), round2(w.y), round2(w.z), w.landed ? 1 : 0]),
+      w: this.weapons.map((w) => [w.id, PICKUP_CODES.indexOf(w.type), round2(w.x), round2(w.y), round2(w.z), w.landed ? 1 : 0]),
+      slots: this.slots,
+      secured: this.map.mode === 'race' ? this.finishers : parts.filter((p) => p.inPlay).length,
     };
+    if (this.cores.length || this.map.energy) base.c = this.cores.map((c): NetCore => [c.id, round2(c.x), round2(c.y), round2(c.z)]);
+    if (this.sudden) base.sudden = true;
     if (this.tilesDirty || (this.tiles && this.tickCount % 30 === 0)) {
       base.tiles = this.tiles;
       this.tilesDirty = false;
@@ -841,3 +1130,4 @@ function clampUnit(v: number): number {
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
+

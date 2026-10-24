@@ -4,8 +4,9 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
   type BoxDef, type MapDef, SECTOR_PHASE, SECTOR_START, SECTOR_WARN, TILE_SHAKE, TILE_SOLID,
-  barAngle, boxOffset, cylRadius, sectorState, vanishState,
+  barAngle, boxOffset, cylRadius, energyZoneIndex, sectorState, vanishState,
 } from '../../shared/maps.ts';
+import { HAMMER_HALF, HAMMER_HEAD_LEN, HAMMER_RADIUS, buildSolids, groundHeightAt } from '../../shared/physics.ts';
 
 // ---------------------------------------------------------- Texturas
 function canvasTex(size: number, draw: (ctx: CanvasRenderingContext2D, s: number) => void, repeat = 1): THREE.CanvasTexture {
@@ -125,6 +126,9 @@ export class WorldView {
   private boxBase: THREE.Vector3[] = [];
   private cylMeshes: { mesh: THREE.Object3D; def: MapDef['cyls'][number]; sectors?: THREE.Mesh[] }[] = [];
   private barMeshes: { pivot: THREE.Object3D; def: MapDef['bars'][number] }[] = [];
+  /** Zonas de entrega (ronda de energía): disco, anillo y haz de luz. */
+  private zones: { group: THREE.Group; disc: THREE.MeshStandardMaterial; beam: THREE.Mesh; ring: THREE.Mesh }[] = [];
+  zoneY: number[] = [];
   private tileFall: Float32Array;
   private lava: THREE.Mesh | null = null;
   private lavaMat: THREE.ShaderMaterial | null = null;
@@ -142,6 +146,7 @@ export class WorldView {
     for (const c of map.cyls) this.buildCyl(c);
     for (const b of map.bars) this.buildBar(b);
     if (map.goalZ !== undefined) this.buildGoal();
+    if (map.energy) this.buildZones();
     scene.add(this.group);
   }
 
@@ -371,6 +376,19 @@ export class WorldView {
       pivot.add(cap2);
     }
     this.group.add(pivot);
+    if (b.hammer) {
+      // Martillo gigante: cabeza en la punta, mismos colores que el martillo de mano.
+      const head = new THREE.Mesh(new THREE.CylinderGeometry(HAMMER_RADIUS, HAMMER_RADIUS, HAMMER_HALF * 2, 20), new THREE.MeshStandardMaterial({ color: '#ff6a3d', roughness: 0.4, emissive: '#401000' }));
+      head.position.x = b.len - HAMMER_HEAD_LEN / 2;
+      head.castShadow = true;
+      const gold = new THREE.MeshStandardMaterial({ color: '#ffcf33', metalness: 0.6, roughness: 0.3, emissive: '#553300' });
+      for (const sy of [-HAMMER_HALF + 0.12, HAMMER_HALF - 0.12]) {
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(HAMMER_RADIUS + 0.05, HAMMER_RADIUS + 0.05, 0.12, 20), gold);
+        band.position.set(b.len - HAMMER_HEAD_LEN / 2, sy, 0);
+        pivot.add(band);
+      }
+      pivot.add(head);
+    }
     this.barMeshes.push({ pivot, def: b });
   }
 
@@ -532,6 +550,27 @@ export class WorldView {
     this.group.add(tufts, flowers);
   }
 
+  private buildZones(): void {
+    const e = this.map.energy!;
+    const solids = buildSolids(this.map, 0, '');
+    for (const [x, z] of e.zones) {
+      const y = groundHeightAt(solids, x, z, 20, 0.3);
+      this.zoneY.push(y);
+      const group = new THREE.Group();
+      group.position.set(x, y + 0.03, z);
+      const disc = new THREE.MeshStandardMaterial({ color: '#7fe7ff', emissive: '#2bd9ff', emissiveIntensity: 0.6, roughness: 0.3, transparent: true, opacity: 0.55, depthWrite: false });
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(e.zoneRadius, e.zoneRadius, 0.06, 40), disc);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(e.zoneRadius, 0.09, 8, 48), new THREE.MeshStandardMaterial({ color: '#ffd23f', emissive: '#ffb000', emissiveIntensity: 0.8 }));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.06;
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(e.zoneRadius * 0.9, e.zoneRadius, 14, 24, 1, true), new THREE.MeshBasicMaterial({ color: '#7fe7ff', transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }));
+      beam.position.y = 7;
+      group.add(pad, ring, beam);
+      this.group.add(group);
+      this.zones.push({ group, disc, beam, ring });
+    }
+  }
+
   /** Actualiza las piezas dinámicas para el tiempo de ronda t. */
   update(t: number, dt: number, tiles: string, now: number): void {
     const map = this.map;
@@ -581,6 +620,20 @@ export class WorldView {
     }
 
     for (const b of this.barMeshes) b.pivot.rotation.y = -barAngle(b.def, t);
+    if (this.map.energy && this.zones.length) {
+      const e = this.map.energy;
+      const active = energyZoneIndex(e, t);
+      // Parpadea los últimos 3 s antes de moverse.
+      const left = e.zoneTime - (Math.max(0, t) % e.zoneTime);
+      this.zones.forEach((z, i) => {
+        const on = i === active;
+        z.beam.visible = on;
+        z.disc.opacity = on ? 0.55 : 0.12;
+        z.disc.emissiveIntensity = on ? (left < 3 && Math.sin(now * 14) > 0 ? 0.2 : 0.8) : 0.1;
+        z.ring.visible = on;
+        z.ring.rotation.z += dt * (on ? 1.5 : 0);
+      });
+    }
     if (this.lavaMat) this.lavaMat.uniforms.uTime!.value = now;
     for (const cl of this.clouds) {
       cl.position.x += dt * 0.6;

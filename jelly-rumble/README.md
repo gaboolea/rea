@@ -98,49 +98,70 @@ publicar ese único proceso. Opciones:
 | Pausa / salir | `Esc` |
 
 **Combate.** Cada golpe suma daño (%) y, cuanto más daño tienes, más lejos sales
-volando. El bloqueo reduce el empuje si miras hacia el atacante (el martillo lo
-atraviesa en parte). Las armas caen del cielo con un haz de luz y una marca en el
-suelo, y se rompen tras unos cuantos usos.
+volando. El bloqueo (clic derecho) reduce el empuje si miras hacia el atacante. Cada arma
+tiene alcance, velocidad, empuje, tiempo de recuperación y usos distintos; se esquiva
+moviéndose y saltando. Las armas caen del cielo con un haz de luz y una marca en el suelo
+(se recogen con `E` o ✋), en oleadas repartidas por el mapa y sin repetir a la vez las
+especiales (Mazo Sísmico y escudo).
 
-| Arma | Estilo |
+| Objeto | Estilo |
 | --- | --- |
 | Puños | Rápidos, poco empuje |
 | Espada | Tajo rápido de alcance medio (10 usos) |
 | Martillo | Lento, enorme empuje e interrumpe ataques (6 usos) |
-| Mazo Sísmico (especial) | Onda expansiva en círculo (3 usos, rondas 3–5) |
+| Guantes de impacto | Puñetazo corto que lanza al rival hacia atrás (8 usos) |
+| Escudo temporal | Burbuja que anula casi todo el empuje durante 8 s o 3 golpes |
+| Mazo Sísmico (especial) | Onda expansiva en círculo (3 usos, solo en la final) |
 
-**Rondas.**
+## El torneo: 5 rondas
 
-1. **Arena de Entrenamiento** — isla circular, plataformas móviles, trampolines, islas
-   laterales con premio. 3 vidas.
-2. **El Puente Roto** — recorrido con puentes estrechos, plataformas que desaparecen,
-   barras giratorias y plataformas móviles. 2 vidas con puntos de control. Llegar a la
-   meta te clasifica.
-3. **La Arena Giratoria** — dos barras giratorias (una baja que hay que saltar y otra a
-   media altura) y sectores del suelo que parpadean en rojo y caen. 2 vidas.
-4. **Supervivencia Extrema** — dos capas de baldosas sobre lava: se derrumban al
-   pisarlas, el borde se va desmoronando y hay empujadores móviles. 1 vida.
-5. **La Gran Final** — ring que se encoge, plataformas doradas, barra giratoria y armas
-   especiales frecuentes. 1 vida.
+| Ronda | Objetivo | Quién pasa |
+| --- | --- | --- |
+| 1. **La Carrera Mortal** | Cruzar el circuito (puentes, plataformas que desaparecen y móviles, barras, martillos gigantes y un trampolín obligatorio hacia la plataforma alta). Caer elimina. | Primero quienes llegan a la meta, en orden de llegada; si sobran plazas al acabar el tiempo, los vivos que llegaron más lejos. |
+| 2. **El Ring de las Armas** | Sobrevivir en la arena giratoria (barras que aceleran y sectores del suelo que caen) mientras caen espadas, martillos, guantes y escudos. 1 vida. | Los supervivientes; si al acabar el tiempo quedan más que plazas, los que mejor combatieron (KO y daño hecho). |
+| 3. **El Robo de Energía** | Recoger núcleos ⚡ (al tocarlos, máx. 3, frenan un poco) y entregarlos en la zona brillante, que cambia de sitio cada 18 s. Un golpe te hace soltar núcleos que cualquiera puede robar; si caes, quedan donde pisaste por última vez. 3 vidas. | Los que más puntos entregaron (3 de golpe dan +1); desempata seguir vivo. Esconderse no da puntos. |
+| 4. **El Suelo Desaparece** | Aguantar sobre baldosas que caen al pisarlas, un borde que se desmorona y empujadores que van cada vez más rápido. 1 vida. | Todos los que sigan vivos al final; la ronda acaba antes si solo quedan tantos como plazas. |
+| 5. **La Gran Final** | Ser el último en pie en un ring que encoge, con plataformas que desaparecen y armas cada 6 s. Al acabar el tiempo, **muerte súbita** (empujones ×1,6) durante 30 s. | El último en pie. Si la muerte súbita termina con varios, gana el que tenga menos daño; si caen todos a la vez, el último en caer con menos daño. |
 
-**Reglas de la partida.**
+**Reglas generales.**
 
-- Todos empiezan juntos en la zona de salida. Cada ronda tiene un tiempo límite.
-- Caer al vacío (o a la lava) quita una vida; sin vidas quedas eliminado de la partida
-  y pasas a espectador (clic para cambiar de jugador seguido).
-- Al acabar una ronda, los supervivientes pasan a la siguiente. La ronda termina al
-  acabarse el tiempo (todos los que siguen en pie avanzan), cuando todos los vivos han
-  llegado a la meta (ronda 2) o al alcanzar el **cupo de eliminados**.
-- **Cupo de eliminados (rondas 1–4):** cada ronda puede eliminar como máximo una
-  fracción de los jugadores que superan los 2, para que siempre lleguen al menos 2 a la
-  final. Si el cupo es 0 (por ejemplo, partidas de 2–3 jugadores), quien pierda su
-  última vida termina la ronda pero se salva.
-- **Gran Final:** gana el último en pie. Si se acaba el tiempo, gana el superviviente
-  con menos daño recibido (desempate: más KO).
-- Si en algún momento caen todos a la vez, se salvan los últimos en caer: la partida
-  nunca se queda bloqueada.
-- Al final aparece la pantalla de victoria; la sala vuelve sola a la sala de espera
-  para jugar otra vez, o puedes volver al menú.
+- Todos empiezan en la ronda 1; antes de cada ronda aparece una tarjeta con el nombre, el
+  objetivo, las reglas y cuántas plazas hay.
+- Plazas: cada ronda clasifica a una parte de los que la empiezan (80 %, 75 %, 70 % y
+  60 % en las rondas 1–4; siempre se elimina al menos a uno si hay más de dos).
+- **Repesca**: si en una ronda se clasificaran menos de 2, pasan los mejor colocados entre
+  los eliminados hasta completar 2, para que siempre haya final. Se marca como «repesca».
+- Los eliminados no reaparecen en esa ronda (salvo las vidas de la ronda 3) y pasan a ser
+  espectadores (clic o toque para cambiar de jugador seguido).
+- Entre rondas se muestra la clasificación: quién pasa, quién queda fuera y el motivo
+  (puesto en meta, metros recorridos, puntos, KO, supervivencia).
+- Ninguna ronda puede bloquearse: todas tienen tiempo límite y condición de final.
+- Al terminar: pantalla de campeón con celebración (confeti u otro efecto desbloqueado),
+  recompensas y botones para jugar otra vez o volver al menú.
+
+## Progresión y recompensas
+
+- Al terminar un torneo ganas **monedas** y **XP** por participar, por cada ronda
+  superada, por eliminaciones, por núcleos entregados y por ganar. La XP sube de nivel.
+- En **PROGRESO** ves tu nivel, monedas y estadísticas (partidas, victorias, eliminaciones,
+  rondas superadas, núcleos entregados, mejor puesto) y la tienda de cosméticos: colores
+  extra, disfraces (accesorios nuevos), gestos (`T` o `1-5`, botón 😀 en el móvil),
+  celebraciones de victoria y títulos. Algunos piden un nivel mínimo.
+- Los cosméticos son opcionales y se añaden encima del personaje base; **no cambian
+  ninguna estadística**: un jugador veterano no pega más fuerte que uno nuevo.
+- El servidor valida todas las compras y que solo uses lo que tienes desbloqueado.
+
+**Dónde se guarda el progreso (importante):**
+
+- **Con servidor** (`npm start` / `npm run dev`): en el archivo `data/profiles.json` del
+  servidor (cambia la carpeta con `DATA_DIR=/ruta`). Cada navegador tiene un identificador
+  anónimo propio guardado en su `localStorage`; no hay cuentas ni contraseñas. Si borras
+  los datos del navegador, o juegas desde otro dispositivo, empiezas un perfil nuevo. En
+  plataformas con disco efímero (por ejemplo, planes gratuitos que reinician el
+  contenedor) hay que montar un disco persistente en `DATA_DIR` o el progreso se pierde al
+  redesplegar.
+- **Sin conexión** (archivo único o `?offline`): se guarda solo en ese navegador. Si el
+  navegador no permite guardar, el juego lo indica y el progreso se pierde al cerrar.
 
 ## Salas y bots
 
@@ -159,11 +180,13 @@ npm run typecheck
 npm test
 ```
 
-`npm test` comprueba que todas las apariciones tienen suelo y que el salto funciona,
-simula partidas completas en el servidor con 2, 4, 8 y 12 participantes (verificando
-que se juegan las 5 rondas y siempre hay campeón) y arranca el servidor real con dos
-clientes WebSocket para comprobar la sala, la sincronización de posiciones y el rechazo
-de acciones no autorizadas.
+`npm test` comprueba la física (apariciones con suelo, trampolín de la carrera, frenado al
+llevar núcleos), la tienda (compra válida, rechazo por nivel, aspectos bloqueados),
+simula torneos completos de 2, 4, 8 y 12 participantes a través del registro de salas
+(5 rondas, al menos 2 clasificados por ronda, motivo de cada puesto, campeón, recompensa
+guardada en el perfil) y arranca el servidor real con dos clientes WebSocket para comprobar
+la sala, la sincronización de posiciones, el envío del perfil y el rechazo de acciones no
+autorizadas.
 
 ## Estructura
 
@@ -182,4 +205,5 @@ tests/       pruebas sin navegador
   con mucha latencia los golpes pueden sentirse algo tardíos.
 - Las salas viven en memoria de un único proceso (no hay escalado horizontal ni
   cuentas de usuario).
-- Los bots son sencillos (persiguen, recogen armas, evitan bordes y saltan barras).
+- Los bots son sencillos: en la carrera siguen una ruta, esperan a las plataformas y saltan barras, pero muchos caen; en la ronda de energía recogen, entregan y roban. Sirven para entrenar, no son rivales expertos.
+- El progreso no tiene cuentas: depende del identificador guardado en el navegador.

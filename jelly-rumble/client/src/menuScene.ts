@@ -2,7 +2,7 @@
 // se caen de la isla (usando la misma física del juego) mientras la cámara gira.
 import * as THREE from 'three';
 import { ACCESSORIES, DT, EYES, PALETTE, type Look } from '../../shared/constants.ts';
-import { MAPS } from '../../shared/maps.ts';
+import { MENU_MAP } from '../../shared/maps.ts';
 import { type PhysState, buildSolids, groundHeightAt, newPhysState, stepPlayer } from '../../shared/physics.ts';
 import { Fx } from './fx.ts';
 import { Jelly } from './jelly.ts';
@@ -23,7 +23,7 @@ export class MenuScene {
   private t = 0;
   private acc = 0;
   private fx: Fx;
-  private map = MAPS[0]!;
+  private map = MENU_MAP;
   private solids = buildSolids(this.map, 0, '');
 
   constructor() {

@@ -1,6 +1,7 @@
 // Mensajes intercambiados por WebSocket (JSON). Las instantáneas de jugadores
 // se codifican como arrays para reducir el tamaño de cada paquete.
-import type { Look, WeaponType } from './constants.ts';
+import type { Look, PickupType, WeaponType } from './constants.ts';
+import type { PublicProfile, Reward } from './cosmetics.ts';
 import type { PhysState } from './physics.ts';
 
 export const INPUT_JUMP = 1;
@@ -8,9 +9,10 @@ export const INPUT_RUN = 2;
 export const INPUT_BLOCK = 4;
 export const INPUT_ATTACK = 8;
 export const INPUT_INTERACT = 16;
+export const INPUT_EMOTE = 32;
 
 export type ClientMsg =
-  | { type: 'hello'; v: number; name: string; look: Look }
+  | { type: 'hello'; v: number; name: string; look: Look; token?: string }
   | { type: 'profile'; name: string; look: Look }
   | { type: 'quick' }
   | { type: 'create' }
@@ -18,6 +20,8 @@ export type ClientMsg =
   | { type: 'leave' }
   | { type: 'start' }
   | { type: 'bots'; n: number }
+  | { type: 'buy'; item: string }
+  | { type: 'emote'; e: string }
   | { type: 'in'; s: number; mx: number; mz: number; yaw: number; b: number }
   | { type: 'ping'; t: number };
 
@@ -29,7 +33,8 @@ export const STATUS_OUT = 2;
 export const STATUS_QUALIFIED = 3;
 export const STATUS_SPECTATOR = 4;
 
-export const WEAPON_CODES: WeaponType[] = ['fists', 'sword', 'hammer', 'quake'];
+export const WEAPON_CODES: WeaponType[] = ['fists', 'sword', 'hammer', 'quake', 'gloves'];
+export const PICKUP_CODES: PickupType[] = ['sword', 'hammer', 'quake', 'gloves', 'shield'];
 
 export interface RoomPlayerInfo {
   id: number;
@@ -50,6 +55,11 @@ export interface Standing {
   /** Ronda en la que quedó eliminado (0 = sigue vivo). */
   outRound: number;
   place: number;
+  /** Se clasifica para la siguiente ronda. */
+  qualified: boolean;
+  /** Motivo legible de su puesto (meta, distancia, puntos, combate…). */
+  detail: string;
+  title?: string;
 }
 
 export interface RoomInfo {
@@ -78,6 +88,14 @@ export interface NetPlayer extends PhysState {
   blocking: boolean;
   invuln: number;
   kos: number;
+  /** Núcleos que lleva encima (ronda de energía). */
+  carry: number;
+  /** Puntos de la ronda (núcleos entregados). */
+  score: number;
+  /** Segundos de escudo temporal restantes. */
+  shield: number;
+  /** Puesto provisional en la ronda (1 = primero). */
+  rank: number;
 }
 
 export function encodePlayer(p: NetPlayer): number[] {
@@ -89,6 +107,7 @@ export function encodePlayer(p: NetPlayer): number[] {
     p.status, Math.round(p.damage), p.lives, WEAPON_CODES.indexOf(p.weapon),
     Number.isFinite(p.uses) ? p.uses : -1,
     r(p.atk), WEAPON_CODES.indexOf(p.atkW), r(p.invuln), p.kos,
+    p.carry, p.score, r(p.shield), p.rank,
   ];
 }
 
@@ -102,12 +121,13 @@ export function decodePlayer(a: number[]): NetPlayer {
     status: a[13]!, damage: a[14]!, lives: a[15]!, weapon: WEAPON_CODES[a[16]!] ?? 'fists',
     uses: uses < 0 ? Infinity : uses,
     atk: a[18]!, atkW: WEAPON_CODES[a[19]!] ?? 'fists', invuln: a[20]!, kos: a[21]!,
+    carry: a[22] ?? 0, score: a[23] ?? 0, shield: a[24] ?? 0, rank: a[25] ?? 0,
   };
 }
 
 export interface NetWeapon {
   id: number;
-  type: WeaponType;
+  type: PickupType;
   x: number; y: number; z: number;
   landed: boolean;
 }
@@ -116,13 +136,19 @@ export type GameEvent =
   | { k: 'hit'; a: number; v: number; x: number; y: number; z: number; w: WeaponType; blocked: boolean; power: number }
   | { k: 'swing'; p: number; w: WeaponType }
   | { k: 'out'; v: number; by: number; lifeLost: boolean; final: boolean; reason: 'void' | 'lava' | 'left' }
-  | { k: 'pick'; p: number; w: WeaponType }
-  | { k: 'break'; p: number; w: WeaponType }
-  | { k: 'wspawn'; w: WeaponType; x: number; z: number }
-  | { k: 'qual'; p: number }
+  | { k: 'pick'; p: number; w: PickupType }
+  | { k: 'break'; p: number; w: PickupType }
+  | { k: 'wspawn'; w: PickupType; x: number; z: number }
+  | { k: 'qual'; p: number; place: number }
   | { k: 'respawn'; p: number }
   | { k: 'bar'; p: number }
+  | { k: 'core'; p: number; a: 'pick' | 'deliver' | 'drop'; n: number; pts: number }
+  | { k: 'emote'; p: number; e: string }
+  | { k: 'sudden' }
   | { k: 'msg'; text: string };
+
+/** Núcleo de energía suelto: [id, x, y, z]. */
+export type NetCore = [number, number, number, number];
 
 export interface Snapshot {
   type: 's';
@@ -134,6 +160,13 @@ export interface Snapshot {
   ack: number;
   p: number[][];
   w: [number, number, number, number, number, number][];
+  /** Núcleos sueltos (ronda de energía). */
+  c?: NetCore[];
+  /** Plazas de clasificación de la ronda y cuántas están ya aseguradas. */
+  slots: number;
+  secured: number;
+  /** Muerte súbita activa (final). */
+  sudden?: boolean;
   tiles?: string;
   e?: GameEvent[];
 }
@@ -141,6 +174,7 @@ export interface Snapshot {
 export interface RoundResult {
   type: 'roundEnd';
   round: number;
+  name: string;
   reason: string;
   standings: Standing[];
   next: string;
@@ -150,6 +184,7 @@ export interface FinalResult {
   type: 'final';
   winnerId: number;
   winnerName: string;
+  winnerFx: string;
   reason: string;
   standings: Standing[];
 }
@@ -159,6 +194,8 @@ export type ServerMsg =
   | { type: 'error'; msg: string }
   | { type: 'left' }
   | { type: 'pong'; t: number }
+  | { type: 'profile'; profile: PublicProfile }
+  | { type: 'reward'; reward: Reward; levelBefore: number; levelAfter: number; profile: PublicProfile }
   | RoomInfo
   | Snapshot
   | RoundResult

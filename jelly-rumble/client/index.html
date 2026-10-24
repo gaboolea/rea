@@ -23,6 +23,7 @@
         <nav class="menu-buttons">
           <button class="btn big primary" data-action="open-play">JUGAR</button>
           <button class="btn big" data-action="open-customize">PERSONALIZAR</button>
+          <button class="btn big" data-action="open-progress">PROGRESO</button>
           <button class="btn big" data-action="open-options">OPCIONES</button>
           <button class="btn big danger" data-action="quit">SALIR</button>
         </nav>
@@ -55,6 +56,30 @@
         <div class="field">Accesorio<div id="cust-acc" class="chips"></div></div>
         <div class="field">Ojos<div id="cust-eyes" class="chips"></div></div>
         <button class="btn primary wide" data-action="save-customize">Guardar</button>
+      </div>
+    </section>
+
+    <!-- Progreso: nivel, estadísticas y tienda de cosméticos -->
+    <section id="screen-progress" class="screen panel-screen">
+      <div class="panel progress">
+        <h2>Progreso</h2>
+        <div class="level-row">
+          <b id="prog-level">Nivel 1</b>
+          <div class="xpbar"><i id="prog-xpfill"></i></div>
+          <span id="prog-xp">0 / 120 XP</span>
+        </div>
+        <div class="coins" id="prog-coins">🪙 0 monedas</div>
+        <p class="hint" id="prog-storage"></p>
+        <div class="stats" id="prog-stats"></div>
+        <div class="tabs" id="prog-tabs">
+          <button class="btn small active" data-tab="color">Colores</button>
+          <button class="btn small" data-tab="acc">Disfraces</button>
+          <button class="btn small" data-tab="emote">Gestos</button>
+          <button class="btn small" data-tab="fx">Celebraciones</button>
+          <button class="btn small" data-tab="title">Títulos</button>
+        </div>
+        <div class="shop" id="prog-shop"></div>
+        <button class="btn ghost" data-action="back">← Volver</button>
       </div>
     </section>
 
@@ -107,6 +132,14 @@
         <div class="pill alive" id="hud-alive">👥 8 vivos</div>
       </div>
       <div class="hud-map" id="hud-map"></div>
+      <div class="hud-goal" id="hud-goal"></div>
+      <div class="intro-card" id="hud-intro">
+        <small id="intro-round">RONDA 1/5</small>
+        <h3 id="intro-name"></h3>
+        <p class="goal" id="intro-goal"></p>
+        <p id="intro-rules"></p>
+        <p class="slots" id="intro-slots"></p>
+      </div>
       <div class="hud-me" id="hud-me">
         <div class="lives" id="hud-lives"></div>
         <div class="dmg"><b id="hud-dmg">0%</b><span>daño</span></div>
@@ -127,6 +160,7 @@
         <span><kbd>Clic izq.</kbd> atacar</span>
         <span><kbd>Clic der.</kbd> bloquear</span>
         <span><kbd>E</kbd> recoger arma</span>
+        <span><kbd>T</kbd> / <kbd>1-5</kbd> gestos</span>
         <span><kbd>Ratón</kbd> cámara</span>
         <span><kbd>H</kbd> ocultar ayuda · <kbd>Esc</kbd> menú</span>
       </div>
@@ -140,6 +174,7 @@
         <button class="tb jump" data-t="jump" aria-label="Saltar">⤒</button>
         <button class="tb blk" data-t="block" aria-label="Bloquear">🛡️</button>
         <button class="tb pick" data-t="interact" aria-label="Coger arma">✋</button>
+        <button class="tb emote" data-t="emote" aria-label="Gesto">😀</button>
         <div class="t-hint">Izquierda: mover · Derecha: cámara</div>
       </div>
     </section>
@@ -173,6 +208,7 @@
         <p class="winner" id="final-winner"></p>
         <p class="hint" id="final-reason"></p>
         <ol id="final-list" class="standings"></ol>
+        <div class="reward" id="final-reward"></div>
         <div class="row">
           <button class="btn primary" data-action="again">Jugar otra vez</button>
           <button class="btn" data-action="leave">Menú principal</button>

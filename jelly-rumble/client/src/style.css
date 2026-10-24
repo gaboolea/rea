@@ -305,3 +305,50 @@ body.touch .spectate { bottom: 110px; font-size: 15px; }
   .hud-map { display: none; }
   .dmg b { font-size: 30px; }
 }
+
+/* ------------------------------------------------------------ Torneo */
+.hud-goal {
+  position: absolute; top: 80px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  background: rgba(43, 29, 74, 0.72); color: #fff; padding: 3px 12px; border-radius: 10px; font-size: 14px;
+}
+.hud-goal:empty { display: none; }
+.intro-card {
+  position: absolute; top: 46%; left: 50%; transform: translate(-50%, -50%); width: min(520px, 92vw);
+  background: rgba(255, 250, 242, 0.95); border: 4px solid var(--ink); border-radius: 22px; padding: 14px 20px;
+  box-shadow: 0 8px 0 rgba(43, 29, 74, 0.35); text-align: center; display: none; font-weight: 600;
+}
+.intro-card.on { display: block; animation: pop 0.3s cubic-bezier(.3,1.6,.5,1); }
+.intro-card small { font-size: 14px; letter-spacing: 2px; opacity: 0.7; }
+.intro-card h3 { margin: 2px 0 6px; font-size: clamp(24px, 4vw, 36px); color: var(--pink-d); }
+.intro-card p { margin: 4px 0; font-size: 14px; }
+.intro-card .goal { font-size: 18px; font-weight: 700; }
+.intro-card .slots { background: var(--yellow); border-radius: 10px; padding: 4px 8px; display: inline-block; }
+.standings li .det { font-size: 12px; opacity: 0.75; margin-left: 4px; }
+.standings li .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: #c9f7c1; }
+.standings li.out .badge { background: #ffc7d2; }
+.standings li .ttl { font-size: 11px; opacity: 0.7; font-style: italic; }
+.reward { width: 100%; text-align: left; background: #fff7d6; border: 2px dashed var(--ink); border-radius: 12px; padding: 8px 12px; font-size: 14px; display: none; }
+.reward.on { display: block; }
+.reward b { font-size: 16px; }
+.progress .level-row { display: flex; align-items: center; gap: 10px; }
+.xpbar { flex: 1; height: 14px; background: #fff; border: 2px solid var(--ink); border-radius: 8px; overflow: hidden; }
+.xpbar i { display: block; height: 100%; background: var(--cyan); width: 0; }
+.coins { font-weight: 700; font-size: 18px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.stats div { background: #fff; border: 2px solid var(--ink); border-radius: 10px; padding: 4px 6px; text-align: center; font-size: 12px; }
+.stats b { display: block; font-size: 18px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.shop { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.item { display: flex; align-items: center; gap: 8px; background: #fff; border: 2px solid var(--ink); border-radius: 12px; padding: 6px 8px; font-size: 13px; font-weight: 600; }
+.item .ico { font-size: 22px; width: 28px; text-align: center; }
+.item .dot { width: 22px; height: 22px; }
+.item .meta { flex: 1; min-width: 0; }
+.item .meta small { display: block; font-weight: 400; opacity: 0.7; }
+.item .btn { font-size: 12px; padding: 3px 8px; border-radius: 8px; box-shadow: 0 2px 0 rgba(43,29,74,.3); }
+.item.equipped { border-color: var(--pink); border-width: 3px; }
+.tb.emote { right: calc(190px + env(safe-area-inset-right)); bottom: 120px; width: 50px; height: 50px; font-size: 22px; }
+.locked { opacity: 0.55; }
+@media (max-width: 700px) {
+  .shop { grid-template-columns: 1fr; }
+  .hud-goal { top: 50px; font-size: 12px; max-width: 94vw; overflow: hidden; text-overflow: ellipsis; }
+}

@@ -274,7 +274,7 @@ const SHARED = {
 const lowSphere = new THREE.SphereGeometry(1, 10, 8);
 
 
-export function makeWeaponMesh(type: WeaponType): THREE.Group {
+export function makeWeaponMesh(type: WeaponType | 'shield'): THREE.Group {
   const g = new THREE.Group();
   if (type === 'sword') {
     const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 0.04), SHARED.steel);
@@ -308,6 +308,26 @@ export function makeWeaponMesh(type: WeaponType): THREE.Group {
     ring.position.y = 1.15;
     ring.rotation.x = Math.PI / 2;
     g.add(handle, head, ring);
+  } else if (type === 'gloves') {
+    // Guante de boxeo grande con puño dorado.
+    const glove = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 12), SHARED.red);
+    glove.scale.set(1, 0.9, 1.15);
+    glove.position.y = 0.35;
+    const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), SHARED.red);
+    thumb.position.set(0.24, 0.3, 0.08);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.2, 14), SHARED.gold);
+    cuff.position.y = 0.05;
+    g.add(glove, thumb, cuff);
+  } else if (type === 'shield') {
+    // Escudo redondo (solo aparece en el suelo; al cogerlo se activa la burbuja).
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.12, 24), SHARED.steel);
+    disc.rotation.x = Math.PI / 2;
+    disc.position.y = 0.6;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.06, 8, 28), SHARED.gold);
+    rim.position.y = 0.6;
+    const boss = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), SHARED.gold);
+    boss.position.set(0, 0.6, 0.08);
+    g.add(disc, rim, boss);
   }
   g.traverse((o) => { o.castShadow = true; });
   return g;
@@ -397,6 +417,47 @@ function makeAccessory(kind: Look['accessory'], color: string): THREE.Object3D |
       g.add(stem, leaf, leaf2);
       break;
     }
+    case 'halo': {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.04, 10, 28), new THREE.MeshStandardMaterial({ color: '#fff3a8', emissive: '#ffd84a', emissiveIntensity: 0.9, roughness: 0.3 }));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.32;
+      g.add(ring);
+      break;
+    }
+    case 'chef': {
+      const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7 });
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.16, 18), m);
+      band.position.y = 0.06;
+      const puff = new THREE.Mesh(lowSphere, m);
+      puff.scale.set(0.3, 0.22, 0.3);
+      puff.position.y = 0.26;
+      g.add(band, puff);
+      break;
+    }
+    case 'viking': {
+      const helm = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), SHARED.steel);
+      helm.position.y = -0.04;
+      const m = new THREE.MeshStandardMaterial({ color: '#fff3d6', roughness: 0.6 });
+      for (const sd of [-1, 1]) {
+        const h = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.32, 10), m);
+        h.position.set(0.3 * sd, 0.12, 0);
+        h.rotation.z = -0.9 * sd;
+        g.add(h);
+      }
+      g.add(helm);
+      break;
+    }
+    case 'flowers': {
+      const cols = ['#ff7ab8', '#ffe14d', '#ffffff', '#b28cff', '#ff9a4d', '#7fe7ff'];
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const f = new THREE.Mesh(lowSphere, new THREE.MeshStandardMaterial({ color: cols[i], roughness: 0.5 }));
+        f.scale.setScalar(0.075);
+        f.position.set(Math.cos(a) * 0.22, 0.04, Math.sin(a) * 0.22);
+        g.add(f);
+      }
+      break;
+    }
     default:
       return null;
   }
@@ -441,6 +502,8 @@ export interface JellyPose {
   invuln: number;
   /** Clasificado o ganador: cara feliz. */
   happy?: boolean;
+  /** Escudo temporal activo: muestra la burbuja protectora. */
+  shielded?: boolean;
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -523,7 +586,7 @@ export class Jelly {
       this.root.add(f);
     }
 
-    this.weapons = { fists: null, sword: makeWeaponMesh('sword'), hammer: makeWeaponMesh('hammer'), quake: makeWeaponMesh('quake') };
+    this.weapons = { fists: null, sword: makeWeaponMesh('sword'), hammer: makeWeaponMesh('hammer'), quake: makeWeaponMesh('quake'), gloves: makeWeaponMesh('gloves') };
     for (const w of Object.values(this.weapons)) {
       if (!w) continue;
       w.visible = false;
@@ -670,7 +733,7 @@ export class Jelly {
     if (p.atk >= 0) {
       const st = WEAPONS[p.atkW];
       const k = p.atk < st.windup ? p.atk / Math.max(0.001, st.windup) : 1 + (p.atk - st.windup) / 0.3;
-      if (p.atkW === 'fists') {
+      if (p.atkW === 'fists' || p.atkW === 'gloves') {
         const ext = k < 1 ? -0.1 * k : Math.sin(Math.min(1, k - 1) * Math.PI) * 0.65;
         restR.set(0.35, 0.75, 0.3 + ext);
         restL.set(-0.45, 0.7, 0.35);
@@ -691,7 +754,7 @@ export class Jelly {
     this.handR.position.lerp(restR, Math.min(1, dt * 25));
     this.placeArm(this.armL, tmpA.set(-0.5, 0.72, 0.02), this.handL.position);
     this.placeArm(this.armR, tmpB.set(0.5, 0.72, 0.02), this.handR.position);
-    this.shield.visible = p.blocking;
+    this.shield.visible = p.blocking || !!p.shielded;
 
     // Parpadeo de invulnerabilidad (sin transparencias: alterna visibilidad).
     this.body.visible = !(p.invuln > 0 && p.invuln < 50 && Math.sin(this.time * 30) < -0.2);

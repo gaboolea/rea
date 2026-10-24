@@ -2,7 +2,8 @@
 // escenario del menú y la vista de partida.
 import * as THREE from 'three';
 import './style.css';
-import { ACCESSORIES, ACCESSORY_NAMES, EYES, EYE_NAMES, MAX_PLAYERS, PALETTE, sanitizeName } from '../../shared/constants.ts';
+import { ACCESSORIES, ACCESSORY_NAMES, EYES, EYE_NAMES, FREE_ACCESSORIES, MAX_PLAYERS, PALETTE, sanitizeName } from '../../shared/constants.ts';
+import { COSMETICS, COSMETIC_BY_ID, type CosmeticKind, type PublicProfile } from '../../shared/cosmetics.ts';
 import { MAPS } from '../../shared/maps.ts';
 import type { FinalResult, RoomInfo, RoundResult, Standing } from '../../shared/protocol.ts';
 import { STATUS_OUT } from '../../shared/protocol.ts';
@@ -12,7 +13,7 @@ import { MenuScene } from './menuScene.ts';
 import { Net } from './net.ts';
 import { isTouchDevice } from './touch.ts';
 import { options, profile, saveOptions, saveProfile } from './settings.ts';
-import { $, isShown, show, toast, wireButtonSounds } from './ui.ts';
+import { $, banner, isShown, show, toast, wireButtonSounds } from './ui.ts';
 
 const canvas = $('view') as HTMLCanvasElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -45,6 +46,8 @@ const menu = new MenuScene();
 let game: GameView | null = null;
 let room: RoomInfo | null = null;
 let pendingTraining = false;
+let currentProfile: PublicProfile | null = null;
+let shopTab: CosmeticKind = 'color';
 let optionsReturn: string[] = ['screen-menu'];
 
 // ---------------------------------------------------------------- Pantallas
@@ -63,6 +66,7 @@ function goGame(): void {
     game = new GameView(canvas, net, net.id, onPause);
     game.resize(window.innerWidth, window.innerHeight);
     if (room) game.setRoom(room);
+    if (currentProfile) game.setOwned(currentProfile.owned);
     $('hud-help').classList.toggle('off', !options.showHelp);
   }
   if (!isShown('hud')) {
@@ -80,6 +84,7 @@ function onPause(): void {
 
 const actions: Record<string, () => void> = {
   'open-play': () => { if (!net.connected) return toast('Conectando con el servidor…'); show('screen-play'); },
+  'open-progress': () => { renderProgress(); show('screen-progress'); },
   'open-customize': () => { buildCustomize(); show('screen-customize'); menu.setPreview(profile.look); },
   'open-options': () => {
     optionsReturn = game ? ['hud', 'screen-pause'] : ['screen-menu'];
@@ -156,7 +161,8 @@ function buildCustomize(): void {
   ($('cust-name') as HTMLInputElement).value = profile.name;
   const sw = $('cust-colors');
   sw.innerHTML = '';
-  for (const c of PALETTE) {
+  const ownedColors = COSMETICS.filter((c) => c.kind === 'color' && owns(c.id)).map((c) => c.value);
+  for (const c of [...PALETTE, ...ownedColors]) {
     const b = document.createElement('button');
     b.className = `swatch${profile.look.color === c ? ' sel' : ''}`;
     b.style.background = c;
@@ -175,7 +181,8 @@ function buildCustomize(): void {
       el.append(b);
     }
   };
-  chips('cust-acc', ACCESSORIES, ACCESSORY_NAMES, profile.look.accessory, (v) => { profile.look.accessory = v as never; });
+  const accs = ACCESSORIES.filter((a) => FREE_ACCESSORIES.includes(a) || owns(`acc:${a}`));
+  chips('cust-acc', accs, ACCESSORY_NAMES, profile.look.accessory, (v) => { profile.look.accessory = v as never; });
   chips('cust-eyes', EYES, EYE_NAMES, profile.look.eyes, (v) => { profile.look.eyes = v as never; });
 }
 
@@ -235,23 +242,135 @@ function renderLobby(info: RoomInfo): void {
   ($('screen-lobby').querySelector('[data-action="start"]') as HTMLButtonElement).disabled = info.players.length < 2;
 }
 
-function renderStandings(listId: string, standings: Standing[], round: number): void {
+function renderStandings(listId: string, standings: Standing[]): void {
   const ol = $(listId);
   ol.innerHTML = '';
   for (const s of standings) {
     const li = document.createElement('li');
-    const out = s.status === STATUS_OUT && s.outRound > 0;
-    li.className = `${out ? 'out' : ''} ${s.id === net.id ? 'me' : ''}`;
+    li.className = `${s.qualified ? '' : 'out'} ${s.id === net.id ? 'me' : ''}`;
     const look = room?.players.find((p) => p.id === s.id)?.look.color ?? '#ccc';
-    li.innerHTML = `<span class="pos">${s.place}.</span><span class="dot" style="background:${look}"></span>`;
-    li.append(document.createTextNode(`${s.name}${s.bot ? ' 🤖' : ''}`));
+    const pos = document.createElement('span');
+    pos.className = 'pos';
+    pos.textContent = `${s.place}.`;
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = look;
+    li.append(pos, dot, document.createTextNode(`${s.name}${s.bot ? ' 🤖' : ''}`));
+    if (s.title) {
+      const t = document.createElement('span');
+      t.className = 'ttl';
+      t.textContent = COSMETIC_BY_ID.get(s.title)?.value ?? '';
+      li.append(t);
+    }
     const st = document.createElement('span');
     st.className = 'st';
-    st.textContent = `${out ? (s.outRound === round ? 'eliminado esta ronda' : `eliminado en ronda ${s.outRound}`) : 'sigue en pie ✔'} · ${s.kos} KO`;
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = listId === 'final-list' ? (s.qualified ? '🏆 CAMPEÓN' : `${s.place}º`) : s.qualified ? 'PASA' : 'FUERA';
+    const det = document.createElement('span');
+    det.className = 'det';
+    det.textContent = s.detail;
+    st.append(badge, det);
     li.append(st);
     ol.append(li);
   }
 }
+
+// ---------------------------------------------------------- Progreso
+
+function owns(id: string): boolean {
+  return !!currentProfile?.owned.includes(id);
+}
+
+function equipped(c: (typeof COSMETICS)[number]): boolean {
+  const l = profile.look;
+  return (c.kind === 'color' && l.color === c.value) || (c.kind === 'acc' && l.accessory === c.value)
+    || (c.kind === 'title' && l.title === c.id) || (c.kind === 'fx' && (l.fx ?? 'fx:confetti') === c.id);
+}
+
+function equip(c: (typeof COSMETICS)[number]): void {
+  if (c.kind === 'color') profile.look.color = c.value;
+  if (c.kind === 'acc') profile.look.accessory = c.value as never;
+  if (c.kind === 'title') {
+    if (profile.look.title === c.id) delete profile.look.title;
+    else profile.look.title = c.id;
+  }
+  if (c.kind === 'fx') profile.look.fx = c.id;
+  saveProfile();
+  net.send({ type: 'profile', name: profile.name, look: profile.look });
+  renderProgress();
+}
+
+function renderProgress(): void {
+  const p = currentProfile;
+  if (!p) {
+    $('prog-storage').textContent = 'Conectando con el servidor para cargar tu perfil…';
+    return;
+  }
+  $('prog-level').textContent = `Nivel ${p.level}`;
+  ($('prog-xpfill') as HTMLElement).style.width = `${Math.min(100, (p.levelXp / Math.max(1, p.nextXp)) * 100)}%`;
+  $('prog-xp').textContent = `${p.levelXp} / ${p.nextXp} XP`;
+  $('prog-coins').textContent = `🪙 ${p.coins} monedas`;
+  $('prog-storage').textContent = p.storage === 'server'
+    ? 'Tu progreso se guarda en el servidor del juego, ligado a este navegador.'
+    : p.storage === 'browser'
+      ? 'Modo sin conexión: tu progreso se guarda solo en este navegador.'
+      : 'Este navegador no permite guardar: el progreso se perderá al cerrar la página.';
+  const st = p.stats;
+  $('prog-stats').innerHTML = '';
+  for (const [label, v] of [['Partidas', st.matches], ['Victorias', st.wins], ['Eliminaciones', st.kos], ['Rondas superadas', st.roundsCleared], ['Núcleos entregados', st.coresDelivered], ['Mejor puesto', st.bestPlace ? `${st.bestPlace}º` : '—']] as const) {
+    const d = document.createElement('div');
+    const b = document.createElement('b');
+    b.textContent = String(v);
+    d.append(b, document.createTextNode(label));
+    $('prog-stats').append(d);
+  }
+  for (const b of $('prog-tabs').querySelectorAll<HTMLElement>('[data-tab]')) b.classList.toggle('active', b.dataset.tab === shopTab);
+  const shop = $('prog-shop');
+  shop.innerHTML = '';
+  for (const c of COSMETICS.filter((x) => x.kind === shopTab)) {
+    const it = document.createElement('div');
+    const have = owns(c.id);
+    it.className = `item${have && equipped(c) ? ' equipped' : ''}${!have && p.level < c.level ? ' locked' : ''}`;
+    const ico = document.createElement('span');
+    if (c.kind === 'color') { ico.className = 'dot'; ico.style.background = c.value; }
+    else { ico.className = 'ico'; ico.textContent = c.kind === 'emote' ? c.value : c.kind === 'fx' ? '🎉' : c.kind === 'title' ? '🏷️' : '🎩'; }
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.append(document.createTextNode(c.name));
+    const small = document.createElement('small');
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    if (have) {
+      if (c.kind === 'emote') {
+        const idx = p.owned.filter((id) => id.startsWith('emote:')).indexOf(c.id);
+        small.textContent = `Tecla ${idx + 1} · T aleatorio`;
+        btn.textContent = 'Probar';
+        btn.onclick = () => { if (game) game.emote(idx); else toast(`${c.value} se usa en partida con la tecla ${idx + 1}`); };
+      } else {
+        small.textContent = equipped(c) ? 'Equipado' : 'Desbloqueado';
+        btn.textContent = equipped(c) ? (c.kind === 'title' ? 'Quitar' : 'Puesto') : 'Equipar';
+        btn.disabled = equipped(c) && c.kind !== 'title';
+        btn.onclick = () => equip(c);
+      }
+    } else {
+      small.textContent = c.level > p.level ? `🔒 Nivel ${c.level} · ${c.price} 🪙` : `${c.price} 🪙`;
+      btn.textContent = 'Comprar';
+      btn.disabled = c.level > p.level || p.coins < c.price;
+      btn.onclick = () => net.send({ type: 'buy', item: c.id });
+    }
+    meta.append(small);
+    it.append(ico, meta, btn);
+    shop.append(it);
+  }
+}
+
+$('prog-tabs').addEventListener('click', (e) => {
+  const t = (e.target as HTMLElement).closest<HTMLElement>('[data-tab]');
+  if (!t) return;
+  shopTab = t.dataset.tab as CosmeticKind;
+  renderProgress();
+});
 
 // ---------------------------------------------------------------- Red
 
@@ -313,6 +432,33 @@ net.onMessage((msg) => {
     case 'final':
       showFinal(msg);
       break;
+    case 'profile':
+      currentProfile = msg.profile;
+      game?.setOwned(msg.profile.owned);
+      if (isShown('screen-progress')) renderProgress();
+      if (isShown('screen-customize')) buildCustomize();
+      break;
+    case 'reward': {
+      currentProfile = msg.profile;
+      game?.setOwned(msg.profile.owned);
+      const r = $('final-reward');
+      r.innerHTML = '';
+      const head = document.createElement('b');
+      head.textContent = `+${msg.reward.coins} 🪙 · +${msg.reward.xp} XP${msg.levelAfter > msg.levelBefore ? ` · ¡Subes a nivel ${msg.levelAfter}!` : ''}`;
+      r.append(head);
+      for (const line of msg.reward.lines) {
+        const d = document.createElement('div');
+        d.textContent = line;
+        r.append(d);
+      }
+      const where = document.createElement('div');
+      where.className = 'hint';
+      where.textContent = msg.profile.storage === 'server' ? 'Guardado en el servidor.' : msg.profile.storage === 'browser' ? 'Guardado en este navegador.' : 'No se puede guardar en este navegador.';
+      r.append(where);
+      r.classList.add('on');
+      if (msg.levelAfter > msg.levelBefore) audio.qualify();
+      break;
+    }
     case 'pong':
       break;
   }
@@ -322,7 +468,8 @@ function showRoundEnd(r: RoundResult): void {
   if (!game) goGame();
   $('round-title').textContent = `Fin de la ronda ${r.round}`;
   $('round-reason').textContent = r.reason;
-  renderStandings('round-list', r.standings, r.round);
+  renderStandings('round-list', r.standings);
+  $('round-title').textContent = `Fin de la ronda ${r.round}: ${r.name}`;
   $('round-next').textContent = r.next;
   show('hud', 'screen-round');
   if (document.pointerLockElement) document.exitPointerLock();
@@ -336,8 +483,13 @@ function showFinal(f: FinalResult): void {
   $('final-title').textContent = won ? '¡ERES EL CAMPEÓN!' : '¡TENEMOS CAMPEÓN!';
   $('final-winner').textContent = f.winnerName;
   $('final-reason').textContent = f.reason;
-  renderStandings('final-list', f.standings, MAPS.length);
-  show('hud', 'screen-final');
+  renderStandings('final-list', f.standings);
+  $('final-reward').classList.remove('on');
+  game?.setWinner(f.winnerId, f.winnerFx);
+  // Primero la celebración en 3D (cámara al campeón y confeti); luego el resumen.
+  show('hud');
+  banner(won ? '¡ERES EL CAMPEÓN!' : `¡${f.winnerName} GANA!`, f.reason, 3200);
+  window.setTimeout(() => { if (game && room?.phase === 'final') show('hud', 'screen-final'); }, 3500);
   if (document.pointerLockElement) document.exitPointerLock();
   if (won) audio.victory(); else audio.defeat();
 }

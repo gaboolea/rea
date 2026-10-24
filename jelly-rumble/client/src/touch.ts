@@ -23,7 +23,7 @@ export class TouchControls {
   private cleanup: (() => void)[] = [];
   private static RADIUS = 60;
 
-  constructor(private root: HTMLElement, private stick: HTMLElement, private knob: HTMLElement, onPause: () => void) {
+  constructor(private root: HTMLElement, private stick: HTMLElement, private knob: HTMLElement, onPause: () => void, onEmote: () => void = () => {}) {
     const on = <K extends keyof HTMLElementEventMap>(el: HTMLElement | Window, type: K, fn: (e: HTMLElementEventMap[K]) => void) => {
       el.addEventListener(type, fn as EventListener, { passive: false });
       this.cleanup.push(() => el.removeEventListener(type, fn as EventListener));
@@ -83,6 +83,7 @@ export class TouchControls {
         if (kind === 'block') this.block = v;
         if (kind === 'interact' && v) this.interactQueued = true;
         if (kind === 'pause' && v) onPause();
+        if (kind === 'emote' && v) onEmote();
       };
       on(btn, 'pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); btn.setPointerCapture?.(e.pointerId); set(true); });
       on(btn, 'pointerup', () => set(false));

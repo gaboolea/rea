@@ -2,12 +2,13 @@
 // del jugador local (y lo reconcilia con la autoridad), interpola al resto,
 // gestiona la cámara, las entradas, los efectos y el HUD.
 import * as THREE from 'three';
-import { DT, PICKUP_RANGE, WEAPONS, type WeaponType } from '../../shared/constants.ts';
+import { CORE_SLOW, DT, PICKUP_NAMES, PICKUP_RANGE, WEAPONS, type PickupType, type WeaponType } from '../../shared/constants.ts';
+import { COSMETIC_BY_ID } from '../../shared/cosmetics.ts';
 import { MAPS, ROUND_COUNT, cylRadius, type MapDef } from '../../shared/maps.ts';
 import { type MoveInput, type PhysState, type Solid, buildSolids, clonePhys, groundHeightAt, stepPlayer } from '../../shared/physics.ts';
 import {
   type GameEvent, INPUT_ATTACK, INPUT_BLOCK, INPUT_INTERACT, INPUT_JUMP, INPUT_RUN, type NetPlayer, type RoomInfo,
-  STATUS_ALIVE, STATUS_OUT, STATUS_QUALIFIED, STATUS_RESPAWNING, type Snapshot, WEAPON_CODES, decodePlayer,
+  PICKUP_CODES, STATUS_ALIVE, STATUS_OUT, STATUS_QUALIFIED, STATUS_RESPAWNING, type Snapshot, decodePlayer,
 } from '../../shared/protocol.ts';
 import { audio } from './audio.ts';
 import { Fx } from './fx.ts';
@@ -18,12 +19,15 @@ import { $, banner, feed, toast } from './ui.ts';
 import { TouchControls, isTouchDevice } from './touch.ts';
 import { WorldView } from './world.ts';
 
-const WEAPON_ICON: Record<WeaponType, string> = { fists: '✊', sword: '🗡️', hammer: '🔨', quake: '🔮' };
+const WEAPON_ICON: Record<WeaponType, string> = { fists: '✊', sword: '🗡️', hammer: '🔨', quake: '🔮', gloves: '🥊' };
+const CORE_COLOR = '#5ff2ff';
 const INTERP_DELAY = 0.1;
+const CORE_GEO = new THREE.IcosahedronGeometry(0.32, 0);
+const CORE_MAT = new THREE.MeshStandardMaterial({ color: '#bff9ff', emissive: '#22d8ff', emissiveIntensity: 1.1, roughness: 0.2 });
 
 interface Pending { seq: number; inp: MoveInput; t: number }
 interface Frame { time: number; players: Map<number, NetPlayer> }
-interface WeaponVis { group: THREE.Group; mesh: THREE.Group; marker: THREE.Mesh; beam: THREE.Mesh; type: WeaponType; x: number; y: number; z: number; landed: boolean }
+interface WeaponVis { group: THREE.Group; mesh: THREE.Group; marker: THREE.Mesh; beam: THREE.Mesh; type: PickupType; x: number; y: number; z: number; landed: boolean }
 
 export class GameView {
   scene = new THREE.Scene();
@@ -72,6 +76,14 @@ export class GameView {
   private shake = 0;
   private spectateIdx = 0;
   private lastCountdown = -1;
+  private slots = 0;
+  private secured = 0;
+  private sudden = false;
+  private cores = new Map<number, THREE.Mesh>();
+  private carried = new Map<number, THREE.Group>();
+  private emotes = new Map<number, { sprite: THREE.Sprite; until: number; happy: boolean }>();
+  private owned: string[] = [];
+  private winner: { id: number; fx: string; next: number } | null = null;
   private lastStatus = -1;
   private disposed = false;
   private listeners: [EventTarget, string, EventListener][] = [];
@@ -89,7 +101,7 @@ export class GameView {
       this.touch = new TouchControls($('touch'), $('t-stick'), $('t-knob'), () => {
         this.touch?.reset();
         this.onPause();
-      });
+      }, () => this.emote());
       this.camDist = 9;
     }
   }
@@ -107,6 +119,8 @@ export class GameView {
       this.keys.add(e.code);
       if (e.code === 'Space') { this.jumpQueued = true; e.preventDefault(); }
       if (e.code === 'KeyE') this.interactQueued = true;
+      if (e.code === 'KeyT') this.emote();
+      if (/^Digit[1-5]$/.test(e.code)) this.emote(Number(e.code.slice(5)) - 1);
       if (e.code === 'KeyH') {
         options.showHelp = !options.showHelp;
         $('hud-help').classList.toggle('off', !options.showHelp);
@@ -217,7 +231,7 @@ export class GameView {
     for (const [id, code, x, y, z, landed] of s.w) {
       seen.add(id);
       let w = this.weapons.get(id);
-      const type = WEAPON_CODES[code] ?? 'sword';
+      const type = PICKUP_CODES[code] ?? 'sword';
       if (!w) w = this.createWeapon(id, type, x, y, z);
       w.x = x; w.y = y; w.z = z;
       if (landed && !w.landed) {
@@ -234,8 +248,131 @@ export class GameView {
       }
     }
 
+    this.slots = s.slots;
+    this.secured = s.secured;
+    if (s.sudden) this.sudden = true;
+    this.syncCores(s.c ?? []);
+
     for (const e of s.e ?? []) this.handleEvent(e);
     this.reconcile();
+  }
+
+  // --------------------------------------------------- Núcleos de energía
+
+  private syncCores(list: [number, number, number, number][]): void {
+    const seen = new Set<number>();
+    for (const [id, x, y, z] of list) {
+      seen.add(id);
+      let m = this.cores.get(id);
+      if (!m) {
+        m = new THREE.Mesh(CORE_GEO, CORE_MAT);
+        m.position.set(x, y, z);
+        this.scene.add(m);
+        this.cores.set(id, m);
+      }
+      m.userData.target = [x, y, z];
+    }
+    for (const [id, m] of this.cores) {
+      if (!seen.has(id)) {
+        m.removeFromParent();
+        this.cores.delete(id);
+      }
+    }
+  }
+
+  /** Núcleos que lleva cada jugador: giran sobre su cabeza. */
+  private updateCarried(id: number, j: Jelly, carry: number, now: number): void {
+    let g = this.carried.get(id);
+    if (!g && carry > 0) {
+      g = new THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const m = new THREE.Mesh(CORE_GEO, CORE_MAT);
+        m.scale.setScalar(0.6);
+        g.add(m);
+      }
+      this.scene.add(g);
+      this.carried.set(id, g);
+    }
+    if (!g) return;
+    g.visible = carry > 0 && j.root.visible;
+    g.position.copy(j.root.position);
+    g.children.forEach((c, i) => {
+      c.visible = i < carry;
+      const a = now * 3 + (i / 3) * Math.PI * 2;
+      c.position.set(Math.cos(a) * 0.55, 2.55 + Math.sin(now * 5 + i) * 0.08, Math.sin(a) * 0.55);
+      c.rotation.y = now * 4;
+    });
+  }
+
+  // ------------------------------------------------------------- Gestos
+
+  private showEmote(id: number, emoji: string): void {
+    const old = this.emotes.get(id);
+    old?.sprite.removeFromParent();
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d')!;
+    g.fillStyle = 'rgba(255,250,242,0.95)';
+    g.beginPath();
+    g.arc(64, 58, 50, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.moveTo(54, 100); g.lineTo(64, 124); g.lineTo(76, 100);
+    g.fill();
+    g.font = '64px serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(emoji, 64, 62);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    sprite.scale.setScalar(1.1);
+    sprite.renderOrder = 11;
+    this.scene.add(sprite);
+    this.emotes.set(id, { sprite, until: performance.now() / 1000 + 2.2, happy: emoji !== '💢' });
+    this.jellies.get(id)?.poke(2.5);
+  }
+
+  /** Lanza un gesto desbloqueado (tecla T o botón táctil). */
+  emote(slot = -1): void {
+    const owned = this.emoteIds();
+    if (!owned.length) return;
+    const id = slot >= 0 ? owned[slot] : owned[Math.floor(Math.random() * owned.length)];
+    if (id) this.net.send({ type: 'emote', e: id.slice('emote:'.length) });
+  }
+
+  setOwned(owned: string[]): void {
+    this.owned = owned;
+  }
+
+  private emoteIds(): string[] {
+    return this.owned.filter((id) => id.startsWith('emote:'));
+  }
+
+  // ----------------------------------------------------------- Victoria
+
+  /** Celebración final: cámara al campeón y efecto elegido (confeti por defecto). */
+  setWinner(id: number, fx: string): void {
+    this.winner = { id, fx, next: 0 };
+  }
+
+  private celebrate(now: number): void {
+    const w = this.winner;
+    if (!w || now < w.next) return;
+    w.next = now + 0.18;
+    const j = this.jellies.get(w.id);
+    const base = j?.root.position ?? new THREE.Vector3();
+    const kind = COSMETIC_BY_ID.get(w.fx)?.value ?? 'confetti';
+    const at = { x: base.x + (Math.random() - 0.5) * 5, y: base.y + 3 + Math.random() * 3, z: base.z + (Math.random() - 0.5) * 5 };
+    if (kind === 'fireworks') {
+      this.fx.burst(at, [['#ff5a7a', '#ffd23f'], ['#3bb4ff', '#ffffff'], ['#7be35b', '#ffe14d']][Math.floor(Math.random() * 3)]!, 40, 10, 1.2, -4, 1.1);
+    } else if (kind === 'hearts') {
+      this.fx.burst(at, ['#ff5a7a', '#ff7ae0', '#ffffff'], 16, 3, 1.6, -2, 1.3);
+    } else if (kind === 'stars') {
+      this.fx.burst(at, ['#ffd23f', '#fff3a8', '#ffb000'], 22, 6, 1.4, -6, 1.2);
+    } else {
+      this.fx.burst(at, ['#ff5a7a', '#ffd23f', '#3bb4ff', '#7be35b', '#b06dff', '#ffffff'], 26, 6, 1.8, -7, 0.9);
+    }
   }
 
   private loadRound(r: number): void {
@@ -253,7 +390,11 @@ export class GameView {
     this.frames = [];
     this.lastCountdown = -1;
     this.needWarm = true;
-    $('hud-map').textContent = `${this.map.name} — ${this.map.rules}`;
+    $('hud-map').textContent = `${this.map.name} — 🎯 ${this.map.objective}`;
+    this.sudden = false;
+    this.winner = null;
+    for (const m of this.cores.values()) m.removeFromParent();
+    this.cores.clear();
     audio.playMusic(this.map.theme.music + 1);
     // Cámara detrás del jugador mirando al centro.
     const sp = this.map.spawns[0]!;
@@ -261,12 +402,12 @@ export class GameView {
     if (this.map.goalZ !== undefined) this.camYaw = 0;
   }
 
-  private createWeapon(id: number, type: WeaponType, x: number, y: number, z: number): WeaponVis {
+  private createWeapon(id: number, type: PickupType, x: number, y: number, z: number): WeaponVis {
     const group = new THREE.Group();
     const mesh = makeWeaponMesh(type);
     mesh.scale.setScalar(1.25);
     group.add(mesh);
-    const color = type === 'quake' ? '#b06dff' : type === 'hammer' ? '#ff8a3d' : '#7fe7ff';
+    const color = type === 'quake' ? '#b06dff' : type === 'hammer' ? '#ff8a3d' : type === 'gloves' ? '#ff3b5c' : type === 'shield' ? '#ffd23f' : '#7fe7ff';
     const marker = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.9, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
     marker.rotation.x = -Math.PI / 2;
     this.scene.add(marker);
@@ -330,9 +471,10 @@ export class GameView {
       }
       case 'pick': {
         const pos = this.posOf(e.p);
-        if (pos) this.fx.sparkle(pos, '#ffd23f', 20);
+        if (pos) this.fx.sparkle(pos, e.w === 'shield' ? '#7fe7ff' : '#ffd23f', 20);
         if (e.p === me) {
           audio.pickup();
+          if (e.w === 'shield') banner('¡ESCUDO!', 'Bloquea los golpes unos segundos');
           const el = $('hud-weapon');
           el.classList.remove('flash');
           void el.offsetWidth;
@@ -341,14 +483,40 @@ export class GameView {
         break;
       }
       case 'break':
-        if (e.p === me) { toast(`¡Tu ${WEAPONS[e.w].name} se ha roto!`); audio.weaponBreak(); }
+        if (e.p === me) { toast(`¡Tu ${PICKUP_NAMES[e.w]} se ha roto!`); audio.weaponBreak(); }
         break;
       case 'wspawn':
-        feed(`📦 ¡Cae ${e.w === 'hammer' ? 'un Martillo' : e.w === 'sword' ? 'una Espada' : 'un Mazo Sísmico'} del cielo!`);
+        feed(`📦 ¡Cae del cielo: ${PICKUP_NAMES[e.w]}!`);
         audio.weaponIncoming();
         break;
       case 'qual':
-        if (e.p === me) { banner('¡CLASIFICADO!', 'Espera a que termine la ronda'); audio.qualify(); }
+        if (e.p === me) { banner(`¡META! ${e.place}º`, 'Clasificado: espera a que termine la ronda'); audio.qualify(); }
+        else feed(`🏁 ${this.nameOf(e.p)} llega a la meta (${e.place}º)`);
+        break;
+      case 'core': {
+        const pos = this.posOf(e.p);
+        if (e.a === 'pick') {
+          if (pos) this.fx.sparkle(pos, CORE_COLOR, 10);
+          if (e.p === me) audio.pickup();
+        } else if (e.a === 'deliver') {
+          if (pos) { this.fx.burst(pos.clone().setY(pos.y + 1.5), [CORE_COLOR, '#ffffff', '#ffd23f'], 30, 7, 0.9); this.fx.ring(pos, CORE_COLOR, 4, 0.6); }
+          if (e.p === me) { banner(`+${e.n} ⚡`, `Llevas ${e.pts} puntos`); audio.qualify(); }
+          else feed(`⚡ ${this.nameOf(e.p)} entrega ${e.n} núcleo${e.n > 1 ? 's' : ''}`);
+        } else {
+          if (pos) this.fx.burst(pos.clone().setY(pos.y + 1), [CORE_COLOR, '#ffffff'], 16, 6, 0.6);
+          if (e.p === me) toast(`¡Te han hecho soltar ${e.n} núcleo${e.n > 1 ? 's' : ''}!`);
+        }
+        break;
+      }
+      case 'emote': {
+        const em = COSMETIC_BY_ID.get(`emote:${e.e}`);
+        if (em) this.showEmote(e.p, em.value);
+        break;
+      }
+      case 'sudden':
+        banner('¡MUERTE SÚBITA!', 'Los empujones son mucho más fuertes');
+        audio.countdown(true);
+        this.shake = 0.4;
         break;
       case 'respawn': {
         const p = this.latest.get(e.p);
@@ -456,7 +624,7 @@ export class GameView {
       audio.swing(me.weapon);
     }
     const t = this.serverT + (this.seq - this.ack) * DT;
-    const inp: MoveInput = { mx, mz, jump: (b & INPUT_JUMP) !== 0, run: (b & INPUT_RUN) !== 0, block: blocking };
+    const inp: MoveInput = { mx, mz, jump: (b & INPUT_JUMP) !== 0, run: (b & INPUT_RUN) !== 0, block: blocking, load: 1 - CORE_SLOW * me.carry };
     this.prevPos.set(this.pred.x, this.pred.y, this.pred.z);
     const ev = stepPlayer(this.pred, inp, this.map, solidsAt(this.map, t, this.tiles), t, DT);
     this.pending.push({ seq: this.seq, inp, t });
@@ -471,6 +639,11 @@ export class GameView {
   }
 
   // ---------------------------------------------------------- Render
+
+  private emoteHappy(id: number, now: number): boolean {
+    const e = this.emotes.get(id);
+    return !!e && e.happy && now < e.until;
+  }
 
   private interpolated(id: number, renderTime: number): NetPlayer | null {
     const fr = this.frames;
@@ -526,7 +699,8 @@ export class GameView {
     const j = new Jelly(info?.look ?? { color: '#ff5a7a', accessory: 'crown', eyes: 'round' }, 'warm');
     j.root.traverse((o) => { o.visible = true; });
     warm.add(j.root);
-    for (const t of ['sword', 'hammer', 'quake'] as const) warm.add(makeWeaponMesh(t));
+    for (const t of ['sword', 'hammer', 'quake', 'gloves', 'shield'] as const) warm.add(makeWeaponMesh(t));
+    warm.add(new THREE.Mesh(CORE_GEO, CORE_MAT));
     const marker = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.9, 8), new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false }));
     warm.add(marker);
     // Delante de la cámara para dibujarlo de verdad una vez (enlaza los programas).
@@ -586,12 +760,19 @@ export class GameView {
           vx: p.vx, vy: p.vy, vz: p.vz, grounded: p.grounded, yaw: this.faceYaw,
           atk: this.localAtk, atkW: this.localAtkW, weapon: server.weapon,
           blocking: (this.mouseR || this.keys.has('KeyF') || !!this.touch?.block) && this.localAtk < 0 && p.stun <= 0,
-          stun: p.stun, invuln: server.invuln, happy: server.status === STATUS_QUALIFIED,
+          stun: p.stun, invuln: server.invuln, happy: server.status === STATUS_QUALIFIED || this.emoteHappy(id, now) || this.winner?.id === id,
+          shielded: server.shield > 0,
         });
       } else {
         const p = (id === this.myId ? server : this.interpolated(id, renderTime)) ?? server;
         j.root.position.set(p.x, p.y, p.z);
-        j.update(dt, { ...p, happy: p.status === STATUS_QUALIFIED });
+        j.update(dt, { ...p, happy: p.status === STATUS_QUALIFIED || this.emoteHappy(id, now) || this.winner?.id === id, shielded: p.shield > 0 });
+      }
+      this.updateCarried(id, j, server.carry, now);
+      const em = this.emotes.get(id);
+      if (em) {
+        em.sprite.position.copy(j.root.position).setY(j.root.position.y + 2.9);
+        if (now > em.until) { em.sprite.removeFromParent(); this.emotes.delete(id); }
       }
       const rp = j.root.position;
       j.setGround(groundHeightAt(solids, rp.x, rp.z, rp.y + 0.3, 0.3));
@@ -612,6 +793,13 @@ export class GameView {
       if (!w.landed && Math.random() < 0.4) this.fx.sparkle(w.group.position, '#ffffff', 1);
     }
 
+    for (const m of this.cores.values()) {
+      const [x, y, z] = m.userData.target as [number, number, number];
+      m.position.lerp(this.tmpV.set(x, y + Math.sin(now * 3 + m.id) * 0.12, z), Math.min(1, dt * 14));
+      m.rotation.y += dt * 2;
+      m.rotation.x += dt;
+    }
+    if (this.phase === 'final') this.celebrate(now);
     this.fx.update(dt);
     this.updateCamera(dt);
     this.updateHud(now);
@@ -626,6 +814,15 @@ export class GameView {
       this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * s * (options.invertY ? -1 : 1), -0.12, 1.25);
     }
     let target: THREE.Vector3 | null = null;
+    const winJ = this.winner ? this.jellies.get(this.winner.id) : undefined;
+    if (winJ && this.phase === 'final') {
+      // Celebración: la cámara gira alrededor del campeón.
+      const t0 = winJ.root.position.clone().setY(winJ.root.position.y + 1.1);
+      const a = performance.now() / 1000 * 0.4;
+      this.camera.position.lerp(this.tmpV.set(t0.x + Math.sin(a) * 5.5, t0.y + 2, t0.z + Math.cos(a) * 5.5), Math.min(1, dt * 3));
+      this.camera.lookAt(t0);
+      return;
+    }
     const meJ = this.jellies.get(this.myId);
     const me = this.latest.get(this.myId);
     if (meJ && meJ.root.visible) {
@@ -665,6 +862,29 @@ export class GameView {
     }
   }
 
+  /** Línea de objetivo con el progreso propio según el tipo de ronda. */
+  private goalText(me: NetPlayer | undefined, total: number): string {
+    const m = this.map;
+    const rank = me?.rank ? `Puesto ${me.rank}/${total}` : '';
+    // Con la repesca siempre avanzan al menos 2.
+    const slots = Math.max(this.slots, Math.min(2, total));
+    switch (m.mode) {
+      case 'race':
+        return `🏁 ${this.secured}/${slots} plazas en meta · ${rank}`;
+      case 'brawl':
+        return `⚔️ Pasan ${slots} · ${rank} · ${me?.kos ?? 0} KO`;
+      case 'energy': {
+        const e = m.energy!;
+        const left = Math.ceil(e.zoneTime - (Math.max(0, this.serverT) % e.zoneTime));
+        return `⚡ ${me?.score ?? 0} pts · llevas ${me?.carry ?? 0}/3 · ${rank} · zona se mueve en ${left} s`;
+      }
+      case 'survival':
+        return `🔥 Pasan los que sigan vivos · quedan ${this.secured}`;
+      default:
+        return this.sudden ? '💀 ¡MUERTE SÚBITA! Último en pie gana' : `👑 Último en pie gana · ${this.secured} en pie`;
+    }
+  }
+
   private updateHud(_now: number): void {
     const me = this.latest.get(this.myId);
     $('hud-round').textContent = `RONDA ${this.round + 1}/${ROUND_COUNT}`;
@@ -689,6 +909,24 @@ export class GameView {
     const players = [...this.latest.values()];
     const alive = players.filter((p) => p.status === STATUS_ALIVE || p.status === STATUS_RESPAWNING || p.status === STATUS_QUALIFIED).length;
     $('hud-alive').textContent = `👥 ${alive}/${players.length} vivos`;
+    $('hud-goal').textContent = this.goalText(me, players.length);
+    const intro = $('hud-intro');
+    if (this.phase === 'intro') {
+      intro.classList.add('on');
+      $('intro-round').textContent = `RONDA ${this.round + 1}/${ROUND_COUNT}`;
+      $('intro-name').textContent = this.map.name;
+      $('intro-goal').textContent = `🎯 ${this.map.objective}`;
+      $('intro-rules').textContent = this.map.rules;
+      $('intro-slots').textContent = this.map.mode === 'final'
+        ? `${players.length} finalistas · solo uno será campeón`
+        : this.map.mode === 'survival'
+          ? `${players.length} jugadores · pasan todos los que sigan vivos (como mínimo ${this.slots})`
+          : players.length <= 2
+            ? 'Solo quedáis 2: los dos pasáis a la final, ¡pero demuestra quién manda!'
+            : `${players.length} jugadores · se clasifican ${this.slots}`;
+    } else {
+      intro.classList.remove('on');
+    }
 
     const meEl = $('hud-me');
     const wEl = $('hud-weapon');
@@ -699,7 +937,8 @@ export class GameView {
       $('hud-dmg').textContent = `${Math.round(me.damage)}%`;
       $('hud-w-icon').textContent = WEAPON_ICON[me.weapon];
       $('hud-w-name').textContent = WEAPONS[me.weapon].name;
-      $('hud-w-uses').textContent = Number.isFinite(me.uses) ? `${me.uses} usos` : this.touch ? 'Toca 👊 para golpear' : 'Clic izq. para golpear';
+      const usesTxt = Number.isFinite(me.uses) ? `${me.uses} usos` : this.touch ? 'Toca 👊 para golpear' : 'Clic izq. para golpear';
+      $('hud-w-uses').textContent = me.shield > 0 ? `${usesTxt} · 🛡️ ${Math.ceil(me.shield)} s` : usesTxt;
     } else {
       meEl.style.display = 'none';
       wEl.style.display = 'none';
@@ -712,7 +951,7 @@ export class GameView {
     if (pos && this.canControl()) {
       for (const w of this.weapons.values()) {
         if (Math.hypot(w.x - pos.x, w.z - pos.z) < PICKUP_RANGE && Math.abs(w.y - pos.y) < 2.5 && (w.landed || w.y - pos.y < 2.5)) {
-          prompt = this.touch ? `Toca ✋ para coger: ${WEAPONS[w.type].name}` : `Pulsa <kbd>E</kbd> para coger: ${WEAPONS[w.type].name}`;
+          prompt = this.touch ? `Toca ✋ para coger: ${PICKUP_NAMES[w.type]}` : `Pulsa <kbd>E</kbd> para coger: ${PICKUP_NAMES[w.type]}`;
           break;
         }
       }
@@ -744,6 +983,8 @@ export class GameView {
     this.touch?.dispose();
     this.listeners = [];
     for (const j of this.jellies.values()) j.dispose();
+    for (const g of this.carried.values()) g.removeFromParent();
+    for (const e of this.emotes.values()) e.sprite.removeFromParent();
     this.world?.dispose();
     if (document.pointerLockElement) document.exitPointerLock();
   }

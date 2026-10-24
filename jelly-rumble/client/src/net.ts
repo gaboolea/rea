@@ -4,7 +4,8 @@
 import { PROTOCOL_VERSION } from '../../shared/constants.ts';
 import type { ClientMsg, ServerMsg } from '../../shared/protocol.ts';
 import { Hub, type Session } from '../../server/hub.ts';
-import { profile } from './settings.ts';
+import { LocalProfileStore } from './localStore.ts';
+import { playerToken, profile } from './settings.ts';
 
 type Handler = (msg: ServerMsg) => void;
 export type NetStatus = 'connecting' | 'open' | 'closed' | 'local';
@@ -47,7 +48,7 @@ export class Net {
       this.retry = 0;
       this.everOpened = true;
       this.connected = true;
-      this.send({ type: 'hello', v: PROTOCOL_VERSION, name: profile.name, look: profile.look });
+      this.send({ type: 'hello', v: PROTOCOL_VERSION, name: profile.name, look: profile.look, ...(playerToken ? { token: playerToken } : {}) });
       this.setStatus('open');
       this.pingTimer = window.setInterval(() => this.send({ type: 'ping', t: performance.now() }), 2000);
     };
@@ -77,7 +78,7 @@ export class Net {
     if (this.local) return;
     this.local = true;
     this.connected = true;
-    const hub = new Hub();
+    const hub = new Hub(new LocalProfileStore());
     this.session = hub.connect({
       send: (msg) => {
         const m = typeof msg === 'string' ? (JSON.parse(msg) as ServerMsg) : msg;
@@ -86,7 +87,7 @@ export class Net {
     });
     window.setInterval(() => hub.pump(performance.now()), 1000 / 120);
     this.setStatus('local');
-    this.send({ type: 'hello', v: PROTOCOL_VERSION, name: profile.name, look: profile.look });
+    this.send({ type: 'hello', v: PROTOCOL_VERSION, name: profile.name, look: profile.look, ...(playerToken ? { token: playerToken } : {}) });
   }
 
   private deliver(msg: ServerMsg): void {
