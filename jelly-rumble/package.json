@@ -11,7 +11,8 @@
     "build": "tsc --noEmit -p . && vite build",
     "start": "tsx server/index.ts",
     "typecheck": "tsc --noEmit -p .",
-    "test": "tsx tests/run.ts"
+    "test": "tsx tests/run.ts",
+    "build:single": "npm run build && node scripts/build-single.mjs"
   },
   "engines": {
     "node": ">=20"

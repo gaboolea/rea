@@ -16,7 +16,8 @@ export interface Profile {
   look: Look;
 }
 
-const DEFAULT_OPTIONS: Options = { master: 0.8, music: 0.5, sfx: 0.8, sensitivity: 1, invertY: false, showHelp: true, quality: 'high' };
+const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+const DEFAULT_OPTIONS: Options = { master: 0.8, music: 0.5, sfx: 0.8, sensitivity: 1, invertY: false, showHelp: true, quality: coarse ? 'medium' : 'high' };
 
 function read<T>(key: string): Partial<T> {
   try {

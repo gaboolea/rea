@@ -70,6 +70,19 @@ publicar ese único proceso. Opciones:
 > desplegado en un servidor público: para jugar desde internet hay que usar una
 > de las opciones de arriba.
 
+## Jugar en el móvil
+
+- **Controles táctiles:** se activan solos en pantallas táctiles. Mitad izquierda: joystick
+  (empújalo hasta el borde para correr). Mitad derecha: arrastra para girar la cámara.
+  Botones: 👊 atacar, ⤒ saltar, 🛡️ bloquear, ✋ coger arma, ❚❚ pausa. Mejor en horizontal.
+- **Online desde el móvil:** arranca el servidor en un PC (`npm run dev` o `npm start`) y abre
+  `http://IP-DEL-PC:5173` (o `:2567`) en el móvil, conectado a la misma wifi; o usa un túnel
+  / servidor en la nube (ver abajo).
+- **Sin servidor (solo entrenamiento):** `npm run build:single` genera
+  `dist-single/jelly-rumble.html`, un único archivo que funciona sin servidor: al no poder
+  conectarse, ejecuta la misma lógica de salas dentro del navegador y juegas contra bots.
+  También se puede forzar con `?offline`.
+
 ## Cómo se juega
 
 | Acción | Control |
@@ -156,14 +169,15 @@ de acciones no autorizadas.
 
 ```
 shared/      constantes, mapas (geometría determinista), física y protocolo
-server/      servidor HTTP + WebSocket, salas autoritativas y bots
+server/      servidor HTTP + WebSocket (index.ts), registro de salas (hub.ts, también usado
+             por el modo sin conexión), salas autoritativas y bots
 client/      index.html y src/: menú, escenario 3D, personaje, HUD, sonido, red
 tests/       pruebas sin navegador
 ```
 
 ## Pendiente / limitaciones conocidas
 
-- Sin controles táctiles: por ahora se juega con teclado y ratón.
+- Los controles táctiles solo se han probado en un móvil emulado (Chromium), no en dispositivos reales.
 - El servidor no compensa la latencia en los golpes (usa las posiciones actuales);
   con mucha latencia los golpes pueden sentirse algo tardíos.
 - Las salas viven en memoria de un único proceso (no hay escalado horizontal ni

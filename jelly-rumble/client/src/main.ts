@@ -10,6 +10,7 @@ import { audio } from './audio.ts';
 import { GameView } from './game.ts';
 import { MenuScene } from './menuScene.ts';
 import { Net } from './net.ts';
+import { isTouchDevice } from './touch.ts';
 import { options, profile, saveOptions, saveProfile } from './settings.ts';
 import { $, isShown, show, toast, wireButtonSounds } from './ui.ts';
 
@@ -66,7 +67,7 @@ function onPause(): void {
 // ---------------------------------------------------------------- Acciones
 
 const actions: Record<string, () => void> = {
-  'open-play': () => { if (!net.connected) return toast('Sin conexión con el servidor. Reintentando…'); show('screen-play'); },
+  'open-play': () => { if (!net.connected) return toast('Conectando con el servidor…'); show('screen-play'); },
   'open-customize': () => { buildCustomize(); show('screen-customize'); menu.setPreview(profile.look); },
   'open-options': () => {
     optionsReturn = game ? ['hud', 'screen-pause'] : ['screen-menu'];
@@ -80,14 +81,14 @@ const actions: Record<string, () => void> = {
     window.close();
   },
   back: () => { menu.setPreview(null); show('screen-menu'); audio.playMusic(0); },
-  quick: () => net.send({ type: 'quick' }),
-  create: () => net.send({ type: 'create' }),
+  quick: () => { goFullscreen(); net.send({ type: 'quick' }); },
+  create: () => { goFullscreen(); net.send({ type: 'create' }); },
   join: () => {
     const code = ($('join-code') as HTMLInputElement).value.trim().toUpperCase();
     if (code.length !== 4) return toast('Escribe un código de 4 letras');
     net.send({ type: 'join', code });
   },
-  training: () => { pendingTraining = true; net.send({ type: 'create' }); },
+  training: () => { goFullscreen(); pendingTraining = true; net.send({ type: 'create' }); },
   'save-customize': () => {
     profile.name = sanitizeName(($('cust-name') as HTMLInputElement).value);
     saveProfile();
@@ -109,7 +110,7 @@ const actions: Record<string, () => void> = {
   'bots-plus': () => net.send({ type: 'bots', n: botCount() + 1 }),
   start: () => net.send({ type: 'start' }),
   leave: () => { net.send({ type: 'leave' }); goMenu(); },
-  resume: () => { show('hud'); game?.lock(); },
+  resume: () => { goFullscreen(); show('hud'); game?.lock(); },
   again: () => { show('hud'); toast('Te quedas en la sala: la próxima partida empezará desde la sala de espera'); },
 };
 
@@ -120,6 +121,18 @@ document.addEventListener('click', (e) => {
   fn?.();
 });
 ($('join-code') as HTMLInputElement).addEventListener('keydown', (e) => { if (e.key === 'Enter') actions.join!(); });
+
+/** En móvil: pantalla completa y horizontal (si el navegador lo permite). */
+function goFullscreen(): void {
+  if (!isTouchDevice() || document.fullscreenElement) return;
+  const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+  try {
+    const p = el.requestFullscreen?.({ navigationUI: 'hide' }) ?? el.webkitRequestFullscreen?.();
+    void Promise.resolve(p).then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape')).catch(() => {});
+  } catch {
+    /* sin pantalla completa (p. ej. dentro de un iframe) */
+  }
+}
 
 function botCount(): number {
   return room?.players.filter((p) => p.bot).length ?? 0;
@@ -232,8 +245,9 @@ function renderStandings(listId: string, standings: Standing[], round: number): 
 
 net.onStatus((s) => {
   const el = $('conn-status');
-  el.className = `conn ${s === 'open' ? 'ok' : s === 'closed' ? 'bad' : ''}`;
-  el.querySelector('span')!.textContent = s === 'open' ? 'Conectado al servidor' : s === 'closed' ? 'Sin conexión: reintentando…' : 'Conectando…';
+  el.className = `conn ${s === 'open' || s === 'local' ? 'ok' : s === 'closed' ? 'bad' : ''}`;
+  document.body.classList.toggle('offline', s === 'local');
+  el.querySelector('span')!.textContent = s === 'open' ? 'Conectado al servidor' : s === 'local' ? 'Modo sin conexión: entrena contra bots' : s === 'closed' ? 'Sin conexión: reintentando…' : 'Conectando…';
   if (s === 'closed' && (game || room)) {
     toast('Se perdió la conexión con el servidor');
     goMenu();
@@ -336,6 +350,7 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 
+if (isTouchDevice()) document.body.classList.add('touch');
 wireButtonSounds();
 bindOptions();
 applyQuality();

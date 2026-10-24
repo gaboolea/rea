@@ -15,6 +15,7 @@ import { Jelly, makeWeaponMesh } from './jelly.ts';
 import type { Net } from './net.ts';
 import { options } from './settings.ts';
 import { $, banner, feed, toast } from './ui.ts';
+import { TouchControls, isTouchDevice } from './touch.ts';
 import { WorldView } from './world.ts';
 
 const WEAPON_ICON: Record<WeaponType, string> = { fists: '✊', sword: '🗡️', hammer: '🔨', quake: '🔮' };
@@ -70,10 +71,20 @@ export class GameView {
   private lastStatus = -1;
   private disposed = false;
   private listeners: [EventTarget, string, EventListener][] = [];
+  private touch: TouchControls | null = null;
+  /** El navegador no permite capturar el ratón (p. ej. dentro de un iframe). */
+  private lockFailed = false;
 
   constructor(private canvas: HTMLCanvasElement, private net: Net, public myId: number, private onPause: () => void) {
     this.fx = new Fx(this.scene);
     this.bindInput();
+    if (isTouchDevice()) {
+      this.touch = new TouchControls($('touch'), $('t-stick'), $('t-knob'), () => {
+        this.touch?.reset();
+        this.onPause();
+      });
+      this.camDist = 9;
+    }
   }
 
   // ---------------------------------------------------------------- Entradas
@@ -94,11 +105,12 @@ export class GameView {
         $('hud-help').classList.toggle('off', !options.showHelp);
       }
       if (e.code === 'Tab') e.preventDefault();
+      if (e.code === 'Escape' && document.pointerLockElement !== this.canvas) this.onPause();
     }) as EventListener);
     this.on(window, 'keyup', ((e: KeyboardEvent) => { this.keys.delete(e.code); }) as EventListener);
     this.on(window, 'blur', () => { this.keys.clear(); this.mouseL = this.mouseR = false; });
     this.on(this.canvas, 'mousedown', ((e: MouseEvent) => {
-      if (document.pointerLockElement !== this.canvas) {
+      if (document.pointerLockElement !== this.canvas && !this.lockFailed) {
         this.lock();
         return;
       }
@@ -114,7 +126,8 @@ export class GameView {
     }) as EventListener);
     this.on(this.canvas, 'contextmenu', (e) => e.preventDefault());
     this.on(document, 'mousemove', ((e: MouseEvent) => {
-      if (document.pointerLockElement !== this.canvas) return;
+      // Sin captura del ratón: girar la cámara arrastrando con un botón pulsado.
+      if (document.pointerLockElement !== this.canvas && !(this.lockFailed && e.buttons !== 0)) return;
       // Algunos navegadores envían un salto enorme al capturar el ratón.
       if (Math.abs(e.movementX) > 300 || Math.abs(e.movementY) > 300) return;
       const s = 0.0024 * options.sensitivity;
@@ -125,9 +138,10 @@ export class GameView {
     this.on(this.canvas, 'wheel', ((e: WheelEvent) => {
       this.camDist = THREE.MathUtils.clamp(this.camDist + Math.sign(e.deltaY) * 0.8, 4, 14);
     }) as EventListener);
+    this.on(document, 'pointerlockerror', () => this.markLockFailed());
     this.on(document, 'pointerlockchange', () => {
       const locked = document.pointerLockElement === this.canvas;
-      $('hud-lock').classList.toggle('on', !locked);
+      $('hud-lock').classList.toggle('on', !locked && !this.lockFailed);
       if (!locked && !this.disposed) {
         this.mouseL = this.mouseR = false;
         this.onPause();
@@ -137,7 +151,20 @@ export class GameView {
 
   lock(): void {
     audio.unlock();
-    void this.canvas.requestPointerLock?.();
+    if (this.touch || this.lockFailed) return;
+    try {
+      const r = this.canvas.requestPointerLock?.() as unknown as Promise<void> | undefined;
+      r?.catch?.(() => this.markLockFailed());
+    } catch {
+      this.markLockFailed();
+    }
+  }
+
+  private markLockFailed(): void {
+    if (this.lockFailed) return;
+    this.lockFailed = true;
+    $('hud-lock').classList.remove('on');
+    toast('Arrastra con el ratón para girar la cámara');
   }
 
   private isSpectating(): boolean {
@@ -209,7 +236,7 @@ export class GameView {
     this.map = MAPS[r]!;
     this.world?.dispose();
     this.world = new WorldView(this.map, this.scene);
-    this.world.setShadows(options.quality !== 'low');
+    this.world.setShadows(options.quality !== 'low', options.quality === 'high' ? 2048 : 1024);
     for (const w of this.weapons.values()) { w.group.removeFromParent(); w.marker.removeFromParent(); }
     this.weapons.clear();
     this.fx.clear();
@@ -367,6 +394,8 @@ export class GameView {
     if (k.has('KeyS') || k.has('ArrowDown')) fz -= 1;
     if (k.has('KeyD') || k.has('ArrowRight')) fx += 1;
     if (k.has('KeyA') || k.has('ArrowLeft')) fx -= 1;
+    const tc = this.touch;
+    if (tc) { fx += tc.x; fz += tc.y; }
     const sy = Math.sin(this.camYaw);
     const cy = Math.cos(this.camYaw);
     let mx = sy * fz - cy * fx;
@@ -377,12 +406,15 @@ export class GameView {
     if (!control) { mx = 0; mz = 0; }
 
     let b = 0;
-    const jump = control && (k.has('Space') || this.jumpQueued);
+    const tJump = tc ? tc.takeJump() || tc.jump : false;
+    const tInteract = tc ? tc.takeInteract() : false;
+    const jump = control && (k.has('Space') || this.jumpQueued || tJump);
     if (jump) b |= INPUT_JUMP;
-    if (k.has('ShiftLeft') || k.has('ShiftRight')) b |= INPUT_RUN;
-    if (control && (this.mouseR || k.has('KeyF'))) b |= INPUT_BLOCK;
-    if (control && (this.mouseL || k.has('KeyJ'))) b |= INPUT_ATTACK;
-    if (control && this.interactQueued) b |= INPUT_INTERACT;
+    // En táctil se corre al empujar el joystick hasta el borde.
+    if (k.has('ShiftLeft') || k.has('ShiftRight') || (tc && Math.hypot(tc.x, tc.y) > 0.92)) b |= INPUT_RUN;
+    if (control && (this.mouseR || k.has('KeyF') || tc?.block)) b |= INPUT_BLOCK;
+    if (control && (this.mouseL || k.has('KeyJ') || tc?.attack)) b |= INPUT_ATTACK;
+    if (control && (this.interactQueued || tInteract)) b |= INPUT_INTERACT;
     this.jumpQueued = false;
     this.interactQueued = false;
     this.seq++;
@@ -499,7 +531,7 @@ export class GameView {
         j.update(dt, {
           vx: p.vx, vy: p.vy, vz: p.vz, grounded: p.grounded, yaw: this.faceYaw,
           atk: this.localAtk, atkW: this.localAtkW, weapon: server.weapon,
-          blocking: (this.mouseR || this.keys.has('KeyF')) && this.localAtk < 0 && p.stun <= 0,
+          blocking: (this.mouseR || this.keys.has('KeyF') || !!this.touch?.block) && this.localAtk < 0 && p.stun <= 0,
           stun: p.stun, invuln: server.invuln,
         });
       } else {
@@ -532,6 +564,12 @@ export class GameView {
   }
 
   private updateCamera(dt: number): void {
+    if (this.touch) {
+      const [dx, dy] = this.touch.takeLook();
+      const s = 0.006 * options.sensitivity;
+      this.camYaw -= dx * s;
+      this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * s * (options.invertY ? -1 : 1), -0.12, 1.25);
+    }
     let target: THREE.Vector3 | null = null;
     const meJ = this.jellies.get(this.myId);
     const me = this.latest.get(this.myId);
@@ -606,7 +644,7 @@ export class GameView {
       $('hud-dmg').textContent = `${Math.round(me.damage)}%`;
       $('hud-w-icon').textContent = WEAPON_ICON[me.weapon];
       $('hud-w-name').textContent = WEAPONS[me.weapon].name;
-      $('hud-w-uses').textContent = Number.isFinite(me.uses) ? `${me.uses} usos` : 'Clic izq. para golpear';
+      $('hud-w-uses').textContent = Number.isFinite(me.uses) ? `${me.uses} usos` : this.touch ? 'Toca 👊 para golpear' : 'Clic izq. para golpear';
     } else {
       meEl.style.display = 'none';
       wEl.style.display = 'none';
@@ -619,7 +657,7 @@ export class GameView {
     if (pos && this.canControl()) {
       for (const w of this.weapons.values()) {
         if (Math.hypot(w.x - pos.x, w.z - pos.z) < PICKUP_RANGE && Math.abs(w.y - pos.y) < 2.5 && (w.landed || w.y - pos.y < 2.5)) {
-          prompt = `Pulsa <kbd>E</kbd> para coger: ${WEAPONS[w.type].name}`;
+          prompt = this.touch ? `Toca ✋ para coger: ${WEAPONS[w.type].name}` : `Pulsa <kbd>E</kbd> para coger: ${WEAPONS[w.type].name}`;
           break;
         }
       }
@@ -642,12 +680,13 @@ export class GameView {
   }
 
   applyQuality(): void {
-    this.world?.setShadows(options.quality !== 'low');
+    this.world?.setShadows(options.quality !== 'low', options.quality === 'high' ? 2048 : 1024);
   }
 
   dispose(): void {
     this.disposed = true;
     for (const [t, type, fn] of this.listeners) t.removeEventListener(type, fn);
+    this.touch?.dispose();
     this.listeners = [];
     for (const j of this.jellies.values()) j.dispose();
     this.world?.dispose();

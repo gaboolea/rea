@@ -2,7 +2,9 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Jelly Rumble</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -31,14 +33,15 @@
     <!-- Selección de modo -->
     <section id="screen-play" class="screen panel-screen">
       <div class="panel">
-        <h2>Jugar online</h2>
-        <button class="btn wide primary" data-action="quick">⚡ Partida rápida<small>Entra en una sala pública con otros jugadores</small></button>
-        <button class="btn wide" data-action="create">🔒 Crear sala privada<small>Comparte el código con tus amigos</small></button>
-        <div class="row join-row">
+        <h2>Jugar</h2>
+        <p class="hint offline-only">Sin servidor online: puedes entrenar contra bots aquí mismo. Para jugar online con amigos hay que arrancar el servidor (ver README).</p>
+        <button class="btn wide primary online-only" data-action="quick">⚡ Partida rápida<small>Entra en una sala pública con otros jugadores</small></button>
+        <button class="btn wide online-only" data-action="create">🔒 Crear sala privada<small>Comparte el código con tus amigos</small></button>
+        <div class="row join-row online-only">
           <input id="join-code" maxlength="4" placeholder="CÓDIGO" autocomplete="off" />
           <button class="btn" data-action="join">Unirse</button>
         </div>
-        <button class="btn wide" data-action="training">🤖 Entrenar con bots<small>Sala privada con bots marcados como BOT</small></button>
+        <button class="btn wide training" data-action="training">🤖 Entrenar con bots<small>Sala privada con bots marcados como BOT</small></button>
         <button class="btn ghost" data-action="back">← Volver</button>
       </div>
     </section>
@@ -129,6 +132,16 @@
       </div>
       <div class="clicklock" id="hud-lock">Haz clic para controlar la cámara</div>
       <div class="net" id="hud-net"></div>
+      <div class="rotate-hint">📱↻ Gira el móvil en horizontal para jugar mejor</div>
+      <div class="touch-layer" id="touch">
+        <div class="stick" id="t-stick"><div class="knob" id="t-knob"></div></div>
+        <button class="tb pause" data-t="pause" aria-label="Pausa">❚❚</button>
+        <button class="tb atk" data-t="attack" aria-label="Atacar">👊</button>
+        <button class="tb jump" data-t="jump" aria-label="Saltar">⤒</button>
+        <button class="tb blk" data-t="block" aria-label="Bloquear">🛡️</button>
+        <button class="tb pick" data-t="interact" aria-label="Coger arma">✋</button>
+        <div class="t-hint">Izquierda: mover · Derecha: cámara</div>
+      </div>
     </section>
 
     <!-- Pausa -->

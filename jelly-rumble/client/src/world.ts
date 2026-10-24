@@ -494,8 +494,13 @@ export class WorldView {
     return rel < SECTOR_WARN ? SECTOR_WARN - rel : -1;
   }
 
-  setShadows(on: boolean): void {
+  setShadows(on: boolean, size = 2048): void {
     this.sun.castShadow = on;
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
   }
 
   dispose(): void {
