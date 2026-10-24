@@ -1,0 +1,32 @@
+{
+  "name": "jelly-rumble",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Juego 3D multijugador online de parkour, combate y supervivencia con criaturas gelatinosas.",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c magenta,cyan \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "vite",
+    "build": "tsc --noEmit -p . && vite build",
+    "start": "tsx server/index.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "tsx tests/run.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "three": "^0.180.0",
+    "tsx": "^4.20.6",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.12",
+    "@types/three": "^0.180.0",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}

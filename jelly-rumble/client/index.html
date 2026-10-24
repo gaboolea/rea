@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jelly Rumble</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='36' rx='22' ry='24' fill='%23ff5a7a'/%3E%3Ccircle cx='24' cy='30' r='6' fill='white'/%3E%3Ccircle cx='40' cy='30' r='6' fill='white'/%3E%3Ccircle cx='25' cy='31' r='3'/%3E%3Ccircle cx='41' cy='31' r='3'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <div id="ui">
+    <!-- Menú principal -->
+    <section id="screen-menu" class="screen">
+      <div class="menu-left">
+        <h1 class="logo"><span>JELLY</span><span>RUMBLE</span></h1>
+        <p class="tagline">5 rondas · parkour · empujones · solo uno queda en pie</p>
+        <nav class="menu-buttons">
+          <button class="btn big primary" data-action="open-play">JUGAR</button>
+          <button class="btn big" data-action="open-customize">PERSONALIZAR</button>
+          <button class="btn big" data-action="open-options">OPCIONES</button>
+          <button class="btn big danger" data-action="quit">SALIR</button>
+        </nav>
+        <div class="conn" id="conn-status"><i></i><span>Conectando…</span></div>
+      </div>
+    </section>
+
+    <!-- Selección de modo -->
+    <section id="screen-play" class="screen panel-screen">
+      <div class="panel">
+        <h2>Jugar online</h2>
+        <button class="btn wide primary" data-action="quick">⚡ Partida rápida<small>Entra en una sala pública con otros jugadores</small></button>
+        <button class="btn wide" data-action="create">🔒 Crear sala privada<small>Comparte el código con tus amigos</small></button>
+        <div class="row join-row">
+          <input id="join-code" maxlength="4" placeholder="CÓDIGO" autocomplete="off" />
+          <button class="btn" data-action="join">Unirse</button>
+        </div>
+        <button class="btn wide" data-action="training">🤖 Entrenar con bots<small>Sala privada con bots marcados como BOT</small></button>
+        <button class="btn ghost" data-action="back">← Volver</button>
+      </div>
+    </section>
+
+    <!-- Personalizar -->
+    <section id="screen-customize" class="screen panel-screen right">
+      <div class="panel">
+        <h2>Personalizar</h2>
+        <label class="field">Nombre<input id="cust-name" maxlength="14" /></label>
+        <div class="field">Color<div id="cust-colors" class="swatches"></div></div>
+        <div class="field">Accesorio<div id="cust-acc" class="chips"></div></div>
+        <div class="field">Ojos<div id="cust-eyes" class="chips"></div></div>
+        <button class="btn primary wide" data-action="save-customize">Guardar</button>
+      </div>
+    </section>
+
+    <!-- Opciones -->
+    <section id="screen-options" class="screen panel-screen">
+      <div class="panel">
+        <h2>Opciones</h2>
+        <label class="field slider">Volumen general <input type="range" id="opt-master" min="0" max="1" step="0.05" /></label>
+        <label class="field slider">Música <input type="range" id="opt-music" min="0" max="1" step="0.05" /></label>
+        <label class="field slider">Efectos <input type="range" id="opt-sfx" min="0" max="1" step="0.05" /></label>
+        <label class="field slider">Sensibilidad de cámara <input type="range" id="opt-sens" min="0.2" max="3" step="0.1" /></label>
+        <label class="field check"><input type="checkbox" id="opt-invert" /> Invertir eje vertical</label>
+        <label class="field check"><input type="checkbox" id="opt-help" /> Mostrar ayuda de controles en partida</label>
+        <label class="field">Calidad gráfica
+          <select id="opt-quality"><option value="high">Alta (sombras suaves)</option><option value="medium">Media</option><option value="low">Baja (sin sombras)</option></select>
+        </label>
+        <button class="btn primary wide" data-action="close-options">Aceptar</button>
+      </div>
+    </section>
+
+    <!-- Sala de espera -->
+    <section id="screen-lobby" class="screen panel-screen">
+      <div class="panel lobby">
+        <h2 id="lobby-title">Sala</h2>
+        <div class="code-box"><span>Código</span><b id="lobby-code">----</b><button class="btn small" data-action="copy-link">Copiar enlace</button></div>
+        <p class="hint" id="lobby-status">Esperando jugadores…</p>
+        <ul id="lobby-players" class="player-list"></ul>
+        <div class="row host-only" id="lobby-bots">
+          <span>Bots de entrenamiento</span>
+          <button class="btn small" data-action="bots-minus">−</button>
+          <b id="lobby-bot-count">0</b>
+          <button class="btn small" data-action="bots-plus">+</button>
+        </div>
+        <div class="row">
+          <button class="btn primary host-only" data-action="start">¡Empezar!</button>
+          <button class="btn danger" data-action="leave">Salir de la sala</button>
+        </div>
+        <details class="how">
+          <summary>Cómo se juega</summary>
+          <p>Sobrevive a 5 rondas. Coge armas que caen del cielo (E), golpea (clic izquierdo) y empuja a los rivales al vacío. Bloquea con clic derecho. Caer te quita una vida; sin vidas quedas eliminado. En la Gran Final gana el último en pie (o quien tenga menos daño si se acaba el tiempo).</p>
+        </details>
+      </div>
+    </section>
+
+    <!-- HUD de partida -->
+    <section id="hud" class="screen hud">
+      <div class="hud-top">
+        <div class="pill round" id="hud-round">RONDA 1/5</div>
+        <div class="pill timer" id="hud-timer">1:15</div>
+        <div class="pill alive" id="hud-alive">👥 8 vivos</div>
+      </div>
+      <div class="hud-map" id="hud-map"></div>
+      <div class="hud-me" id="hud-me">
+        <div class="lives" id="hud-lives"></div>
+        <div class="dmg"><b id="hud-dmg">0%</b><span>daño</span></div>
+      </div>
+      <div class="hud-weapon" id="hud-weapon">
+        <div class="w-icon" id="hud-w-icon">✊</div>
+        <div><b id="hud-w-name">Puños</b><small id="hud-w-uses">∞</small></div>
+      </div>
+      <div class="feed" id="hud-feed"></div>
+      <div class="banner" id="hud-banner"></div>
+      <div class="prompt" id="hud-prompt"></div>
+      <div class="spectate" id="hud-spectate"></div>
+      <div class="help" id="hud-help">
+        <b>Controles</b>
+        <span><kbd>WASD</kbd> moverse</span>
+        <span><kbd>Shift</kbd> correr</span>
+        <span><kbd>Espacio</kbd> saltar</span>
+        <span><kbd>Clic izq.</kbd> atacar</span>
+        <span><kbd>Clic der.</kbd> bloquear</span>
+        <span><kbd>E</kbd> recoger arma</span>
+        <span><kbd>Ratón</kbd> cámara</span>
+        <span><kbd>H</kbd> ocultar ayuda · <kbd>Esc</kbd> menú</span>
+      </div>
+      <div class="clicklock" id="hud-lock">Haz clic para controlar la cámara</div>
+      <div class="net" id="hud-net"></div>
+    </section>
+
+    <!-- Pausa -->
+    <section id="screen-pause" class="screen panel-screen">
+      <div class="panel">
+        <h2>Pausa</h2>
+        <p class="hint">La partida sigue en el servidor.</p>
+        <button class="btn primary wide" data-action="resume">Continuar</button>
+        <button class="btn wide" data-action="open-options">Opciones</button>
+        <button class="btn danger wide" data-action="leave">Salir al menú</button>
+      </div>
+    </section>
+
+    <!-- Resultado de ronda -->
+    <section id="screen-round" class="screen overlay">
+      <div class="panel results">
+        <h2 id="round-title">Fin de la ronda</h2>
+        <p class="hint" id="round-reason"></p>
+        <ol id="round-list" class="standings"></ol>
+        <p class="next" id="round-next"></p>
+      </div>
+    </section>
+
+    <!-- Victoria -->
+    <section id="screen-final" class="screen overlay">
+      <div class="panel results final">
+        <div class="crown">👑</div>
+        <h2 id="final-title">¡CAMPEÓN!</h2>
+        <p class="winner" id="final-winner"></p>
+        <p class="hint" id="final-reason"></p>
+        <ol id="final-list" class="standings"></ol>
+        <div class="row">
+          <button class="btn primary" data-action="again">Jugar otra vez</button>
+          <button class="btn" data-action="leave">Menú principal</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Salir -->
+    <section id="screen-quit" class="screen panel-screen">
+      <div class="panel">
+        <h2>¡Hasta pronto!</h2>
+        <p class="hint">Puedes cerrar esta pestaña. Gracias por jugar a Jelly Rumble.</p>
+        <button class="btn primary wide" data-action="back">Volver al menú</button>
+      </div>
+    </section>
+
+    <div id="toast"></div>
+  </div>
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
