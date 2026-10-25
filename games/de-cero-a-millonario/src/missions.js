@@ -197,9 +197,18 @@ export function checkMissions(game) {
     MISSIONS[s.mission].done(game, s.missionBase)
   ) {
     const m = MISSIONS[s.mission];
+    const index = s.mission;
     s.mission++;
     s.missionBase = { ...s.stats };
-    if (m.reward) {
+    if (game.online) {
+      // El servidor paga la recompensa (una sola vez y en orden).
+      game.net.request("mission", { index }).then((r) => {
+        game.applyServerMoney(r);
+        if (typeof r.mission === "number")
+          s.mission = Math.max(s.mission, r.mission);
+      });
+      if (m.reward) game.ui.floatMoney(m.reward);
+    } else if (m.reward) {
       s.money += m.reward;
       game.ui.floatMoney(m.reward);
     }

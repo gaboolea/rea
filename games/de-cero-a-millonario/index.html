@@ -45,9 +45,10 @@
           CONTINUAR<small id="t-continue-info"></small>
         </button>
         <button id="t-play" class="tbtn purple">JUGAR</button>
+        <button id="t-multi" class="tbtn orange">MULTIJUGADOR</button>
         <button id="t-custom" class="tbtn teal">PERSONALIZAR PERSONAJE</button>
         <div class="tbtn-row">
-          <button id="t-options" class="tbtn orange small">OPCIONES</button>
+          <button id="t-options" class="tbtn blue small">OPCIONES</button>
           <button id="t-credits" class="tbtn pink small">CRÉDITOS</button>
         </div>
       </nav>
@@ -129,9 +130,49 @@
           <button id="btn-manage" title="Gestión (G)">📊</button>
           <button id="btn-menu" title="Pausa (Esc)">⏸</button>
         </div>
+        <div id="net-pill" class="pill net-pill" hidden>
+          <i></i><span id="net-text"></span>
+        </div>
+        <canvas
+          id="minimap"
+          width="150"
+          height="150"
+          title="Abrir mapa"
+        ></canvas>
+        <button id="btn-home" class="home-btn" hidden>🏪 IR A MI TIENDA</button>
       </div>
     </div>
 
+    <div id="nav-arrow" hidden>
+      <div class="nav-pointer">▲</div>
+      <div class="nav-label"></div>
+    </div>
+    <div id="tutorial-card" hidden>
+      <header>
+        <span>📦 Tutorial del Mayorista <b class="tut-count"></b></span>
+        <button id="tut-skip">Saltar</button>
+      </header>
+      <ol></ol>
+    </div>
+    <div id="social" hidden>
+      <button id="btn-wave" title="Saludar (1)">👋</button>
+      <button id="btn-cheer" title="Celebrar (2)">🎉</button>
+      <button id="btn-dance" title="Bailar (3)">💃</button>
+      <button id="btn-chat" title="Chat (Enter)">💬</button>
+      <button id="btn-rank" title="Clasificación (L)">🏆</button>
+    </div>
+    <div id="chat" hidden>
+      <div id="chat-log"></div>
+      <form id="chat-form">
+        <input
+          id="chat-input"
+          maxlength="120"
+          autocomplete="off"
+          placeholder="Escribe un mensaje… (Enter)"
+        />
+        <button type="submit">Enviar</button>
+      </form>
+    </div>
     <div id="money-floats"></div>
     <div id="carry" hidden></div>
     <div id="prompt" hidden></div>

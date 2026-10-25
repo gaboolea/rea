@@ -19,6 +19,11 @@ const productGeometries = {
   carton: () => new THREE.BoxGeometry(0.15, 0.3, 0.15),
   cup: () => new THREE.CylinderGeometry(0.08, 0.065, 0.15, 12),
   cake: () => new THREE.CylinderGeometry(0.13, 0.13, 0.14, 14),
+  veg: () => new THREE.IcosahedronGeometry(0.12, 1),
+  bag: () => new THREE.BoxGeometry(0.22, 0.3, 0.09),
+  jug: () => new THREE.CylinderGeometry(0.09, 0.11, 0.32, 8),
+  can: () => new THREE.CylinderGeometry(0.07, 0.07, 0.18, 12),
+  tub: () => new THREE.CylinderGeometry(0.1, 0.09, 0.12, 14),
 };
 const geoCache = {};
 function productGeometry(shape) {
@@ -35,7 +40,25 @@ export const DISPLAYS = {
     h: 1.9,
     levels: [0.32, 0.86, 1.4],
     cols: 8,
-    accepts: (p) => p.kind === "grocery" && !p.cold,
+    accepts: (p) => p.kind === "grocery" && !p.cold && !p.frozen && !p.fresh,
+  },
+  freezer: {
+    w: 2.0,
+    d: 0.9,
+    h: 0.95,
+    levels: [0.6],
+    cols: 6,
+    rows: 2,
+    accepts: (p) => !!p.frozen,
+  },
+  produce: {
+    w: 2.4,
+    d: 1.1,
+    h: 1.0,
+    levels: [0.62, 0.9],
+    levelZ: [0.22, -0.2],
+    cols: 6,
+    accepts: (p) => !!p.fresh,
   },
   fridge: {
     w: 2.2,
@@ -74,22 +97,143 @@ export class ProductDisplay {
     this.product = null;
     this.stock = 0;
     this.slots = [];
-    levels.forEach((y) => {
+    levels.forEach((y, li) => {
       for (let r = 0; r < rows; r++) {
         for (let i = 0; i < cols; i++) {
           const x = -w / 2 + 0.22 + (i * (w - 0.44)) / (cols - 1);
-          this.slots.push(
-            new THREE.Vector3(x, y, rows > 1 ? (r - 0.5) * 0.24 : 0.04),
-          );
+          const z =
+            this.spec.levelZ?.[li] ?? (rows > 1 ? (r - 0.5) * 0.24 : 0.04);
+          this.slots.push(new THREE.Vector3(x, y, z));
         }
       }
     });
     if (kind === "shelf") this.buildShelf(w, d, h, levels, color);
     else if (kind === "fridge") this.buildFridge(w, d, h, levels);
+    else if (kind === "freezer") this.buildFreezer(w, d, h);
+    else if (kind === "produce") this.buildProduce(w, d);
     else if (kind === "vitrina") this.buildVitrina(w, d, h, levels);
     else this.buildCounterTray(w, d);
     this.instances = null;
     this.labelSprite = null;
+  }
+
+  buildFreezer(w, d, h) {
+    const body = mat(0xf2f7fa, { roughness: 0.3 });
+    this.group.add(
+      mesh(roundedBox(w, h - 0.1, d, 0.08), body, 0, (h - 0.1) / 2, 0),
+    );
+    this.group.add(
+      mesh(box(w - 0.16, 0.05, d - 0.16), mat(0xcfe8f5), 0, h - 0.13, 0, false),
+    );
+    const lid = mesh(
+      roundedBox(w, 0.06, d, 0.03),
+      new THREE.MeshStandardMaterial({
+        color: 0xdff6ff,
+        transparent: true,
+        opacity: 0.3,
+        roughness: 0.05,
+      }),
+      0,
+      h + 0.05,
+      0,
+      false,
+    );
+    this.group.add(lid);
+    this.group.add(
+      mesh(
+        box(w - 0.1, 0.12, 0.02),
+        mat(0x4fb4e8),
+        0,
+        0.35,
+        d / 2 + 0.01,
+        false,
+      ),
+    );
+    const sign = signMesh("CONGELADOS", 1.2, 0.26, {
+      bg: "#4fb4e8",
+      fg: "#ffffff",
+    });
+    sign.position.set(0, 0.62, d / 2 + 0.02);
+    this.group.add(sign);
+  }
+
+  // Puesto de frutas y verduras: cajones inclinados en dos alturas.
+  buildProduce(w, d) {
+    const wood = mat(0xb98551);
+    this.group.add(mesh(roundedBox(w, 0.5, d, 0.05), wood, 0, 0.25, 0));
+    this.group.add(mesh(roundedBox(w, 0.3, 0.5, 0.04), wood, 0, 0.66, -0.2));
+    for (let i = 0; i < 3; i++) {
+      this.group.add(
+        mesh(
+          box(w / 3 - 0.06, 0.1, 0.42),
+          mat(0xd9a066),
+          -w / 3 + (i * w) / 3,
+          0.55,
+          0.22,
+          false,
+        ),
+      );
+      this.group.add(
+        mesh(
+          box(w / 3 - 0.06, 0.1, 0.42),
+          mat(0xd9a066),
+          -w / 3 + (i * w) / 3,
+          0.83,
+          -0.2,
+          false,
+        ),
+      );
+    }
+    const sign = signMesh("FRUTAS Y VERDURAS", 1.8, 0.32, {
+      bg: "#3fbf5f",
+      fg: "#ffffff",
+    });
+    sign.position.set(0, 1.35, -0.4);
+    this.group.add(
+      sign,
+      mesh(box(0.06, 0.8, 0.06), mat(0x8b5a3c), 0, 1.0, -0.42),
+    );
+  }
+
+  // Etiqueta de precio frente al expositor.
+  setPriceTag(text) {
+    if (text === this.tagText) return;
+    this.tagText = text;
+    if (!text) {
+      if (this.tag) this.tag.visible = false;
+      return;
+    }
+    const canvas = this.tagCanvas ?? document.createElement("canvas");
+    this.tagCanvas = canvas;
+    canvas.width = 128;
+    canvas.height = 48;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff6c2";
+    ctx.fillRect(0, 0, 128, 48);
+    ctx.fillStyle = "#e63946";
+    ctx.fillRect(0, 0, 10, 48);
+    ctx.fillStyle = "#1d2b44";
+    ctx.font = 'bold 30px "Baloo 2", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 68, 26);
+    if (!this.tag) {
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.tag = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.36, 0.135),
+        new THREE.MeshBasicMaterial({ map: tex }),
+      );
+      const y =
+        this.kind === "freezer"
+          ? 0.45
+          : this.kind === "produce"
+            ? 0.44
+            : this.spec.levels[0] - 0.08;
+      this.tag.position.set(this.spec.w / 2 - 0.35, y, this.spec.d / 2 + 0.025);
+      this.group.add(this.tag);
+    } else this.tag.material.map.needsUpdate = true;
+    this.tag.visible = true;
   }
 
   buildShelf(w, d, h, levels, color) {

@@ -603,6 +603,7 @@ export class ToyCharacter {
       ? Math.sin(this.phase) * 0.08 * Math.min(1, s / 4)
       : 0;
     this.rig.rotation.x = moving ? Math.min(0.18, s * 0.025) : 0;
+    this.rig.rotation.y = 0;
     this.headPivot.rotation.z = moving
       ? -Math.sin(this.phase) * 0.06
       : Math.sin(this.phase * 0.5) * 0.03;
@@ -676,6 +677,11 @@ export class ToyCharacter {
       this.arms[0].rotation.x = -0.5 - Math.abs(Math.sin(a.t * 5)) * 0.5;
       this.arms[1].rotation.x = -0.3 - Math.abs(Math.sin(a.t * 4 + 1)) * 0.4;
       this.headPivot.rotation.x = Math.sin(a.t * 6) * 0.06;
+    } else if (a.kind === "dance") {
+      this.rig.rotation.y = Math.sin(a.t * 5) * 0.6;
+      this.arms[0].rotation.z = -1.6 - Math.sin(a.t * 10) * 0.6;
+      this.arms[1].rotation.z = 1.6 - Math.sin(a.t * 10 + Math.PI) * 0.6;
+      this.rig.position.y += Math.abs(Math.sin(a.t * 10)) * 0.15;
     } else if (a.kind === "pose") {
       this.arms[0].rotation.z = -0.5;
       this.arms[1].rotation.z = 2.2 - Math.sin(a.t * 3) * 0.2;

@@ -5,9 +5,11 @@ export const DAY_SECONDS = 300;
 export const BOX_UNITS = 10;
 export const START_MONEY = 150;
 
-// shape: forma del producto en estanterías; cold: requiere refrigerador.
+// shape: forma del producto en estanterías; cat: zona del Mayorista.
+// cold: va en refrigerador; frozen: congelador; fresh: puesto de frutas.
 export const PRODUCTS = {
   agua: {
+    cat: "bebidas",
     name: "Agua",
     cost: 0.8,
     base: 2.0,
@@ -16,6 +18,7 @@ export const PRODUCTS = {
     kind: "grocery",
   },
   refresco: {
+    cat: "bebidas",
     name: "Refresco",
     cost: 1.1,
     base: 2.6,
@@ -24,6 +27,7 @@ export const PRODUCTS = {
     kind: "grocery",
   },
   cereal: {
+    cat: "alimentos",
     name: "Cereal",
     cost: 1.8,
     base: 4.2,
@@ -32,6 +36,7 @@ export const PRODUCTS = {
     kind: "grocery",
   },
   galletas: {
+    cat: "snacks",
     name: "Galletas",
     cost: 1.0,
     base: 2.4,
@@ -40,14 +45,17 @@ export const PRODUCTS = {
     kind: "grocery",
   },
   fruta: {
+    cat: "frescos",
     name: "Fruta",
     cost: 0.9,
     base: 2.1,
     color: 0xe8392f,
     shape: "fruit",
     kind: "grocery",
+    fresh: true,
   },
   pasta: {
+    cat: "alimentos",
     name: "Pasta",
     cost: 1.1,
     base: 2.6,
@@ -57,6 +65,7 @@ export const PRODUCTS = {
     stage: 1,
   },
   leche: {
+    cat: "bebidas",
     name: "Leche",
     cost: 1.3,
     base: 3.0,
@@ -66,6 +75,7 @@ export const PRODUCTS = {
     cold: true,
   },
   yogur: {
+    cat: "frescos",
     name: "Yogur",
     cost: 1.0,
     base: 2.6,
@@ -74,7 +84,55 @@ export const PRODUCTS = {
     kind: "grocery",
     cold: true,
   },
+  verdura: {
+    name: "Verdura",
+    cat: "frescos",
+    cost: 0.8,
+    base: 1.9,
+    color: 0x4caf50,
+    shape: "veg",
+    kind: "grocery",
+    fresh: true,
+  },
+  patatas: {
+    name: "Patatas fritas",
+    cat: "snacks",
+    cost: 0.9,
+    base: 2.2,
+    color: 0xffb703,
+    shape: "bag",
+    kind: "grocery",
+  },
+  detergente: {
+    name: "Detergente",
+    cat: "limpieza",
+    cost: 1.6,
+    base: 3.6,
+    color: 0x7b6cff,
+    shape: "jug",
+    kind: "grocery",
+  },
+  jabon: {
+    name: "Jabón",
+    cat: "limpieza",
+    cost: 0.7,
+    base: 1.7,
+    color: 0x9fe3ff,
+    shape: "can",
+    kind: "grocery",
+  },
+  helado: {
+    name: "Helado",
+    cat: "frescos",
+    cost: 1.4,
+    base: 3.3,
+    color: 0xffb3d1,
+    shape: "tub",
+    kind: "grocery",
+    frozen: true,
+  },
   pastel: {
+    cat: "cafeteria",
     name: "Pastel",
     cost: 1.4,
     base: 4.2,
@@ -83,6 +141,7 @@ export const PRODUCTS = {
     kind: "cafe",
   },
   sandwich: {
+    cat: "cafeteria",
     name: "Sándwich",
     cost: 1.7,
     base: 4.6,
@@ -91,6 +150,7 @@ export const PRODUCTS = {
     kind: "cafe",
   },
   granos: {
+    cat: "cafeteria",
     name: "Granos de café",
     cost: 0.5,
     base: 0,
@@ -101,6 +161,7 @@ export const PRODUCTS = {
     boxUnits: 20,
   },
   cafe: {
+    cat: "cafeteria",
     name: "Café",
     cost: 0,
     base: 3.6,
@@ -235,6 +296,13 @@ export const UPGRADES = {
     price: 120,
     desc: "Atrae a más clientes de la calle (+15%).",
   },
+  congelador: {
+    name: "Congelador",
+    price: 220,
+    desc: "Permite vender Helado. +$4/día de luz.",
+    types: ["grocery"],
+    stage: 1,
+  },
   suelo: {
     name: "Suelo nuevo",
     price: 200,
@@ -277,5 +345,19 @@ export const SHOP_ITEMS = {
     stage: 2,
   },
 };
+
+// Categorías del Mayorista (zonas señalizadas y pestañas de pedido).
+export const CATEGORIES = {
+  bebidas: { name: "BEBIDAS", color: "#3d8bff" },
+  alimentos: { name: "ALIMENTOS", color: "#f2a531" },
+  limpieza: { name: "LIMPIEZA", color: "#7b6cff" },
+  snacks: { name: "SNACKS", color: "#ff8a3d" },
+  frescos: { name: "PRODUCTOS FRESCOS", color: "#3fbf5f" },
+  cafeteria: { name: "CAFETERÍA", color: "#8b5a3c" },
+};
+
+// Locales iniciales del modo online: cada jugador recibe uno.
+export const PLOTS = ["tienda", "oeste", "este", "sur"];
+export const ROOM_MAX_PLAYERS = PLOTS.length;
 
 export const GOAL_NET_WORTH = 1000000;

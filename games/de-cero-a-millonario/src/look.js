@@ -172,10 +172,23 @@ export function colorOf(name, fallback = 0xffffff) {
   return COLORS[name] ?? fallback;
 }
 
-const pick = (list) => list[Math.floor(Math.random() * list.length)];
+// Generador pseudoaleatorio con semilla: el mismo número da el mismo look
+// en todos los clientes (clientes del juego compartidos en el modo online).
+export function seededRandom(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 // Look aleatorio para peatones y clientes: mismo estilo, mucha variedad.
-export function randomLook() {
+export function randomLook(seed) {
+  const r = seed === undefined ? Math.random : seededRandom(seed);
+  const pick = (list) => list[Math.floor(r() * list.length)];
   const bright = [
     "rojo",
     "naranja",
@@ -187,7 +200,6 @@ export function randomLook() {
     "rosa",
   ];
   const calm = ["marino", "gris", "negro", "blanco", "marron", "azul"];
-  const r = Math.random;
   return {
     skin: pick(SKINS.slice(0, 4)).id,
     top: {

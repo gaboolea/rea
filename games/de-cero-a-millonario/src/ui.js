@@ -8,11 +8,31 @@ import {
   SHOP_ITEMS,
   BOX_UNITS,
   DAY_SECONDS,
+  CATEGORIES,
 } from "./config.js";
+import { productIcon } from "./icons.js";
 import { upgradeApplies } from "./business.js";
 import { currentMission, missionProgress } from "./missions.js";
 import { WORLD } from "./physics.js";
 import { findItem } from "./look.js";
+import { WHOLESALE_STEPS } from "./tutorial.js";
+import {
+  Net,
+  defaultServerUrl,
+  saveServerUrl,
+  savedName,
+  saveName,
+} from "./net.js";
+
+const ONLINE_KEY = "de-cero-a-millonario-online";
+const escapeHtml = (t) =>
+  String(t ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => {
@@ -46,6 +66,29 @@ export class UI {
     click("btn-sound", () => game.toggleMute());
     click("objective", () => $("objective").classList.toggle("collapsed"));
     $("panel-close").onclick = () => this.close();
+    $("tut-skip").onclick = () => game.tutorial.skip();
+    click("btn-wave", () => game.online?.emote("wave"));
+    click("btn-cheer", () => game.online?.emote("cheer"));
+    click("btn-dance", () => game.online?.emote("dance"));
+    click("btn-chat", () => this.openChat(true));
+    click("btn-rank", () => this.openLeaderboard());
+    $("chat-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const input = $("chat-input");
+      const text = input.value.trim();
+      if (text && game.online && game.settings.chat) {
+        game.online.chat(text);
+        this.chatLine(text, false, "Tú");
+      }
+      input.value = "";
+      input.blur();
+    });
+    $("chat-input").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.target.blur();
+        $("chat").hidden = true;
+      }
+    });
     $("panel").addEventListener("click", (e) => {
       if (e.target.id === "panel") this.close();
     });
@@ -124,6 +167,18 @@ export class UI {
     $("carry").innerHTML =
       `📦 <b>${carry.length}/${g.carryCapacity()}</b> ${carry.map((b) => `<span style="--c:${hex(PRODUCTS[b.product].color)}">${PRODUCTS[b.product].name} ×${b.units}</span>`).join("")}`;
     $("btn-sound").textContent = g.settings.muted ? "🔇" : "🔊";
+    const on = g.online;
+    $("net-pill").hidden = !on;
+    $("social").hidden = !on;
+    if (on) {
+      const st = on.status();
+      $("net-pill").className =
+        `pill net-pill ${st.status === "on" ? "" : st.status === "connecting" ? "wait" : "off"}`;
+      $("net-text").textContent =
+        st.status === "on"
+          ? `${st.name} · ${st.online}/4 · ${st.code}`
+          : "Reconectando…";
+    }
     $("btn-ride").hidden = !s.items.scooter;
   }
 
@@ -234,64 +289,106 @@ export class UI {
       );
   }
 
+  // Mostrador A del Mayorista: catálogo por categorías, varias líneas de
+  // pedido, total, dinero disponible y lo que falta si no alcanza.
   openSupplier() {
     const g = this.game;
     const types = g.ownedTypes();
     const stage = g.stageIndex();
+    const cat = this.supplierCat ?? "todos";
     const items = Object.entries(PRODUCTS).filter(
       ([, p]) => !p.crafted && types.has(p.kind),
     );
-    const owned = Object.values(g.businesses).filter((b) => b.owned);
+    const cats = [
+      "todos",
+      ...Object.keys(CATEGORIES).filter((c) =>
+        items.some(([, p]) => p.cat === c),
+      ),
+    ];
+    const owned = Object.values(g.businesses).filter(
+      (b) => b.owned && !b.remote,
+    );
     const deliver = this.deliverTo ?? "";
     const discount = g.supplierDiscount();
+    const lines = [];
     let total = 0;
-    const rows = items
+    for (const [id, p] of items) {
+      const n = this.order[id] ?? 0;
+      if (!n) continue;
+      const price =
+        p.cost * (p.boxUnits ?? BOX_UNITS) * discount * g.events.discount(id);
+      total += price * n;
+      lines.push(
+        `<div class="order-line"><img src="${productIcon(id)}" alt=""><span>${n} × ${p.name}</span><b>${money(Math.round(price * n * 100) / 100)}</b></div>`,
+      );
+    }
+    const cards = items
+      .filter(([, p]) => cat === "todos" || p.cat === cat)
       .map(([id, p]) => {
         const units = p.boxUnits ?? BOX_UNITS;
         const sale = g.events.discount(id);
         const price = p.cost * units * discount * sale;
         const n = this.order[id] ?? 0;
-        total += price * n;
+        const stock = g.warehouse.available(id);
         const locked = (p.stage ?? 0) > stage;
         const note = p.cold
-          ? " · necesita refrigerador"
-          : p.ingredient
-            ? " · para la máquina de café"
-            : "";
-        return `<div class="row ${locked ? "locked" : ""}">
-        <span class="chip" style="background:${hex(p.color)}"></span>
-        <div class="grow"><b>${p.name}</b>${sale < 1 ? ` <span class="tag good">OFERTA −40%</span>` : ""}<small>Caja de ${units} uds. · ${money(price)}${p.base ? ` · venta sugerida ${money(p.base)}/ud.` : ""}${note}${locked ? ` · requiere ${STAGES[p.stage].name}` : ""}</small></div>
-        ${locked ? "" : `<div class="stepper"><button data-dec="${id}">−</button><span>${n}</span><button data-inc="${id}">+</button></div>`}
-      </div>`;
+          ? "Necesita refrigerador"
+          : p.frozen
+            ? "Necesita congelador"
+            : p.fresh
+              ? "Puesto de frutas"
+              : p.ingredient
+                ? "Para la máquina de café"
+                : "";
+        return `<div class="pcard ${locked ? "locked" : ""} ${n ? "picked" : ""}">
+          <img src="${productIcon(id)}" alt="">
+          <div class="pinfo"><b>${p.name}</b>${sale < 1 ? ` <span class="tag good">−40%</span>` : ""}
+            <small>${money(Math.round(price * 100) / 100)} / caja de ${units} · ${money(Math.round((price / units) * 100) / 100)} / ud.</small>
+            <small>${locked ? `🔒 Etapa ${STAGES[p.stage].name}` : `Disponibles: ${stock} cajas`}${note ? ` · ${note}` : ""}</small></div>
+          ${locked ? "" : `<div class="stepper"><button data-dec="${id}" ${n ? "" : "disabled"}>−</button><span>${n}</span><button data-inc="${id}" ${n >= stock ? "disabled" : ""}>+</button></div>`}
+        </div>`;
       })
       .join("");
     const van = g.state.items.furgoneta;
     const fee = van ? 0 : 4;
-    const deliveryHtml = `<label class="field">Entrega: <select id="deliver"><option value="">Recoger aquí en RECOGIDA</option>${owned
+    if (deliver && total) total += fee;
+    total = Math.round(total * 100) / 100;
+    const have = Math.floor(g.state.money * 100) / 100;
+    const missing = Math.max(0, Math.round((total - have) * 100) / 100);
+    const deliveryHtml = `<label class="field">Entrega: <select id="deliver"><option value="">Recoger en la zona B (gratis)</option>${owned
       .map(
         (b) =>
           `<option value="${b.id}" ${deliver === b.id ? "selected" : ""}>${van ? "Tu furgoneta" : "Camión de reparto"} → ${b.name} (${fee ? `+$${fee}` : "gratis"})</option>`,
       )
-      .join(
-        "",
-      )}</select></label><p class="hint">${van ? "Tu furgoneta lo deja al instante en el almacén." : "El camión llega en unos segundos y lo deja en el almacén."} Puedes cargar ${g.carryCapacity()} caja/s a la vez.</p>`;
-    if (deliver) total += fee;
+      .join("")}</select></label>`;
     const tools = g.state.items.carretilla
       ? ""
       : `<div class="row"><span class="chip" style="background:#9aa7b0"></span><div class="grow"><b>${SHOP_ITEMS.carretilla.name}</b><small>${SHOP_ITEMS.carretilla.desc}</small></div><button data-item="carretilla">${money(SHOP_ITEMS.carretilla.price)}</button></div>`;
     this.open(
       "supplier",
-      "Mayorista · Proveedores",
+      "A · Pedir mercadería",
       `
       ${discount < 1 ? `<p class="hint good">Descuento de Magnate: −15%</p>` : ""}
-      <div class="list">${rows}</div>
-      ${deliveryHtml}
-      <div class="sticky"><div class="total">Total: <b>${money(Math.round(total * 100) / 100)}</b> · Tienes ${money(Math.round(g.state.money * 100) / 100)}</div>
-      <button class="primary big" data-buy ${total ? "" : "disabled"}>Pagar pedido</button></div>
-      ${tools ? `<h3>Herramientas</h3><div class="list">${tools}</div>` : ""}`,
+      <div class="tabs small">${cats.map((c) => `<button data-cat="${c}" class="${c === cat ? "on" : ""}">${c === "todos" ? "Todo" : CATEGORIES[c].name}</button>`).join("")}</div>
+      <div class="pgrid">${cards}</div>
+      ${tools ? `<h3>Herramientas</h3><div class="list">${tools}</div>` : ""}
+      <div class="sticky order-box">
+        ${lines.length ? `<div class="order-lines">${lines.join("")}</div>` : `<p class="hint">Añade productos con <b>+</b>. Puedes combinar varios en un pedido.</p>`}
+        ${deliveryHtml}
+        <div class="total">Total: <b>${money(total)}</b> · Tienes ${money(have)}</div>
+        ${missing > 0 ? `<p class="bad missing">Te faltan ${money(missing)} para este pedido</p>` : ""}
+        <div class="order-actions"><button class="ghost" data-cancel>CANCELAR</button><button class="primary" data-buy ${total && !missing ? "" : "disabled"}>COMPRAR</button></div>
+      </div>`,
     );
+    this.bind("[data-cat]", (d) => {
+      this.supplierCat = d.cat;
+      this.openSupplier();
+    });
     this.bind("[data-inc]", (d) => {
-      this.order[d.inc] = Math.min(9, (this.order[d.inc] ?? 0) + 1);
+      this.order[d.inc] = Math.min(
+        g.warehouse.available(d.inc),
+        (this.order[d.inc] ?? 0) + 1,
+      );
       this.openSupplier();
     });
     this.bind("[data-dec]", (d) => {
@@ -304,15 +401,19 @@ export class UI {
         this.deliverTo = sel.value;
         this.openSupplier();
       };
-    this.bind("[data-item]", (d) => {
-      g.buyItem(d.item);
+    this.bind("[data-item]", async (d) => {
+      await g.buyItem(d.item);
       this.openSupplier();
     });
-    this.bind("[data-buy]", () => {
-      if (g.buySupplies(this.order, deliver || null)) {
+    this.bind("[data-cancel]", () => {
+      this.order = {};
+      this.close();
+    });
+    this.bind("[data-buy]", async () => {
+      if (await g.buySupplies(this.order, deliver || null)) {
         this.order = {};
         this.close();
-      }
+      } else this.openSupplier();
     });
   }
 
@@ -347,16 +448,20 @@ export class UI {
       g.state.stats.priceChanges++;
       this.openManagement();
     });
-    this.bind("[data-upgrade]", (d) => {
-      g.buyUpgrade(b.id, d.upgrade);
+    this.bind("[data-upgrade]", async (d) => {
+      await g.buyUpgrade(b.id, d.upgrade);
       this.openManagement();
     });
-    this.bind("[data-hire]", (d) => {
-      g.hire(b.id, d.hire);
+    this.bind("[data-hire]", async (d) => {
+      await g.hire(b.id, d.hire);
       this.openManagement();
     });
-    this.bind("[data-fire]", (d) => {
-      b.fire(d.fire);
+    this.bind("[data-fire]", async (d) => {
+      await g.fire(b.id, d.fire);
+      this.openManagement();
+    });
+    this.bind("[data-open]", () => {
+      b.openToPlayers = !b.openToPlayers;
       g.save();
       this.openManagement();
     });
@@ -382,6 +487,9 @@ export class UI {
     const report = s.lastReport
       ? `<h3>Informe del día ${s.lastReport.day}</h3><p>Gastos fijos y salarios: <b>${money(s.lastReport.expenses)}</b></p>`
       : "";
+    const share = g.online
+      ? `<div class="row"><div class="grow"><b>Ventas a otros jugadores</b><small>${b.openToPlayers ? "Los demás pueden comprar en tus estanterías al precio que fijes." : "Tus estanterías no venden a otros jugadores."}</small></div><button data-open>${b.openToPlayers ? "Cerrar" : "Abrir"}</button></div>`
+      : "";
     return `
       <div class="stats">
         <div><small>Ventas hoy</small><b>${b.today.sales}</b></div>
@@ -391,6 +499,7 @@ export class UI {
         <div><small>Gastos diarios</small><b>${money(b.def.rent + b.salaries() + (b.upgrades.has("refrigerador") ? 5 : 0))}</b></div>
         <div><small>Clientes en el local</small><b>${b.customers.length}</b></div>
       </div>
+      ${share}
       <h3>Exposición</h3>${shelves || "<p>Sin muebles.</p>"}
       <h3>Almacén (${b.storageUnits()}/${b.storageCap()})</h3><p>${storage}</p>
       ${b.machine ? `<p>Máquina de café: <b>${b.machine.granos}</b> granos</p>` : ""}
@@ -473,8 +582,8 @@ export class UI {
       "Concesionario e Inmobiliaria",
       `<div class="list">${rows}</div><p class="hint">Gastos de la furgoneta: $10/día.</p>`,
     );
-    this.bind("[data-item]", (d) => {
-      g.buyItem(d.item);
+    this.bind("[data-item]", async (d) => {
+      await g.buyItem(d.item);
       this.openDealer();
     });
   }
@@ -567,9 +676,10 @@ export class UI {
         <button data-act="wardrobe">👕 Personalizar personaje</button>
         <button data-act="bag">🎒 Inventario</button>
         <button data-act="options">⚙️ Opciones</button>
+        <button data-act="help">❓ Ayuda</button>
         <button data-act="save">💾 Guardar partida</button>
         <button data-act="title">🏠 Menú principal</button>
-        <button class="ghost" data-act="new">Nueva partida</button>
+        ${this.game.online ? `<button data-act="rank">🏆 Clasificación</button><button class="ghost" data-act="leave">🚪 Salir de la ciudad</button>` : `<button class="ghost" data-act="new">Nueva partida</button>`}
       </div>`,
     );
     this.bind("[data-act]", (d) => {
@@ -581,6 +691,7 @@ export class UI {
       }
       if (d.act === "bag") this.openInventory();
       if (d.act === "options") this.openOptions(() => this.openMenu());
+      if (d.act === "help") this.openHelp();
       if (d.act === "save") {
         const ok = g.save();
         this.toast(
@@ -595,6 +706,8 @@ export class UI {
         g.goToTitle();
       }
       if (d.act === "new") this.confirmNewGame(() => this.openMenu());
+      if (d.act === "rank") this.openLeaderboard();
+      if (d.act === "leave") g.leaveOnline();
     });
   }
 
@@ -623,6 +736,211 @@ export class UI {
     return `<div class="controls"><span><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> moverse</span><span><kbd>Shift</kbd> correr</span><span><kbd>Espacio</kbd> saltar</span><span><kbd>E</kbd> interactuar</span><span>Arrastrar ratón: cámara · Rueda: zoom</span><span><kbd>G</kbd> gestión · <kbd>M</kbd> mapa · <kbd>I</kbd> inventario · <kbd>V</kbd> scooter · <kbd>Esc</kbd> pausa</span></div>`;
   }
 
+  // ---------- Multijugador ----------
+
+  openChat(toggle = false) {
+    const chat = $("chat");
+    if (!this.game.settings.chat)
+      return this.toast("El chat está desactivado en Opciones");
+    if (toggle && !chat.hidden) {
+      chat.hidden = true;
+      return;
+    }
+    chat.hidden = false;
+    $("chat-input").focus();
+  }
+
+  chatLine(text, system = false, name = "", from = null) {
+    const log = $("chat-log");
+    const el = document.createElement("div");
+    el.className = system ? "sys" : "";
+    if (system) el.textContent = text;
+    else {
+      const b = document.createElement("b");
+      b.textContent = `${name}: `;
+      if (from) {
+        b.title = "Pulsa para silenciar a este jugador";
+        b.style.cursor = "pointer";
+        b.onclick = () => {
+          const muted = this.game.online.toggleMute(from);
+          this.toast(
+            muted
+              ? `Has silenciado a ${name}`
+              : `${name} ya no está silenciado`,
+          );
+        };
+      }
+      el.append(b, document.createTextNode(text));
+    }
+    log.appendChild(el);
+    while (log.children.length > 40) log.firstChild.remove();
+    log.scrollTop = log.scrollHeight;
+    // En móvil el chat no se abre solo (taparía el juego): aviso breve.
+    if (!this.game.online || !this.game.settings.chat) return;
+    if (this.game.input.isTouch) {
+      if ($("chat").hidden && !system) this.toast(`💬 ${name}: ${text}`);
+    } else $("chat").hidden = false;
+  }
+
+  openLeaderboard() {
+    if (!this.game.online) return;
+    this.open("rank", "🏆 Clasificación", `<p class="hint">Cargando…</p>`);
+    this.game.net.send("leaderboard");
+  }
+
+  showLeaderboard(m) {
+    if (this.panel !== "rank") return;
+    const me = this.game.online.me.id;
+    const muted = this.game.online.muted;
+    const row = (r, i, city) =>
+      `<tr class="${r.id === me ? "me" : ""}"><td>${i + 1}</td><td>${city ? (r.online ? "🟢 " : "⚪ ") : ""}${escapeHtml(r.name)}</td><td>${money(r.worth)}</td>${city ? `<td>${money(r.revenue)}</td><td>${r.id === me ? "" : `<button data-mute="${r.id}">${muted.has(r.id) ? "🔈 Activar" : "🔇 Silenciar"}</button>`}</td>` : ""}</tr>`;
+    this.open(
+      "rank",
+      "🏆 Clasificación",
+      `<h3>En esta ciudad</h3><div class="table-wrap"><table class="rank"><tr><th>#</th><th>Empresario</th><th>Patrimonio</th><th>Ventas</th><th></th></tr>${m.city.map((r, i) => row(r, i, true)).join("")}</table></div>
+      <h3>Mejores empresarios del servidor</h3><div class="table-wrap"><table class="rank"><tr><th>#</th><th>Empresario</th><th>Patrimonio</th></tr>${m.global.map((r, i) => row(r, i, false)).join("")}</table></div>
+      <p class="hint">Patrimonio = dinero + valor de tus locales y vehículos.</p>`,
+    );
+    this.bind("[data-mute]", (d) => {
+      this.game.online.toggleMute(d.mute);
+      this.game.net.send("leaderboard");
+    });
+  }
+
+  // Vestíbulo: servidor, nombre, ciudades públicas, crear o entrar con código.
+  openMultiplayer() {
+    const url = this.mpUrl ?? defaultServerUrl();
+    const name = this.mpName ?? savedName();
+    const st = this.mpStatus ?? { kind: "off", text: "Sin conectar" };
+    const cities = this.mpCities ?? [];
+    const rows = cities.length
+      ? cities
+          .map(
+            (c) =>
+              `<div class="room"><div class="grow"><b>${escapeHtml(c.name)}</b><small>Código ${c.code} · ${c.members}/${c.max} empresarios · ${c.online} conectados</small></div><button data-join="${c.code}" ${c.members >= c.max ? "disabled" : ""}>Entrar</button></div>`,
+          )
+          .join("")
+      : `<p class="hint">${st.kind === "ok" ? "No hay ciudades públicas todavía: ¡crea la primera!" : "Conéctate a un servidor para ver las ciudades."}</p>`;
+    this.open(
+      "multi",
+      "🌍 Multijugador",
+      `<div class="mp-status ${st.kind}"><i></i><span>${escapeHtml(st.text)}</span></div>
+      <div class="mp-row">
+        <label class="mp-field">Servidor<input id="mp-url" value="${escapeHtml(url)}" placeholder="ws://192.168.1.20:8080/ws"></label>
+        <label class="mp-field">Tu nombre<input id="mp-name" maxlength="16" value="${escapeHtml(name)}" placeholder="Empresario"></label>
+        <button data-act="connect">Conectar</button>
+      </div>
+      <h3>Ciudades públicas</h3><div class="list">${rows}</div>
+      <h3>Crear ciudad</h3>
+      <div class="mp-row">
+        <label class="mp-field">Nombre<input id="mp-city" maxlength="24" placeholder="Villa Negocios"></label>
+        <label class="mp-field">Visibilidad<select id="mp-public"><option value="1">Pública (aparece en la lista)</option><option value="0">Privada (solo con código)</option></select></label>
+        <button class="primary" data-act="create">Crear</button>
+      </div>
+      <h3>Unirse con código</h3>
+      <div class="mp-row">
+        <label class="mp-field">Código de invitación<input id="mp-code" maxlength="5" placeholder="ABCDE" style="text-transform:uppercase"></label>
+        <button class="primary" data-act="code">Entrar</button>
+      </div>
+      <p class="hint">Hasta 4 empresarios por ciudad, cada uno con su propia tienda. Tu dinero, inventario y negocios de cada ciudad los guarda el servidor. El modo online necesita el servidor del juego en marcha (ver README); no funciona dentro de la vista previa de claude.ai.</p>`,
+    );
+    const read = () => {
+      this.mpUrl = $("mp-url").value.trim();
+      this.mpName = $("mp-name").value.trim();
+      saveServerUrl(this.mpUrl);
+      saveName(this.mpName);
+    };
+    this.bind("[data-act]", async (d) => {
+      read();
+      if (d.act === "connect") return this.mpConnect();
+      if (d.act === "create")
+        return this.mpEnter({
+          create: {
+            name:
+              $("mp-city").value.trim() ||
+              `Ciudad de ${this.mpName || "Empresario"}`,
+            public: $("mp-public").value === "1",
+          },
+        });
+      if (d.act === "code") {
+        const code = $("mp-code").value.trim().toUpperCase();
+        if (!/^[A-Z0-9]{5}$/.test(code))
+          return this.toast("El código tiene 5 letras o números", "bad");
+        return this.mpEnter({ code });
+      }
+    });
+    this.bind("[data-join]", (d) => {
+      read();
+      this.mpEnter({ code: d.join });
+    });
+  }
+
+  async mpConnect() {
+    if (!this.mpUrl) {
+      this.mpStatus = {
+        kind: "off",
+        text: "Escribe la dirección del servidor (ws://…/ws)",
+      };
+      return this.openMultiplayer();
+    }
+    this.mpStatus = { kind: "wait", text: "Conectando…" };
+    this.openMultiplayer();
+    try {
+      this.lobbyNet?.close();
+      const net = new Net(this.mpUrl);
+      await net.connect();
+      const w = await net.hello(
+        this.mpName || "Empresario",
+        this.game.state.look,
+      );
+      this.lobbyNet = net;
+      this.mpCities = w.cities;
+      this.mpStatus = { kind: "ok", text: `Conectado como ${w.name}` };
+    } catch (err) {
+      this.mpStatus = { kind: "off", text: err.message };
+    }
+    if (this.panel === "multi") this.openMultiplayer();
+  }
+
+  // Comprueba la ciudad y recarga el juego en modo online.
+  async mpEnter(target) {
+    if (!this.lobbyNet || this.lobbyNet.status !== "on") await this.mpConnect();
+    if (!this.lobbyNet || this.lobbyNet.status !== "on") return;
+    this.lobbyNet.close();
+    try {
+      sessionStorage.setItem(
+        ONLINE_KEY,
+        JSON.stringify({ url: this.mpUrl, name: this.mpName, ...target }),
+      );
+    } catch {
+      return this.toast("El navegador no permite guardar la sesión", "bad");
+    }
+    this.game.audio.sfx("whoosh");
+    location.reload();
+  }
+
+  openHelp() {
+    const g = this.game;
+    this.open(
+      "help",
+      "Ayuda",
+      `<h3>📦 Comprar en el Mayorista</h3>
+      <ol class="steps">${WHOLESALE_STEPS.map((t) => `<li>${t}</li>`).join("")}</ol>
+      <p class="hint">El Mayorista tiene tres zonas: <b>A · Pedidos</b> (mostrador y terminales), <b>B · Recogida</b> (tus cajas aparecen en el palé cuando el pedido está listo) y <b>C · Carga y salida</b>.</p>
+      <button data-act="tutorial">Repetir el tutorial del Mayorista</button>
+      <h3>🧭 Orientación</h3>
+      <p>El botón <b>🏪 IR A MI TIENDA</b> marca la ruta por las calles. Toca el minimapa para abrir el mapa y elegir otro destino.</p>
+      <h3>🎮 Controles</h3>${this.controlsHtml(g.input.isTouch)}
+      <button class="primary big" data-act="back">Volver</button>`,
+    );
+    this.bind("[data-act]", (d) => {
+      if (d.act === "tutorial") {
+        g.tutorial.start();
+        this.close();
+      } else this.openMenu();
+    });
+  }
+
   openOptions(back) {
     const g = this.game;
     const st = g.settings;
@@ -638,6 +956,7 @@ export class UI {
         <label>🎥 Sensibilidad de cámara <input id="opt-sens" type="range" min="30" max="250" value="${pct(st.sensitivity)}"><output>${pct(st.sensitivity)}%</output></label>
         <label>↕️ Invertir eje vertical <input id="opt-invert" type="checkbox" ${st.invertY ? "checked" : ""}></label>
         <label>🏃 Correr siempre (Shift / 🏃 para caminar) <input id="opt-run" type="checkbox" ${st.alwaysRun ? "checked" : ""}></label>
+        <label>💬 Chat del modo online <input id="opt-chat" type="checkbox" ${st.chat ? "checked" : ""}></label>
         <div class="seg"><span>🖼️ Calidad gráfica</span>${["baja", "media", "alta"].map((q) => `<button data-quality="${q}" class="${st.quality === q ? "on" : ""}">${q[0].toUpperCase() + q.slice(1)}</button>`).join("")}</div>
         <p class="hint">Baja: sin sombras y menos peatones (ideal para móviles). Alta: sombras nítidas y ciudad más llena.</p>
       </div>
@@ -664,6 +983,7 @@ export class UI {
     check("opt-mute", "muted");
     check("opt-invert", "invertY");
     check("opt-run", "alwaysRun");
+    check("opt-chat", "chat");
     this.bind("[data-quality]", (d) => {
       st.quality = d.quality;
       g.applySettings();

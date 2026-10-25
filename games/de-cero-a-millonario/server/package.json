@@ -1,0 +1,19 @@
+{
+  "name": "de-cero-a-millonario-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servidor multijugador de De Cero a Millonario (WebSocket + archivos estáticos).",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "three": "0.170.0",
+    "ws": "8.18.0"
+  }
+}

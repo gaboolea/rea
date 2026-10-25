@@ -12,9 +12,20 @@ import {
 } from "./props.js";
 import { Customer, Employee } from "./npc.js";
 import { signMesh } from "./gfx.js";
+import * as decor from "./decor.js";
+import { cardboardBox } from "./props.js";
 import * as THREE from "three";
 
 const PI2 = Math.PI / 2;
+
+const DISPLAY_NAMES = {
+  shelf: "Estantería",
+  fridge: "Refrigerador",
+  freezer: "Congelador",
+  produce: "Frutas y verduras",
+  vitrina: "Vitrina",
+  coffee: "Barra de cafés",
+};
 
 // Coordenadas locales al área principal del local (puerta hacia +z).
 const GROCERY = {
@@ -57,26 +68,87 @@ const GROCERY = {
   spawnEvery: 7,
 };
 
+// Tienda inicial (y locales de jugadores online): sala de 14×12 m con
+// pasillos de 2,5 m, estanterías murales y centrales, frescos, frío, dos
+// cajas junto a la entrada y almacén pequeño. offsetZ: la sala delantera
+// está centrada 3 m por delante del centro del edificio.
+const STARTER = {
+  displays: [
+    { id: "s1", kind: "shelf", lx: -4.6, lz: -5.35 },
+    { id: "s2", kind: "shelf", lx: -1.4, lz: -5.35 },
+    { id: "f1", kind: "fridge", lx: 1.75, lz: -5.3, req: "refrigerador" },
+    { id: "z1", kind: "freezer", lx: 4.65, lz: -5.25, req: "congelador" },
+    { id: "s3", kind: "shelf", lx: -2.6, lz: -1.8 },
+    { id: "e1", kind: "shelf", lx: 1.0, lz: -1.8, req: "estanteria1" },
+    { id: "p1", kind: "produce", lx: 6.25, lz: -1.6, rot: -PI2 },
+    {
+      id: "e2",
+      kind: "shelf",
+      lx: -6.4,
+      lz: -1.4,
+      rot: PI2,
+      req: "estanteria2",
+    },
+    { id: "a1", kind: "shelf", lx: -4.6, lz: -11.3, req: "ampliacion" },
+    { id: "a2", kind: "shelf", lx: -1.4, lz: -11.3, req: "estanteria3" },
+    { id: "a3", kind: "shelf", lx: 1.8, lz: -11.3, req: "estanteria4" },
+  ],
+  registers: [
+    { id: "r1", lx: -4.2, lz: 3.3, rot: PI2, front: true, queue: [0.95, 0] },
+    {
+      id: "r2",
+      lx: 4.2,
+      lz: 3.3,
+      rot: PI2,
+      front: true,
+      queue: [-0.95, 0],
+      req: "caja2",
+    },
+  ],
+  storage: { lx: 5.8, lz: 1.5 },
+  plants: [
+    [-6.4, -5.3],
+    [6.4, -3.6],
+    [3.25, -5.5],
+  ],
+  // Decoración estática: [tipo, lx, lz, rotación, altura, colisión w, d]
+  decor: [
+    ["mat", 0, 5.25],
+    ["baskets", -2.5, 5.3, 0, 0, 0.6, 0.45],
+    ["cart", 2.5, 5.2, Math.PI, 0, 0.6, 0.9],
+    ["clock", 0.3, -5.83, 0, 2.55],
+    ["poster:¡OFERTA 2×1!", -6.66, 2.0, PI2, 1.8],
+    ["poster:¡PRECIOS BAJOS!", 6.66, 3.4, -PI2, 1.9],
+    ["picture", -6.66, 4.2, PI2, 1.9],
+    ["trash", -6.2, 3.1, 0, 0, 0.45, 0.45],
+    ["boxes", 6.3, 4.9, 0, 0, 0.7, 0.7],
+    ["candy", -5.0, 3.3, 0, 1.04],
+    ["plant", -6.4, 4.9, 0, 0, 0.5, 0.5],
+    ["lamp", -3, -3.6, 0, 3.4],
+    ["lamp", 2.2, -3.6, 0, 3.4],
+    ["lamp", -3, 1.4, 0, 3.4],
+    ["lamp", 2.2, 1.4, 0, 3.4],
+  ],
+  upgrades: [
+    "estanteria1",
+    "estanteria2",
+    "refrigerador",
+    "congelador",
+    "caja2",
+    "ampliacion",
+    "estanteria3",
+    "estanteria4",
+    "plantas",
+    "letrero",
+    "suelo",
+  ],
+  offsetZ: 3,
+  storageCap: 120,
+  spawnEvery: 7,
+};
+
 const LAYOUTS = {
-  tienda: {
-    ...GROCERY,
-    offsetZ: 3,
-    displays: [
-      ...GROCERY.displays,
-      { id: "a1", kind: "shelf", lx: -5, lz: -12.3, req: "ampliacion" },
-      { id: "a2", kind: "shelf", lx: -1.2, lz: -12.3, req: "estanteria3" },
-      { id: "a3", kind: "shelf", lx: 2.6, lz: -12.3, req: "estanteria4" },
-    ],
-    upgrades: [
-      ...GROCERY.upgrades.slice(0, 4),
-      "ampliacion",
-      "estanteria3",
-      "estanteria4",
-      "plantas",
-      "letrero",
-      "suelo",
-    ],
-  },
+  tienda: STARTER,
   minimercado: { ...GROCERY, spawnEvery: 6 },
   supermercado: {
     displays: [
@@ -149,13 +221,19 @@ const LAYOUTS = {
 };
 
 export class Business {
-  constructor(game, id) {
+  // opts.building: edificio donde se instala (en online, la tienda inicial
+  // de cada jugador ocupa un local distinto). opts.remote: negocio de otro
+  // jugador que solo se dibuja con los datos que llegan del servidor.
+  constructor(game, id, opts = {}) {
     this.game = game;
     this.id = id;
     this.def = BUSINESSES[id];
-    this.name = this.def.name;
-    this.building = game.world.buildings[id];
+    this.name = opts.name ?? this.def.name;
+    this.building = game.world.buildings[opts.building ?? id];
     this.layout = LAYOUTS[id];
+    this.remote = !!opts.remote;
+    this.openToPlayers = true;
+    this.colliderTag = `biz:${this.building.id}`;
     this.owned = !!this.def.owned;
     this.upgrades = new Set();
     this.prices = {};
@@ -215,7 +293,13 @@ export class Business {
   }
 
   collider(lx, lz, w, d) {
-    return this.building.addLocalCollider(lx, lz + this.layout.offsetZ, w, d);
+    return this.building.addLocalCollider(
+      lx,
+      lz + this.layout.offsetZ,
+      w,
+      d,
+      this.colliderTag,
+    );
   }
 
   buildInterior() {
@@ -230,9 +314,42 @@ export class Business {
       this.place(tableSet(), lx, lz);
       this.collider(lx, lz, 2.3, 1.1);
     }
+    this.buildDecor();
     this.refreshFixtures();
-    this.interactables.push(this.storageInteractable());
+    if (!this.remote) this.interactables.push(this.storageInteractable());
     this.updateStoragePile();
+  }
+
+  buildDecor() {
+    this.clocks = [];
+    for (const [kind, lx, lz, rot = 0, y, cw, cd] of this.layout.decor ?? []) {
+      let obj;
+      const [type, text] = kind.split(":");
+      if (type === "mat") obj = decor.doorMat();
+      else if (type === "baskets") obj = decor.basketStack();
+      else if (type === "cart") obj = decor.shoppingCart();
+      else if (type === "clock") {
+        obj = decor.wallClock();
+        this.clocks.push(obj);
+      } else if (type === "poster") obj = decor.poster(text);
+      else if (type === "picture") obj = decor.pictureFrame(0x5bd47a);
+      else if (type === "trash") obj = decor.trashBin();
+      else if (type === "candy") obj = decor.candyJars();
+      else if (type === "plant") obj = pottedPlant(1);
+      else if (type === "lamp") obj = decor.pendantLamp();
+      else if (type === "boxes") {
+        obj = new THREE.Group();
+        for (let i = 0; i < 3; i++) {
+          const b = cardboardBox(0xd9a066, [0x3d8bff, 0xff8a3d, 0x5bd47a][i]);
+          b.position.set(0, i * 0.43, 0);
+          b.rotation.y = i * 0.3;
+          obj.add(b);
+        }
+      }
+      if (!obj) continue;
+      this.place(obj, lx, lz, rot, y ? y + 0.12 : undefined);
+      if (cw) this.collider(lx, lz, cw, cd);
+    }
   }
 
   buildCafeFixtures() {
@@ -343,18 +460,17 @@ export class Business {
     this.place(g, def.lx, def.lz, rot);
     const rotated = Math.abs(Math.sin(rot)) > 0.5;
     this.collider(def.lx, def.lz, rotated ? 2.2 : 1.0, rotated ? 1.0 : 2.2);
-    // Lado del cliente: -x local para cajas en z; +z para cajas giradas.
-    const cust = rotated ? [0, 1.05] : [-1.0, 0];
-    const staff = rotated ? [0, -1.15] : [1.2, 0];
+    // Lado del cliente: -x local para cajas en z; +z para cajas giradas
+    // (o -z si la caja está junto a la fachada: def.front).
+    const side = def.front ? -1 : 1;
+    const cust = rotated ? [0, 1.05 * side] : [-1.0, 0];
+    const staff = rotated ? [0, -1.15 * side] : [1.2, 0];
     const reg = {
       def,
       pos: this.local(def.lx, def.lz),
       service: this.local(def.lx + cust[0], def.lz + cust[1]),
       cashierPoint: this.local(def.lx + staff[0], def.lz + staff[1]),
-      dir: {
-        x: def.queue[0] * this.building.flip,
-        z: def.queue[1] * this.building.flip,
-      },
+      dir: this.building.dirToWorld(def.queue[0], def.queue[1]),
       queue: [],
       cashier: null,
       serveTimer: 0,
@@ -393,11 +509,11 @@ export class Business {
           };
         if (game.state.carried.length)
           return {
-            text: `${d.kind === "fridge" ? "Refrigerador" : "Estantería"}: ${what} · no admite esa caja`,
+            text: `${DISPLAY_NAMES[d.kind]}: ${what} · no admite esa caja`,
             enabled: false,
           };
         return {
-          text: `${d.kind === "fridge" ? "Refrigerador" : d.kind === "vitrina" ? "Vitrina" : "Estantería"}: ${what}`,
+          text: `${DISPLAY_NAMES[d.kind]}: ${what}`,
           enabled: false,
         };
       },
@@ -569,6 +685,8 @@ export class Business {
     );
     if (made <= 0) return 0;
     this.machine.granos -= made;
+    // En online el servidor convierte también los granos del inventario.
+    if (this.game.online) this.game.net.request("brew", { units: made });
     if (!cc.display.product) cc.display.setProduct("cafe");
     cc.display.setStock(cc.display.stock + made);
     return made;
@@ -617,16 +735,15 @@ export class Business {
 
   rollWants(count = 0) {
     const stocked = this.catalog().filter((p) => this.shelfStock(p) > 0);
-    const all = this.catalog().filter(
-      (p) =>
-        !PRODUCTS[p].cold || this.displays.some((d) => d.def.kind === "fridge"),
+    const all = this.catalog().filter((p) =>
+      this.displays.some((d) => d.display.spec.accepts(PRODUCTS[p])),
     );
     const n =
       count ||
       1 + Math.floor(Math.random() * (this.def.type === "cafe" ? 2 : 3.4));
     const wants = [];
     for (let i = 0; i < n; i++) {
-      const pool = stocked.length && Math.random() < 0.8 ? stocked : all;
+      const pool = stocked.length && Math.random() < 0.88 ? stocked : all;
       const p = pool[Math.floor(Math.random() * pool.length)];
       if (!wants.includes(p)) wants.push(p);
     }
@@ -718,7 +835,7 @@ export class Business {
           : PRODUCTS[it.product].cost),
       0,
     );
-    this.game.earn(total, total - cost, c.basket.length, this);
+    this.game.earn(total, total - cost, c.basket, this, c.vip);
     if (c.basket.some((i) => i.product === "cafe"))
       this.game.state.stats.coffeeSold += c.basket.filter(
         (i) => i.product === "cafe",
@@ -921,8 +1038,73 @@ export class Business {
 
   // ---------- Bucle ----------
 
+  // ---------- Modo online ----------
+
+  // Lo que ven los demás jugadores de este negocio.
+  snapshot() {
+    return {
+      displays: this.displays.map((d) => [
+        d.def.id,
+        d.display.product,
+        d.display.stock,
+      ]),
+      prices: this.prices,
+      open: this.openToPlayers,
+    };
+  }
+
+  // Negocio de otro jugador: se dibuja con sus mejoras y existencias.
+  setupRemote(snap) {
+    this.owned = true;
+    this.building.setLocked(false, null);
+    this.buildInterior();
+    this.applySnapshot(snap);
+  }
+
+  applySnapshot(snap) {
+    if (!snap) return;
+    for (const u of snap.upgrades ?? []) this.upgrades.add(u);
+    this.refreshFixtures();
+    Object.assign(this.prices, snap.prices ?? {});
+    this.openToPlayers = snap.open !== false;
+    for (const [id, product, stock] of snap.displays ?? []) {
+      const e = this.displays.find((d) => d.def.id === id);
+      if (!e) continue;
+      if (product && stock > 0) {
+        e.display.setProduct(product);
+        e.display.setStock(stock);
+      } else e.display.setStock(0);
+    }
+  }
+
+  updateRemote(dt) {
+    this.detailTimer = (this.detailTimer ?? 0) - dt;
+    if (this.detailTimer <= 0) {
+      this.detailTimer = 1;
+      this.refreshDetails();
+    }
+  }
+
+  // Etiquetas de precio y relojes de pared (detalles visuales).
+  refreshDetails() {
+    for (const e of this.displays) {
+      const p = e.display.product;
+      const price = this.prices[p];
+      e.display.setPriceTag(
+        p && price !== undefined ? `$${price.toFixed(2)}` : "",
+      );
+    }
+    const hour = 7 + (this.game.state.clock / 300) * 15;
+    for (const c of this.clocks ?? []) c.userData.setTime(hour);
+  }
+
   update(dt, budget) {
     if (!this.owned) return;
+    this.detailTimer = (this.detailTimer ?? 0) - dt;
+    if (this.detailTimer <= 0) {
+      this.detailTimer = 0.5;
+      this.refreshDetails();
+    }
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = this.spawnInterval() * (0.6 + Math.random() * 0.8);
@@ -973,6 +1155,8 @@ export class Business {
     const [s1, s2] = this.displays;
     this.stockDisplay(s1, "agua", 12);
     this.stockDisplay(s2, "galletas", 12);
+    const produce = this.displays.find((d) => d.def.kind === "produce");
+    if (produce) this.stockDisplay(produce, "fruta", 8);
     this.addToStorage("refresco", 10);
   }
 
@@ -998,6 +1182,7 @@ export class Business {
       ),
       employees: this.employees.map((e) => e.role),
       granos: this.machine?.granos ?? 0,
+      open: this.openToPlayers,
     };
   }
 
@@ -1007,6 +1192,7 @@ export class Business {
     Object.assign(this.prices, data.prices ?? {});
     this.storage = { ...(data.storage ?? {}) };
     this.reputation = data.reputation ?? 50;
+    this.openToPlayers = data.open !== false;
     this.setup();
     if (!this.owned) return;
     for (const d of this.displays) {

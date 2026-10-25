@@ -13,6 +13,7 @@ import {
   signMesh,
 } from "./gfx.js";
 import * as props from "./props.js";
+import * as decor from "./decor.js";
 import { Traffic, toyCar, toyVan, toyScooter } from "./vehicles.js";
 import { ToyCharacter } from "./character.js";
 import { workerLook } from "./look.js";
@@ -146,10 +147,10 @@ export class World {
     this.building("tienda", {
       name: "Mi Tiendita",
       x: -22,
-      z: -20,
-      w: 16,
-      d: 20,
-      partition: -4,
+      z: -19,
+      w: 14,
+      d: 18,
+      partition: -3,
       wallColor: 0xfff1d6,
       trimColor: 0x2fb3a8,
       roofColor: 0x46c2b8,
@@ -157,6 +158,38 @@ export class World {
       sign: "MI TIENDITA",
       signColors: { bg: "#ffffff", fg: "#1f8f86" },
     });
+    // Locales iniciales de los demás jugadores en el modo online.
+    const plot = (id, x, z, rot, wallColor, trimColor, roofColor, awning) =>
+      this.building(id, {
+        name: "Local",
+        x,
+        z,
+        w: 14,
+        d: 18,
+        rot,
+        partition: -3,
+        wallColor,
+        trimColor,
+        roofColor,
+        awning,
+        sign: "LOCAL",
+        signColors: {
+          bg: "#ffffff",
+          fg: "#" + trimColor.toString(16).padStart(6, "0"),
+        },
+      });
+    plot("oeste", -16, -38, Math.PI / 2, 0xfbe8ff, 0x9b6dff, 0xb18cff, [
+      "#9b6dff",
+      "#ffffff",
+    ]);
+    plot("este", 16, -38, -Math.PI / 2, 0xe2f4ff, 0x3d8bff, 0x6fb2ff, [
+      "#3d8bff",
+      "#ffffff",
+    ]);
+    plot("sur", -16, 38, Math.PI / 2, 0xfff0d9, 0xff8a3d, 0xffa45c, [
+      "#ff8a3d",
+      "#ffffff",
+    ]);
     this.building("minimercado", {
       name: "Minimercado Sol",
       x: -51,
@@ -216,9 +249,9 @@ export class World {
     this.building("mayorista", {
       name: "Mayorista",
       x: -22,
-      z: 19,
-      w: 20,
-      d: 18,
+      z: 19.5,
+      w: 24,
+      d: 19,
       rot: Math.PI,
       doorW: 5,
       wallColor: 0xd7e3ea,
@@ -276,42 +309,109 @@ export class World {
     });
   }
 
+  // Mayorista con tres zonas señalizadas: A Pedidos, B Recogida y
+  // C Carga y salida, más pasillos de estanterías por categoría.
   buildWarehouse() {
     const b = this.buildings.mayorista;
-    const colors = [0x3d8bff, 0xff4d4d, 0xffc22e, 0xff8a3d, 0x8a5cf5, 0x5bd47a];
-    for (const lx of [-6, 0, 6]) {
-      b.interior.add(b.place(props.rack(colors), lx, -8.0));
-      b.addLocalCollider(lx, -8.0, 3.7, 1.1);
+    const add = (obj, lx, lz, rot = 0, y) =>
+      b.interior.add(b.place(obj, lx, lz, rot, y));
+    const cats = [
+      ["BEBIDAS", "#3d8bff", [0x3d8bff, 0xff4d4d, 0xf4f4f4]],
+      ["ALIMENTOS", "#f2a531", [0xffc22e, 0x8a5cf5, 0xf2a531]],
+      ["LIMPIEZA", "#7b6cff", [0x7b6cff, 0x9fe3ff, 0xffffff]],
+      ["SNACKS", "#ff8a3d", [0xff8a3d, 0xffb703, 0xe76f51]],
+      ["PRODUCTOS FRESCOS", "#3fbf5f", [0x5bd47a, 0xe8392f, 0xffb3d1]],
+    ];
+    // Estanterías del fondo, una por categoría, con su cartel colgante.
+    cats.forEach(([name, color, colors], i) => {
+      const lx = -9.6 + i * 4.8;
+      add(decor.industrialRack(colors, 4, 2), lx, -8.1);
+      b.addLocalCollider(lx, -8.1, 4.2, 1.2);
+      add(decor.hangingSign(name, color, 3.6), lx, -7.2, 0, 3.0);
+    });
+    // Pasillo central con más estanterías y palés.
+    add(decor.industrialRack([0xff4d4d, 0xffc22e, 0x3d8bff], 4, 2), -6.5, -2.6);
+    b.addLocalCollider(-6.5, -2.6, 4.2, 1.2);
+    add(decor.industrialRack([0x5bd47a, 0xff8a3d, 0x7b6cff], 4, 2), -0.5, -2.6);
+    b.addLocalCollider(-0.5, -2.6, 4.2, 1.2);
+    for (const [lx, lz] of [
+      [5, -2.6],
+      [7.6, -2.6],
+    ]) {
+      add(
+        decor.palletStack([0xff8a3d, 0x3d8bff, 0x5bd47a, 0xffc22e], 8),
+        lx,
+        lz,
+      );
+      b.addLocalCollider(lx, lz, 1.4, 1.2);
     }
-    for (const lx of [-6, 0]) {
-      b.interior.add(b.place(props.rack(colors.slice().reverse()), lx, -3.2));
-      b.addLocalCollider(lx, -3.2, 3.7, 1.1);
+    add(decor.forklift(), 10.3, 0.8, -Math.PI / 2);
+    b.addLocalCollider(10.3, 0.8, 2.6, 1.4);
+    // Zona A: Pedidos (mostrador grande, dependiente y terminales).
+    const desk = props.counter(4.2, 1.0, 0xf2a531, 0xfff1c9);
+    add(desk, 7, 4.4);
+    b.addLocalCollider(7, 4.4, 4.2, 1.0);
+    add(decor.terminal(), 6.0, 4.4, 0, FLOOR_Y + 0.98);
+    add(
+      decor.hangingSign("A · PEDIR MERCADERÍA", "#3fbf5f", 4.6),
+      7,
+      4.6,
+      0,
+      3.05,
+    );
+    add(decor.floorZone(5.6, 3.6, 0x3fbf5f), 7, 5.2);
+    for (const lx of [4.0, 10.2]) {
+      add(decor.terminal(), lx, 6.6);
+      b.addLocalCollider(lx, 6.6, 0.4, 0.4);
     }
-    const desk = props.counter(3.2, 1.0, 0xf2a531, 0xfff1c9);
-    b.interior.add(b.place(desk, 6, 2));
-    b.addLocalCollider(6, 2, 3.2, 1.0);
-    const sign = signMesh("PEDIDOS", 2, 0.5, { bg: "#ff8a3d", fg: "#ffffff" });
-    b.interior.add(b.place(sign, 6, 2.52, 0, 1.8));
     this.supplierNpc = new ToyCharacter({
       look: workerLook("azul"),
       apron: 0xf2a531,
     });
-    b.place(this.supplierNpc.root, 6, 0.9);
+    b.place(this.supplierNpc.root, 7.6, 3.3);
     this.scene.add(this.supplierNpc.root);
-    const pallet = mesh(box(2.2, 0.14, 1.6), mat(0xb98551), 0, 0, 0);
-    b.interior.add(b.place(pallet, -6, 5, 0, FLOOR_Y + 0.07));
-    const pickupSign = signMesh("RECOGIDA", 1.8, 0.45, {
-      bg: "#3fbf5f",
-      fg: "#ffffff",
-    });
-    b.interior.add(b.place(pickupSign, -6, 3.9, 0, 1.6));
+    this.supplierCounter = b.toWorld(7, 5.5);
+    this.orderTerminals = [b.toWorld(4.0, 7.3), b.toWorld(10.2, 7.3)];
+    // Zona B: Recogida (las cajas compradas aparecen en este palé).
+    add(decor.floorZone(5.6, 3.6, 0xff8a3d), -7, 5.2);
+    add(
+      decor.hangingSign("B · RECOGER PEDIDO", "#ff8a3d", 4.6),
+      -7,
+      4.2,
+      0,
+      3.05,
+    );
     this.pickupPile = new props.StoragePile(12);
     this.pickupPile.group.children.at(-1).visible = false;
-    b.interior.add(b.place(this.pickupPile.group, -6, 5));
-    this.supplierCounter = b.toWorld(6, 3.1);
-    this.pickupPoint = b.toWorld(-6, 5);
-    b.interior.add(b.place(props.pottedPlant(1.2), 9, 8));
-    b.interior.add(b.place(props.pottedPlant(1.2), -9, 8));
+    add(this.pickupPile.group, -7, 4.6);
+    b.addLocalCollider(-7, 4.6, 2.0, 1.4);
+    this.pickupPoint = b.toWorld(-7, 6.1);
+    this.pickupPallet = b.toWorld(-7, 4.6);
+    // Zona C: Carga y salida, con flechas hacia la puerta.
+    add(decor.floorZone(5, 3.2, 0x3d8bff), 0, 7.6);
+    for (const lz of [4.0, 6.0, 8.0]) add(decor.floorArrow(0x3d8bff), 0, lz);
+    add(
+      decor.hangingSign("C · CARGA Y SALIDA ➜", "#3d8bff", 4.2),
+      0,
+      8.4,
+      0,
+      3.05,
+    );
+    add(decor.handTruck(), -3.3, 8.4, Math.PI);
+    b.addLocalCollider(-3.3, 8.4, 0.7, 0.6);
+    add(decor.handTruck(), 3.3, 8.4, Math.PI);
+    b.addLocalCollider(3.3, 8.4, 0.7, 0.6);
+    this.warehouseExit = b.doorPoint(-1.5);
+    // Iluminación de almacén.
+    for (const lx of [-8, -2.5, 2.5, 8])
+      for (const lz of [-5.2, 1.5])
+        add(decor.pendantLamp(0x8aa0ad), lx, lz, 0, 3.4);
+    // Puntos de trabajo para los operarios que mueven cajas.
+    this.warehouseSpots = {
+      racks: cats.map((_, i) => b.toWorld(-9.6 + i * 4.8, -6.8)),
+      pallet: b.toWorld(-7, 3.2),
+      counter: b.toWorld(7, 3.0),
+    };
   }
 
   buildHouses() {
@@ -579,7 +679,8 @@ export class World {
     }
     // Árboles de fondo al norte.
     for (let x = -70; x <= 70; x += 7)
-      this.tree(x, -40 + (Math.abs(x) % 3), 1.2);
+      if (Math.abs(x) < 4 || Math.abs(x) > 27)
+        this.tree(x, -40 + (Math.abs(x) % 3), 1.2);
     // Coches aparcados.
     const parked = [
       [toyCar(0x69db7c), -38, 13, 0],

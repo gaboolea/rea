@@ -4,7 +4,7 @@
 import { ToyCharacter } from "./character.js";
 import { randomLook, workerLook } from "./look.js";
 
-const VIP_LOOK = {
+export const VIP_LOOK = {
   skin: "melocoton",
   top: { id: "traje", color: "morado" },
   bottom: { id: "pantalon_traje", color: "negro" },
@@ -15,8 +15,11 @@ const VIP_LOOK = {
   neck: { id: "cadena_oro" },
 };
 
+let nextNetId = 1;
+
 export class Agent {
   constructor(game, character, x, z) {
+    this.netId = nextNetId++;
     this.game = game;
     this.char = character;
     this.pos = { x, z, y: 0.12 };
@@ -116,11 +119,17 @@ export function turnTowards(current, target, maxStep) {
 }
 
 export class Customer extends Agent {
-  constructor(game, business, spawn, vip = false) {
+  constructor(
+    game,
+    business,
+    spawn,
+    vip = false,
+    seed = Math.floor(Math.random() * 1e9),
+  ) {
     super(
       game,
       new ToyCharacter({
-        look: vip ? VIP_LOOK : randomLook(),
+        look: vip ? VIP_LOOK : randomLook(seed),
         scale: 0.85 + Math.random() * 0.15,
       }),
       spawn.x,
@@ -129,6 +138,8 @@ export class Customer extends Agent {
     this.business = business;
     this.spawn = spawn;
     this.vip = vip;
+    // Semilla del look para compartirlo con otros jugadores (-9 = VIP).
+    this.seed = vip ? -9 : seed;
     this.speed = 2.1 + Math.random() * 0.6;
     this.wants = business.rollWants(vip ? 4 : 0);
     if (vip) this.char.think("★", "#e0a100", 4);
@@ -255,6 +266,7 @@ export class Employee extends Agent {
       door.x,
       door.z,
     );
+    this.seed = -1 - ["cajero", "reponedor", "barista"].indexOf(role);
     this.business = business;
     this.role = role;
     this.speed = 2.3;

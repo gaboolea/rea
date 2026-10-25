@@ -3,7 +3,14 @@
 // equipan (comprándolas si hace falta). Se usa desde el inicio y la Boutique.
 import * as THREE from "three";
 import { ToyCharacter } from "./character.js";
-import { SLOTS, ITEMS, SKINS, COLORS, findItem } from "./look.js";
+import {
+  SLOTS,
+  ITEMS,
+  SKINS,
+  COLORS,
+  findItem,
+  STARTER_ITEMS,
+} from "./look.js";
 import { STAGES } from "./config.js";
 import { mat, mesh, cylinder } from "./gfx.js";
 
@@ -168,7 +175,7 @@ export class Wardrobe {
     };
   }
 
-  equip() {
+  async equip() {
     const g = this.game;
     const slot = this.slot;
     const id = this.currentId(slot);
@@ -177,15 +184,22 @@ export class Wardrobe {
       g.audio.sfx("error");
       return;
     }
-    if (!st.owned) {
-      if (!g.spend(st.price)) return;
-      g.state.wardrobe.push(id);
-      g.state.stats.clothesBought = (g.state.stats.clothesBought ?? 0) + 1;
-      g.ui.toast(`¡Nueva prenda: ${findItem(slot, id).name}!`, "good");
+    // En online la compra (o el premio ya ganado) la confirma el servidor.
+    if (!st.owned || (g.online && !STARTER_ITEMS.includes(id))) {
+      if (g.online) {
+        if (!(await g.serverAction("clothing", { slot, id })).ok) return;
+        g.audio.sfx("buy");
+      } else if (!g.spend(st.price)) return;
+      if (!g.state.wardrobe.includes(id)) {
+        g.state.wardrobe.push(id);
+        g.state.stats.clothesBought = (g.state.stats.clothesBought ?? 0) + 1;
+        g.ui.toast(`¡Nueva prenda: ${findItem(slot, id).name}!`, "good");
+      }
     }
     if (slot === "skin") g.state.look.skin = id;
     else g.state.look[slot] = { ...this.preview[slot] };
     g.player.char.setLook(g.state.look);
+    g.net?.send("look", { look: g.state.look });
     this.char.playAction("cheer", 0.9);
     g.audio.sfx("sparkle");
     g.save();

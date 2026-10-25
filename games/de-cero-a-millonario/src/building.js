@@ -30,7 +30,9 @@ export class Building {
     };
     const { x, z, w, d, rot = 0 } = this.opts;
     Object.assign(this, { x, z, w, d, rot, id: opts.id, name: opts.name });
-    this.flip = rot !== 0 ? -1 : 1;
+    // Solo giros de 90°: así las cajas de colisión siguen alineadas a ejes.
+    this.cos = Math.round(Math.cos(rot));
+    this.sin = Math.round(Math.sin(rot));
     this.group = new THREE.Group();
     this.interior = new THREE.Group(); // muebles del negocio
     this.group.add(this.interior);
@@ -43,18 +45,39 @@ export class Building {
 
   // Coordenadas locales (puerta hacia +z local) a mundo.
   toWorld(lx, lz) {
-    return { x: this.x + lx * this.flip, z: this.z + lz * this.flip };
+    return {
+      x: this.x + lx * this.cos + lz * this.sin,
+      z: this.z - lx * this.sin + lz * this.cos,
+    };
+  }
+
+  // Dirección local (sin traslación) a mundo.
+  dirToWorld(dx, dz) {
+    return {
+      x: dx * this.cos + dz * this.sin,
+      z: -dx * this.sin + dz * this.cos,
+    };
+  }
+
+  toLocal(px, pz) {
+    const dx = px - this.x;
+    const dz = pz - this.z;
+    return {
+      x: dx * this.cos - dz * this.sin,
+      z: dx * this.sin + dz * this.cos,
+    };
   }
 
   // Rotación de mundo para un objeto cuya cara mira a +z local rotado rotY.
   worldRot(rotY = 0) {
-    return rotY + (this.flip < 0 ? Math.PI : 0);
+    return rotY + this.rot;
   }
 
   contains(px, pz, margin = 0) {
+    const l = this.toLocal(px, pz);
     return (
-      Math.abs(px - this.x) <= this.w / 2 - margin &&
-      Math.abs(pz - this.z) <= this.d / 2 - margin
+      Math.abs(l.x) <= this.w / 2 - margin &&
+      Math.abs(l.z) <= this.d / 2 - margin
     );
   }
 
@@ -63,7 +86,7 @@ export class Building {
     return this.toWorld(0, this.d / 2 + offset);
   }
 
-  addLocalCollider(lx, lz, w, d) {
+  addLocalCollider(lx, lz, w, d, tag = this.id) {
     const a = this.toWorld(lx - w / 2, lz - d / 2);
     const b = this.toWorld(lx + w / 2, lz + d / 2);
     return this.world.physics.addBox(
@@ -71,7 +94,7 @@ export class Building {
       Math.min(a.z, b.z),
       Math.max(a.x, b.x),
       Math.max(a.z, b.z),
-      this.id,
+      tag,
     );
   }
 
@@ -212,7 +235,18 @@ export class Building {
       this.group.add(back);
       this.world.occluders.push(sign, back);
       this.signBoard = sign;
+      this.signSize = Math.min(w - 1, 7);
     }
+  }
+
+  // Cambia el texto del letrero de la fachada (p. ej. nombre del dueño).
+  setSignText(text, colors = this.opts.signColors) {
+    if (!this.signBoard || text === this.signText) return;
+    this.signText = text;
+    const fresh = signMesh(text, this.signSize, 1.1, colors);
+    this.signBoard.material.map.dispose();
+    this.signBoard.material.map = fresh.material.map;
+    this.signBoard.material.needsUpdate = true;
   }
 
   buildAwning(width, d) {

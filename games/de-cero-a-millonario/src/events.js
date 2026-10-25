@@ -202,7 +202,10 @@ export class Events {
 
   start() {
     const g = this.game;
-    const types = ["sale", "rush", "coins", "vip"];
+    // La oferta flash no existe en online: el precio lo fija el servidor.
+    const types = g.online
+      ? ["rush", "coins", "vip"]
+      : ["sale", "rush", "coins", "vip"];
     const type = pick(types);
     if (type === "sale") {
       const fridge = g.businesses.tienda.displays.some(
@@ -368,8 +371,23 @@ export class Events {
       m.request = null;
       m.char.playAction("cheer", 1);
       m.char.think("♥", "#e84393", 2);
-      this.reward(r.pay, `Encargo de ${m.name} completado`);
-      g.unlockRewards();
+      if (g.online) {
+        g.serverAction("encargo", { product: r.product, units: r.units }).then(
+          (res) => {
+            if (!res.ok) return;
+            g.ui.toast(
+              `Encargo de ${m.name} completado · +$${res.pay}`,
+              "good",
+            );
+            g.audio.sfx("mission");
+            g.ui.floatMoney(res.pay);
+            g.unlockRewards();
+          },
+        );
+      } else {
+        this.reward(r.pay, `Encargo de ${m.name} completado`);
+        g.unlockRewards();
+      }
     }
   }
 
@@ -410,10 +428,17 @@ export class Events {
       if (Math.hypot(c.base.x - p.x, c.base.z - p.z) < 1.0) {
         this.game.scene.remove(c.mesh);
         this.coins.splice(i, 1);
-        this.game.state.money += c.value;
         this.game.state.stats.coins = (this.game.state.stats.coins ?? 0) + 1;
         this.game.audio.sfx("coin");
-        this.game.ui.floatMoney(c.value);
+        if (this.game.online) {
+          this.game.net.request("coin").then((r) => {
+            this.game.applyServerMoney(r);
+            if (r.ok) this.game.ui.floatMoney(r.value);
+          });
+        } else {
+          this.game.state.money += c.value;
+          this.game.ui.floatMoney(c.value);
+        }
       }
     }
   }
@@ -435,7 +460,11 @@ export class Events {
       if (!inside) continue;
       found.push(place.id);
       if (place.id === "tienda") continue;
-      g.state.money += 10;
+      if (g.online)
+        g.net
+          .request("discover", { place: place.id })
+          .then((r) => g.applyServerMoney(r));
+      else g.state.money += 10;
       g.ui.toast(`📍 ¡Descubriste ${place.name}! +$10`, "good");
       g.ui.floatMoney(10);
       g.audio.sfx("sparkle");

@@ -12,6 +12,11 @@ import { AudioManager } from "./audio.js";
 import { Crowd } from "./pedestrians.js";
 import { Events } from "./events.js";
 import { Wardrobe } from "./wardrobe.js";
+import { Guide } from "./guide.js";
+import { Tutorial } from "./tutorial.js";
+import { Warehouse } from "./warehouse.js";
+import { Net, savedName } from "./net.js";
+import { Online } from "./online.js";
 import { checkMissions, currentMission } from "./missions.js";
 import { defaultLook, STARTER_ITEMS, findItem } from "./look.js";
 import {
@@ -24,11 +29,13 @@ import {
   DAY_SECONDS,
   BOX_UNITS,
   START_MONEY,
+  PLOTS,
 } from "./config.js";
 
 const SAVE_KEY = "de-cero-a-millonario-v1";
 const SETTINGS_KEY = "de-cero-a-millonario-settings";
 const AUTOPLAY_KEY = "de-cero-a-millonario-autoplay";
+const ONLINE_KEY = "de-cero-a-millonario-online";
 const SAVE_VERSION = 2;
 
 const QUALITY = {
@@ -81,6 +88,9 @@ function freshState() {
     carried: [],
     pickup: [],
     deliveries: [],
+    warehouse: {},
+    pendingPickup: [],
+    tutorial: {},
     lastReport: null,
   };
 }
@@ -125,11 +135,11 @@ class Game {
     this.crowd = new Crowd(this);
     this.events = new Events(this);
     this.wardrobe = new Wardrobe(this);
+    this.warehouse = new Warehouse(this);
+    this.guide = new Guide(this);
+    this.tutorial = new Tutorial(this);
     this.ui = new UI(this);
-    this.staticInteractables = [
-      ...this.buildStaticInteractables(),
-      ...this.events.merchantInteractables(),
-    ];
+    this.rebuildInteractables();
     this.world.traffic.onBusStop = () => this.crowd.onBusStop();
     this.world.traffic.onHorn = (v) => {
       if (
@@ -149,29 +159,275 @@ class Game {
     window.addEventListener("resize", () => this.resize());
     this.applySettings();
     this.resize();
-    const loaded = this.load();
-    if (!loaded) this.setupNewGame();
     this.bindTitle();
     this.unlockAudioOnGesture();
+    // Modo online: la partida la decide el servidor (ver bootOnline).
+    const session = storage(() =>
+      JSON.parse(sessionStorage.getItem(ONLINE_KEY) ?? "null"),
+    );
+    if (session) {
+      this.bootOnline(session);
+      return;
+    }
+    const loaded = this.load();
+    if (!loaded) this.setupNewGame();
+    this.finishBoot(false);
+  }
+
+  finishBoot(online) {
     // Calentar la ciudad unos segundos para que ya haya gente en la calle.
     for (let i = 0; i < 90; i++) this.stepWorld(1 / 15, true);
     this.renderer.setAnimationLoop(() => this.frame());
     const autoplay = storage(() => sessionStorage.getItem(AUTOPLAY_KEY));
     storage(() => sessionStorage.removeItem(AUTOPLAY_KEY));
-    if (autoplay) this.startPlay(true);
+    if (autoplay || online) this.startPlay(true);
     else this.showTitle();
     requestAnimationFrame(() => document.getElementById("loading")?.remove());
   }
 
+  rebuildInteractables() {
+    this.staticInteractables = [
+      ...this.buildStaticInteractables(),
+      ...this.events.merchantInteractables(),
+      ...(this.online?.interactables() ?? []),
+    ];
+  }
+
+  // ---------- Modo online ----------
+
+  async bootOnline(sess) {
+    const loading = document.getElementById("loading");
+    loading.querySelector("span").textContent = "Conectando con la ciudad…";
+    try {
+      const net = new Net(sess.url);
+      await net.connect();
+      await net.hello(
+        sess.name || savedName() || "Empresario",
+        this.state.look,
+      );
+      const res = await net.request(
+        sess.create ? "create" : "join",
+        sess.create ?? { code: sess.code },
+      );
+      if (!res.ok) throw new Error(res.error);
+      // Una recarga vuelve a entrar en la misma ciudad (no crea otra).
+      sess.code = res.city.code;
+      delete sess.create;
+      storage(() => sessionStorage.setItem(ONLINE_KEY, JSON.stringify(sess)));
+      this.net = net;
+      this.online = new Online(this, net, res);
+      this.applyJoin(res);
+      net.onClose = () => this.reconnect(sess);
+      net.onStatus(() => this.ui.refreshHud(true));
+      this.finishBoot(true);
+      this.ui.chatLine(
+        `Entraste en «${res.city.name}» · código ${res.city.code}`,
+        true,
+      );
+    } catch (err) {
+      loading.innerHTML = `<div class="boot-error"><b>No se pudo entrar en la ciudad</b><span>${String(err.message).replace(/[<>]/g, "")}</span>
+        <div><button id="boot-retry">Reintentar</button><button id="boot-offline">Jugar sin conexión</button></div></div>`;
+      document.getElementById("boot-retry").onclick = () => location.reload();
+      document.getElementById("boot-offline").onclick = () => {
+        storage(() => sessionStorage.removeItem(ONLINE_KEY));
+        location.reload();
+      };
+    }
+  }
+
+  // Estado de la partida a partir del servidor (autoritativo) y del último
+  // reparto de mercancía guardado (cosmético).
+  applyJoin(res) {
+    const cp = res.profile;
+    const blob = cp.blob ?? {};
+    const fresh = freshState();
+    this.state = { ...fresh, ...(blob.state ?? {}) };
+    Object.assign(this.state, {
+      money: cp.money,
+      mission: cp.mission,
+      items: { ...cp.items },
+      discovered: [...cp.discovered],
+      day: cp.day,
+      clock: cp.dayElapsed,
+      wardrobe: [...new Set([...STARTER_ITEMS, ...res.wardrobe])],
+      look: { ...defaultLook(), ...res.look },
+      started: true,
+      lastReport: cp.lastReport,
+    });
+    this.state.stats = {
+      ...fresh.stats,
+      ...(blob.state?.stats ?? {}),
+      ...cp.stats,
+    };
+    this.state.missionBase ??= { ...this.state.stats };
+    this.businesses = {};
+    for (const id of Object.keys(BUSINESSES)) {
+      const owner = res.owners[id];
+      if (owner && owner.id !== res.you.id) {
+        this.online.addRemoteExclusive(id, owner);
+        continue;
+      }
+      const b = new Business(
+        this,
+        id,
+        id === "tienda" ? { building: res.you.plot } : {},
+      );
+      const server = cp.businesses[id];
+      b.load({
+        ...(blob.businesses?.[id] ?? {}),
+        owned: !!server,
+        upgrades: server?.upgrades ?? [],
+        employees: server?.employees ?? [],
+      });
+      this.businesses[id] = b;
+    }
+    if (!cp.blob) this.businesses.tienda.seedStarterStock();
+    for (const m of res.members) this.online.addRemotePlot(m);
+    this.online.reconcile(cp.ledger);
+    this.restorePlayer(blob.player);
+    this.world.pickupPile.setCount(this.state.pickup.length);
+    for (const d of this.state.deliveries) this.dispatchTruck(d);
+    this.rebuildInteractables();
+    this.applyItems();
+    this.setupGuides();
+    this.player.char.setLook(this.state.look);
+    this.onCarryChanged();
+  }
+
+  async reconnect(sess) {
+    this.ui.toast("Se perdió la conexión. Reconectando…", "bad");
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise((r) =>
+        setTimeout(r, Math.min(10000, 1000 * 2 ** attempt)),
+      );
+      try {
+        await this.net.connect();
+        await this.net.hello(sess.name || savedName(), this.state.look);
+        const res = await this.net.request("join", { code: sess.code });
+        if (!res.ok) throw new Error(res.error);
+        this.applyServerMoney({
+          money: res.profile.money,
+          revenue: res.profile.stats.revenue,
+        });
+        this.online.owners = res.owners;
+        this.online.warehouseStock = res.warehouse;
+        for (const m of res.members) this.online.members.set(m.id, m);
+        this.net.onClose = () => this.reconnect(sess);
+        this.ui.toast("Conexión recuperada", "good");
+        return;
+      } catch {
+        // Se reintenta con espera creciente.
+      }
+    }
+    this.ui.toast(
+      "No se pudo reconectar. Sal al menú para intentarlo de nuevo.",
+      "bad",
+    );
+  }
+
+  leaveOnline() {
+    this.save();
+    this.online?.leave();
+    storage(() => sessionStorage.removeItem(ONLINE_KEY));
+    location.reload();
+  }
+
+  // Acción económica validada por el servidor.
+  async serverAction(type, payload = {}, quiet = false) {
+    const r = await this.net.request(type, payload);
+    if (!r.ok && !quiet) {
+      this.ui.toast(r.error ?? "El servidor rechazó la acción", "bad");
+      this.audio.sfx("error");
+    }
+    this.applyServerMoney(r);
+    return r;
+  }
+
+  applyServerMoney(r) {
+    if (typeof r.money === "number") this.state.money = r.money;
+    if (typeof r.revenue === "number") this.state.stats.revenue = r.revenue;
+    this.ui.refreshHud(true);
+  }
+
+  // Fin del día dictado por el servidor (gastos ya descontados allí).
+  onServerDay(report, money) {
+    const lines = [];
+    for (const b of Object.values(this.businesses)) {
+      if (!b.owned) continue;
+      const cost = report.lines.find((l) => l.name === b.def.name)?.cost ?? 0;
+      lines.push({
+        name: b.name,
+        revenue: b.today.revenue,
+        profit: b.today.profit,
+        sales: b.today.sales,
+        lost: b.today.lost,
+        cost,
+      });
+      b.today = { revenue: 0, profit: 0, sales: 0, lost: 0 };
+    }
+    this.state.money = money;
+    this.state.day = report.day + 1;
+    this.state.clock = 0;
+    this.state.lastReport = {
+      day: report.day,
+      lines,
+      expenses: report.expenses,
+    };
+    this.ui.showReport(this.state.lastReport);
+    this.ui.floatMoney(-report.expenses);
+  }
+
+  onRemoteOwner(biz, name, id) {
+    if (biz === "casa") {
+      this.world.buildings.casagrande.setForSale(null);
+      return;
+    }
+    const b = this.businesses[biz];
+    if (b && !b.owned) {
+      delete this.businesses[biz];
+      this.online.addRemoteExclusive(biz, { id, name });
+      this.rebuildInteractables();
+    }
+    this.ui.toast(`${name} compró ${BUSINESSES[biz]?.name ?? biz}`, "event");
+  }
+
   // Partida nueva: junto a la puerta de la tienda, con algo de género.
   startPoint() {
-    return this.world.buildings.tienda.doorPoint(4.2);
+    return (
+      this.businesses?.tienda?.building ?? this.world.buildings.tienda
+    ).doorPoint(2.2);
   }
 
   setupNewGame() {
     for (const b of Object.values(this.businesses)) b.setup();
     this.businesses.tienda.seedStarterStock();
     this.applyItems();
+    this.setupGuides();
+  }
+
+  // Balizas de orientación y locales reservados a otros jugadores.
+  setupGuides() {
+    const own = this.businesses.tienda.building;
+    own.setSignText("MI TIENDITA");
+    const beacons = [{ building: own, own: true, label: "MI TIENDITA" }];
+    for (const id of PLOTS) {
+      const b = this.world.buildings[id];
+      if (b === own) continue;
+      const remote = this.online?.plotOwner(id);
+      if (remote)
+        beacons.push({ building: b, own: false, label: `Tienda de ${remote}` });
+      else if (!this.online) b.setLocked(true, "LOCAL PARA\nMODO ONLINE");
+    }
+    this.guide.setBeacons(beacons);
+    this.tutorial.render();
+  }
+
+  missionTarget() {
+    const m = currentMission(this);
+    const t = m?.target ? m.target(this) : null;
+    if (t) return { x: t.x, z: t.z, label: "Objetivo" };
+    const enc = this.events.hudEncargo()?.target;
+    return enc ? { x: enc.x, z: enc.z + 1.1, label: enc.name } : null;
   }
 
   setupLights() {
@@ -218,6 +474,8 @@ class Game {
       sensitivity: 1,
       invertY: false,
       alwaysRun: false,
+      chat: true,
+      mutedPlayers: [],
       quality: touch ? "media" : "alta",
     };
     const saved = storage(() =>
@@ -283,6 +541,7 @@ class Game {
       else this.startPlay();
     });
     on("t-custom", () => this.openWardrobe("title"));
+    on("t-multi", () => this.ui.openMultiplayer());
     on("t-options", () => this.ui.openOptions());
     on("t-credits", () => this.ui.openCredits());
     on("t-sound", () => {});
@@ -337,6 +596,7 @@ class Game {
   }
 
   goToTitle() {
+    if (this.online) return this.leaveOnline();
     this.fade(() => this.showTitle());
   }
 
@@ -379,12 +639,24 @@ class Game {
     return true;
   }
 
-  earn(total, profit) {
+  // Venta a un cliente del juego. En online el servidor valida existencias
+  // y precio y es quien suma el dinero.
+  earn(total, profit, basket = [], business = null, vip = false) {
     const s = this.state;
-    s.money += total;
-    s.stats.revenue += total;
     s.stats.grossProfit += profit;
     s.stats.sales++;
+    if (this.online) {
+      const items = basket.map((i) => ({
+        p: i.product,
+        price: Math.round(i.price * 100) / 100,
+      }));
+      this.net
+        .request("sale", { biz: business?.id ?? "tienda", items, vip })
+        .then((r) => this.applyServerMoney(r));
+      return;
+    }
+    s.money += total;
+    s.stats.revenue += total;
   }
 
   onSale(business, customer, total) {
@@ -434,7 +706,7 @@ class Game {
 
   // Compra al proveedor. order: { producto: cajas }. deliverTo: id de un
   // negocio para que lo lleve la furgoneta propia o el camión de reparto.
-  buySupplies(order, deliverTo) {
+  async buySupplies(order, deliverTo) {
     const stage = this.stageIndex();
     let cost = 0;
     let boxes = 0;
@@ -453,6 +725,16 @@ class Game {
       units += per * n;
     }
     if (!boxes) return false;
+    for (const [p, n] of Object.entries(order)) {
+      if (n > this.warehouse.available(p)) {
+        this.ui.toast(
+          `No quedan suficientes cajas de ${PRODUCTS[p].name} en el Mayorista`,
+          "bad",
+        );
+        this.audio.sfx("error");
+        return false;
+      }
+    }
     const target = deliverTo ? this.businesses[deliverTo] : null;
     const van = !!this.state.items.furgoneta;
     if (target && !van) cost += 4;
@@ -465,7 +747,12 @@ class Game {
         this.audio.sfx("error");
         return false;
       }
-    } else if (this.state.pickup.length + boxes > 18) {
+    } else if (
+      this.state.pickup.length +
+        this.state.pendingPickup.reduce((a, o) => a + o.items.length, 0) +
+        boxes >
+      18
+    ) {
       this.ui.toast(
         "La zona de recogida está llena: recoge tus cajas primero",
         "bad",
@@ -474,12 +761,25 @@ class Game {
       return false;
     }
     cost = Math.round(cost * 100) / 100;
-    if (!this.spend(cost)) return false;
+    if (this.online) {
+      const clean = Object.fromEntries(
+        Object.entries(order).filter(([, n]) => n > 0),
+      );
+      const r = await this.serverAction("buy", {
+        order: clean,
+        deliver: deliverTo ?? null,
+      });
+      if (!r.ok) return false;
+      cost = r.cost;
+      this.audio.sfx("buy");
+    } else if (!this.spend(cost)) return false;
     const items = [];
     for (const [p, n] of Object.entries(order)) {
+      if (!n) continue;
       const per = PRODUCTS[p].boxUnits ?? BOX_UNITS;
       for (let i = 0; i < n; i++) items.push({ product: p, units: per });
       this.state.stats.unitsBought += per * n;
+      this.warehouse.take(p, n);
     }
     this.state.stats.expenses += cost;
     this.ui.floatMoney(-cost);
@@ -495,10 +795,10 @@ class Game {
       this.dispatchTruck(delivery);
       this.ui.toast(`🚚 El camión va camino de ${target.name}`, "event");
     } else {
-      this.state.pickup.push(...items);
-      this.world.pickupPile.setCount(this.state.pickup.length);
+      this.warehouse.queueOrder(items);
       this.ui.toast(
-        `Compra realizada (−$${cost.toFixed(2)}). Recoge las cajas en RECOGIDA.`,
+        `Pedido pagado (−$${cost.toFixed(2)}). Se está preparando en la zona B · RECOGER PEDIDO`,
+        "good",
       );
     }
     this.save();
@@ -518,12 +818,14 @@ class Game {
     });
   }
 
-  buyUpgrade(biz, id) {
+  async buyUpgrade(biz, id) {
     const b = this.businesses[biz];
     const u = UPGRADES[id];
     if (b.upgrades.has(id) || (u.stage ?? 0) > this.stageIndex()) return;
     if ((u.needs ?? []).some((n) => !b.upgrades.has(n))) return;
-    if (!this.spend(u.price)) return;
+    if (this.online) {
+      if (!(await this.serverAction("upgrade", { biz, id })).ok) return;
+    } else if (!this.spend(u.price)) return;
     b.upgrades.add(id);
     b.refreshFixtures();
     if (id === "plantas") b.reputation = Math.min(100, b.reputation + 5);
@@ -534,12 +836,14 @@ class Game {
     this.save();
   }
 
-  hire(biz, role) {
+  async hire(biz, role) {
     if ((STAFF[role].stage ?? 0) > this.stageIndex()) return;
     const b = this.businesses[biz];
     if (b.employees.length >= 4)
       return this.ui.toast("Este local no admite más personal", "bad");
-    if (!this.spend(STAFF[role].salary)) return;
+    if (this.online) {
+      if (!(await this.serverAction("hire", { biz, role })).ok) return;
+    } else if (!this.spend(STAFF[role].salary)) return;
     b.hire(role);
     this.ui.toast(
       `Has contratado a un/a ${STAFF[role].name} (primer día pagado)`,
@@ -548,10 +852,19 @@ class Game {
     this.save();
   }
 
-  buyBusiness(id) {
+  async fire(biz, role) {
+    if (this.online && !(await this.serverAction("fire", { biz, role })).ok)
+      return;
+    this.businesses[biz].fire(role);
+    this.save();
+  }
+
+  async buyBusiness(id) {
     const b = this.businesses[id];
-    if (b.owned || (b.def.stage ?? 0) > this.stageIndex()) return;
-    if (!this.spend(b.def.price)) return;
+    if (!b || b.owned || (b.def.stage ?? 0) > this.stageIndex()) return;
+    if (this.online) {
+      if (!(await this.serverAction("business", { biz: id })).ok) return;
+    } else if (!this.spend(b.def.price)) return;
     b.buy();
     this.ui.toast(`¡Ahora eres dueño/a de ${b.name}!`, "good");
     this.audio.sfx("mission");
@@ -559,10 +872,12 @@ class Game {
     this.save();
   }
 
-  buyItem(id) {
+  async buyItem(id) {
     const item = SHOP_ITEMS[id];
     if (this.state.items[id] || (item.stage ?? 0) > this.stageIndex()) return;
-    if (!this.spend(item.price)) return;
+    if (this.online) {
+      if (!(await this.serverAction("item", { id })).ok) return;
+    } else if (!this.spend(item.price)) return;
     this.state.items[id] = true;
     this.applyItems();
     this.ui.toast(`¡Has comprado: ${item.name}!`, "good");
@@ -621,16 +936,36 @@ class Game {
         x: w.supplierCounter.x,
         z: w.supplierCounter.z,
         radius: 1.8,
-        label: () => ({ text: "Hacer un pedido al Mayorista", enabled: true }),
+        label: () => ({ text: "HACER PEDIDO", enabled: true }),
         action: () => this.ui.openSupplier(),
       },
+      ...w.orderTerminals.map((t) => ({
+        x: t.x,
+        z: t.z,
+        radius: 1.3,
+        label: () => ({
+          text: "Terminal de pedidos · HACER PEDIDO",
+          enabled: true,
+        }),
+        action: () => this.ui.openSupplier(),
+      })),
       {
         x: w.pickupPoint.x,
         z: w.pickupPoint.z,
         radius: 2.0,
         label: () => {
           const next = this.state.pickup[0];
-          if (!next) return { text: "Zona de recogida vacía", enabled: false };
+          const wait = this.warehouse.pendingSeconds();
+          if (!next && wait > 0)
+            return {
+              text: `Tu pedido se está preparando… (${Math.ceil(wait)} s)`,
+              enabled: false,
+            };
+          if (!next)
+            return {
+              text: "No tienes pedidos para recoger · pide en el mostrador A",
+              enabled: false,
+            };
           if (this.state.carried.length >= this.carryCapacity())
             return {
               text: `Manos llenas (${this.carryCapacity()} caja/s máx.)`,
@@ -689,6 +1024,12 @@ class Game {
         radius: 2.4,
         label: () => {
           if (this.state.items.casa) return null;
+          const villaOwner = this.online?.owners.casa;
+          if (villaOwner && villaOwner.id !== this.online.me.id)
+            return {
+              text: `Villa Bonita · casa de ${villaOwner.name}`,
+              enabled: false,
+            };
           const item = SHOP_ITEMS.casa;
           if (this.stageIndex() < item.stage)
             return {
@@ -712,6 +1053,18 @@ class Game {
         action: () => {},
       },
     ];
+    for (const [biz, owner] of Object.entries(this.online?.owners ?? {})) {
+      if (biz === "casa" || owner.id === this.online.me.id) continue;
+      list.push({
+        ...this.world.buildings[biz].doorPoint(1.5),
+        radius: 2.4,
+        label: () => ({
+          text: `${BUSINESSES[biz].name} · propiedad de ${owner.name}`,
+          enabled: false,
+        }),
+        action: () => {},
+      });
+    }
     for (const b of Object.values(this.businesses)) {
       list.push({
         ...b.building.doorPoint(1.5),
@@ -776,11 +1129,31 @@ class Game {
   }
 
   // Todas las personas no jugadoras visibles (para separarlas entre sí).
+  // Al salir del Mayorista con cajas: rumbo a la tienda.
+  carryHint() {
+    const p = this.player.pos;
+    const inWarehouse = this.world.buildings.mayorista.contains(p.x, p.z);
+    if (!this.state.carried.length) this.carryHintShown = false;
+    else if (inWarehouse && !this.carryHintShown) {
+      this.carryHintShown = true;
+      this.ui.toast(
+        "📦 LLEVA LA MERCADERÍA A TU TIENDA · sigue la ruta",
+        "event",
+      );
+      this.guide.setDestination({
+        ...this.businesses.tienda.building.doorPoint(1.2),
+        label: "Mi tienda",
+        building: this.businesses.tienda.building,
+      });
+    }
+  }
+
   allAgents() {
     const list = [];
     for (const b of Object.values(this.businesses))
       list.push(...b.customers, ...b.employees);
     for (const p of this.crowd.people) if (!p.hidden()) list.push(p);
+    list.push(...this.warehouse.workers);
     return list;
   }
 
@@ -832,7 +1205,11 @@ class Game {
     this._agents = [];
     for (const b of Object.values(this.businesses))
       this._agents.push(...b.actors());
-    this._agents.push(...this.crowd.positions());
+    this._agents.push(
+      ...this.crowd.positions(),
+      ...this.warehouse.positions(),
+      ...(this.online?.positions() ?? []),
+    );
     const budget = {
       customers: title
         ? 0
@@ -905,13 +1282,17 @@ class Game {
     this.cameraRig.update(dt, input, this.player, !!inside);
     this.stepWorld(dt, false);
     this.events.update(dt, this.elapsed);
+    this.warehouse.update(dt);
+    this.tutorial.update();
+    this.carryHint();
+    this.guide.update(dt, this.elapsed);
+    this.online?.update(dt);
     this.handleKeys(input);
     this.advanceClock(dt);
     checkMissions(this);
     const m = currentMission(this);
-    this.fx.setMarker(
-      m?.target ? m.target(this) : this.events.hudEncargo()?.target,
-    );
+    void m;
+    this.fx.setMarker(this.guide.currentTarget());
     this.ui.refreshHud();
     this.audio.update(dt, this.audioInfo(this.player.pos, false, !!inside));
     this.autosave -= dt;
@@ -948,12 +1329,21 @@ class Game {
     if (input.consume("i")) this.ui.openInventory();
     if (input.consume("v")) this.toggleRide();
     if (input.consume("escape") || input.consume("p")) this.ui.openMenu();
+    if (this.online) {
+      if (input.consume("1")) this.online.emote("wave");
+      if (input.consume("2")) this.online.emote("cheer");
+      if (input.consume("3")) this.online.emote("dance");
+      if (input.consume("l")) this.ui.openLeaderboard();
+      if (input.consume("enter")) this.ui.openChat();
+    }
   }
 
   advanceClock(dt) {
     const s = this.state;
     s.clock += dt;
-    if (s.clock >= DAY_SECONDS) {
+    // En online el día lo cierra el servidor (mensaje "day").
+    if (this.online) s.clock = Math.min(s.clock, DAY_SECONDS - 0.01);
+    else if (s.clock >= DAY_SECONDS) {
       s.clock = 0;
       this.endDay();
     }
@@ -965,7 +1355,9 @@ class Game {
     const lines = [];
     for (const b of Object.values(this.businesses)) {
       if (!b.owned) continue;
-      const fridge = b.upgrades.has("refrigerador") ? 5 : 0;
+      const fridge =
+        (b.upgrades.has("refrigerador") ? 5 : 0) +
+        (b.upgrades.has("congelador") ? 4 : 0);
       const cost = b.def.rent + b.salaries() + fridge;
       expenses += cost;
       lines.push({
@@ -1058,6 +1450,29 @@ class Game {
   // ---------- Guardado ----------
 
   save() {
+    if (this.online) {
+      // El servidor guarda dinero e inventario; aquí solo el reparto.
+      const state = { ...this.state };
+      for (const k of ["money", "items", "wardrobe", "look", "mission", "day"])
+        delete state[k];
+      this.net.send("save", {
+        blob: {
+          state,
+          player: {
+            x: this.player.pos.x,
+            z: this.player.pos.z,
+            heading: this.player.heading,
+          },
+          businesses: Object.fromEntries(
+            Object.entries(this.businesses).map(([id, b]) => [
+              id,
+              b.serialize(),
+            ]),
+          ),
+        },
+      });
+      return true;
+    }
     const data = {
       version: SAVE_VERSION,
       state: this.state,
@@ -1099,6 +1514,7 @@ class Game {
     this.world.pickupPile.setCount(this.state.pickup.length);
     for (const d of this.state.deliveries) this.dispatchTruck(d);
     this.applyItems();
+    this.setupGuides();
     this.player.char.setLook(this.state.look);
     this.onCarryChanged();
     return true;
