@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>De Cero a Millonario</title>
+    <meta
+      name="description"
+      content="Simulador 3D de negocios: empieza con una pequeña tienda y conviértete en millonario."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="loading">Cargando la ciudad…</div>
+
+    <div id="hud">
+      <div id="hud-left" class="card">
+        <div id="money">$150</div>
+        <div id="stage">Principiante</div>
+        <div id="today">Ganancia hoy: $0</div>
+      </div>
+      <div id="objective" class="card">
+        <small>OBJETIVO</small>
+        <div id="objective-text"></div>
+        <div id="objective-reward"></div>
+      </div>
+      <div id="hud-right">
+        <div id="clock" class="card">Día 1 · 07:00</div>
+        <div class="buttons">
+          <button id="btn-map" title="Mapa (M)">🗺️<span>Mapa</span></button>
+          <button id="btn-manage" title="Gestión (G)">
+            📊<span>Gestión</span>
+          </button>
+          <button id="btn-menu" title="Menú (Esc)">☰<span>Menú</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="carry" class="card" hidden></div>
+    <div id="prompt" hidden></div>
+    <div id="toasts"></div>
+    <div id="mission-done"></div>
+
+    <div id="touch-controls">
+      <div id="joystick"><div id="joystick-knob"></div></div>
+      <div id="touch-buttons">
+        <button id="btn-ride" hidden>🛴</button>
+        <button id="btn-jump">⤒</button>
+        <button id="btn-run">🏃</button>
+        <button id="btn-interact">✋</button>
+      </div>
+    </div>
+
+    <div id="panel" hidden>
+      <div id="panel-card">
+        <header>
+          <h2 id="panel-title"></h2>
+          <button id="panel-close" aria-label="Cerrar">✕</button>
+        </header>
+        <div id="panel-body"></div>
+      </div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
