@@ -36,6 +36,8 @@ export class Building {
     this.group.add(this.interior);
     world.scene.add(this.group);
     this.walls = [];
+    this.glassMats = [];
+    this.lightMats = [];
     this.build();
   }
 
@@ -121,6 +123,7 @@ export class Building {
     this.wall(w / 2 - T / 2, 0, T, d, wallColor);
     this.buildFront(w, d, doorW, wallColor, trimColor);
     this.buildRoof();
+    this.buildCeilingLights();
     if (this.opts.partition !== undefined) {
       this.partition = this.wall(
         0,
@@ -155,6 +158,7 @@ export class Building {
         );
         this.place(glass, cx, fz, 0, 0.8 + 0.95);
         this.group.add(glass);
+        this.glassMats.push(glass.material);
         const mullion = mesh(box(0.1, 1.9, 0.14), mat(trimColor), 0, 0, 0);
         this.place(mullion, cx, fz, 0, 1.75);
         this.group.add(mullion);
@@ -227,6 +231,41 @@ export class Building {
     aw.rotation.set(-Math.PI / 2 + 0.45, this.worldRot(0), 0, "YXZ");
     this.group.add(aw);
     this.world.occluders.push(aw);
+  }
+
+  // Paneles de luz en el techo: se ven encendidos desde la calle al anochecer.
+  buildCeilingLights() {
+    const m = new THREE.MeshStandardMaterial({
+      color: 0xfffbe8,
+      emissive: 0xfff1c4,
+      emissiveIntensity: 0.4,
+    });
+    this.lightMats.push(m);
+    const n = Math.max(1, Math.round(this.w / 7));
+    for (let i = 0; i < n; i++) {
+      for (const lz of [-this.d / 4, this.d / 4]) {
+        const panel = mesh(box(1.6, 0.06, 0.6), m, 0, 0, 0, false);
+        this.place(
+          panel,
+          -this.w / 2 + ((i + 0.5) * this.w) / n,
+          lz,
+          0,
+          H - 0.05,
+        );
+        this.group.add(panel);
+      }
+    }
+  }
+
+  setNight(n) {
+    const lit = !this.shutter;
+    for (const m of this.glassMats) {
+      m.emissive.setHex(0xffd27a);
+      m.emissiveIntensity = lit ? n * 0.55 : 0;
+      m.opacity = 0.32 + (lit ? n * 0.25 : 0);
+    }
+    for (const m of this.lightMats)
+      m.emissiveIntensity = lit ? 0.4 + n * 1.4 : 0;
   }
 
   buildRoof() {

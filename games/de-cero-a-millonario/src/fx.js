@@ -77,12 +77,48 @@ export class Fx {
     }
   }
 
+  // Nubecitas de polvo al correr o aterrizar.
+  dust(pos, n) {
+    this.dustGeo ??= new THREE.SphereGeometry(0.12, 8, 6);
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(
+        this.dustGeo,
+        new THREE.MeshBasicMaterial({
+          color: 0xf3e6c8,
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false,
+        }),
+      );
+      m.position.set(
+        pos.x + (Math.random() - 0.5) * 0.4,
+        pos.y + 0.08,
+        pos.z + (Math.random() - 0.5) * 0.4,
+      );
+      this.scene.add(m);
+      this.items.push({
+        obj: m,
+        t: 0,
+        life: 0.5,
+        vy: 0.4,
+        puff: true,
+        vx: (Math.random() - 0.5) * 1.2,
+        vz: (Math.random() - 0.5) * 1.2,
+      });
+    }
+  }
+
   update(dt, time) {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];
       it.t += dt;
       it.obj.position.y += it.vy * dt;
-      if (it.vx !== undefined) {
+      if (it.puff) {
+        it.obj.position.x += it.vx * dt;
+        it.obj.position.z += it.vz * dt;
+        it.obj.scale.setScalar(1 + it.t * 3);
+        it.obj.material.opacity = 0.7 * (1 - it.t / it.life);
+      } else if (it.vx !== undefined) {
         it.vy -= 9 * dt;
         it.obj.position.x += it.vx * dt;
         it.obj.position.z += it.vz * dt;
@@ -92,10 +128,8 @@ export class Fx {
       }
       if (it.t >= it.life) {
         this.scene.remove(it.obj);
-        if (it.obj.isSprite) {
-          it.obj.material.map.dispose();
-          it.obj.material.dispose();
-        }
+        if (it.obj.isSprite) it.obj.material.map.dispose();
+        if (it.obj.isSprite || it.puff) it.obj.material.dispose();
         this.items.splice(i, 1);
       }
     }

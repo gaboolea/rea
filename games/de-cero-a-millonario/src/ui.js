@@ -1,19 +1,18 @@
-// Interfaz HTML superpuesta: HUD, indicador de interacción, avisos y paneles
-// (proveedor, gestión, mapa, boutique, concesionario y menú).
+// Interfaz HTML superpuesta: HUD compacto, indicador de interacción,
+// avisos y paneles (proveedor, gestión, mapa, inventario, opciones, menú).
 import {
   PRODUCTS,
   STAGES,
   UPGRADES,
   STAFF,
   SHOP_ITEMS,
-  OUTFITS,
-  HATS,
   BOX_UNITS,
   DAY_SECONDS,
 } from "./config.js";
 import { upgradeApplies } from "./business.js";
-import { currentMission } from "./missions.js";
+import { currentMission, missionProgress } from "./missions.js";
 import { WORLD } from "./physics.js";
+import { findItem } from "./look.js";
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => {
@@ -24,6 +23,8 @@ const money = (n) => {
   return n < 0 ? `−$${abs}` : `$${abs}`;
 };
 const hex = (c) => `#${c.toString(16).padStart(6, "0")}`;
+const clock = (sec) =>
+  `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 
 export class UI {
   constructor(game) {
@@ -33,12 +34,25 @@ export class UI {
     this.order = {};
     this.selectedBiz = "tienda";
     this.tab = "resumen";
-    $("btn-map").onclick = () => this.openMap();
-    $("btn-manage").onclick = () => this.openManagement();
-    $("btn-menu").onclick = () => this.openMenu();
+    const click = (id, fn) =>
+      ($(id).onclick = () => {
+        game.audio.sfx("click");
+        fn();
+      });
+    click("btn-map", () => this.openMap());
+    click("btn-manage", () => this.openManagement());
+    click("btn-menu", () => this.openMenu());
+    click("btn-bag", () => this.openInventory());
+    click("btn-sound", () => game.toggleMute());
+    click("objective", () => $("objective").classList.toggle("collapsed"));
     $("panel-close").onclick = () => this.close();
     $("panel").addEventListener("click", (e) => {
       if (e.target.id === "panel") this.close();
+    });
+    // Sonido suave al pasar por botones de los menús.
+    document.addEventListener("pointerover", (e) => {
+      if (e.target.closest?.(".tbtn, #panel-body button, #wd-panel button"))
+        game.audio.sfx("hover");
     });
     window.addEventListener(
       "keydown",
@@ -47,7 +61,8 @@ export class UI {
           this.panel &&
           (e.key === "Escape" ||
             (e.key.toLowerCase() === "g" && this.panel === "manage") ||
-            (e.key.toLowerCase() === "m" && this.panel === "map"))
+            (e.key.toLowerCase() === "m" && this.panel === "map") ||
+            (e.key.toLowerCase() === "i" && this.panel === "bag"))
         ) {
           this.close();
           e.preventDefault();
@@ -57,11 +72,15 @@ export class UI {
       true,
     );
     if (game.input.isTouch) document.body.classList.add("touch");
-    $("loading").remove();
   }
 
   get panelOpen() {
     return !!this.panel;
+  }
+
+  showHud(on) {
+    $("hud").hidden = !on;
+    document.body.classList.toggle("playing", on);
   }
 
   refreshHud(force = false) {
@@ -70,32 +89,65 @@ export class UI {
     this.hudTimer = 0.2;
     const g = this.game;
     const s = g.state;
-    $("money").textContent = money(Math.round(s.money * 100) / 100);
+    $("money").textContent = money(Math.floor(s.money));
     $("money").classList.toggle("negative", s.money < 0);
-    const stage = g.stageIndex();
-    $("stage").textContent =
-      `${STAGES[stage].name} · ${g.businesses.tienda.name}`;
-    const hour = 7 + (s.clock / DAY_SECONDS) * 15;
-    const hh = Math.floor(hour);
-    const mm = Math.floor(((hour - hh) * 60) / 10) * 10;
-    $("clock").textContent =
-      `Día ${s.day} · ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
     let today = 0;
     for (const b of Object.values(g.businesses))
       if (b.owned) today += b.today.profit;
     $("today").textContent =
-      `Ganancia hoy: ${money(Math.round(today * 100) / 100)}`;
+      `${today >= 0 ? "+" : ""}${money(Math.round(today))} hoy`;
+    $("stage").textContent = STAGES[g.stageIndex()].name;
+    const hour = 7 + (s.clock / DAY_SECONDS) * 15;
+    const hh = Math.floor(hour);
+    const mm = Math.floor(((hour - hh) * 60) / 10) * 10;
+    $("clock").textContent =
+      `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+    $("clock-icon").textContent = hour < 17 ? "☀️" : hour < 19.5 ? "🌇" : "🌙";
+    $("day").textContent = `Día ${s.day}`;
     const m = currentMission(g);
     $("objective-text").textContent = m
       ? m.text
-      : "¡Eres millonario! Sigue expandiendo tu imperio.";
-    $("objective-reward").textContent = m?.reward
-      ? `Recompensa: ${money(m.reward)}`
-      : "";
+      : "¡Eres millonario! Sigue creciendo.";
+    $("objective-hint").textContent = m?.hint ?? "";
+    $("objective-reward").textContent = m?.reward ? `+${money(m.reward)}` : "";
+    const prog = missionProgress(g);
+    $("objective-bar").hidden = !prog;
+    if (prog) {
+      $("objective-bar").firstElementChild.style.width =
+        `${Math.min(100, (prog[0] / prog[1]) * 100)}%`;
+      $("objective-count").textContent =
+        prog[1] >= 1000 ? "" : `${Math.floor(prog[0])}/${prog[1]}`;
+    } else $("objective-count").textContent = "";
+    this.refreshChips();
     const carry = s.carried;
     $("carry").hidden = !carry.length;
     $("carry").innerHTML =
-      `📦 ${carry.length}/${g.carryCapacity()} · ${carry.map((b) => `${PRODUCTS[b.product].name} (${b.units})`).join(", ")}`;
+      `📦 <b>${carry.length}/${g.carryCapacity()}</b> ${carry.map((b) => `<span style="--c:${hex(PRODUCTS[b.product].color)}">${PRODUCTS[b.product].name} ×${b.units}</span>`).join("")}`;
+    $("btn-sound").textContent = g.settings.muted ? "🔇" : "🔊";
+    $("btn-ride").hidden = !s.items.scooter;
+  }
+
+  refreshChips() {
+    const ev = this.game.events;
+    const a = ev.active;
+    const chip = $("event-chip");
+    chip.hidden = !a;
+    if (a) {
+      let text = a.title;
+      if (a.type === "sale") text += ` · ${a.sold}/${a.goal} vendidos`;
+      chip.querySelector(".chip-icon").textContent = a.icon;
+      chip.querySelector(".chip-text").textContent =
+        `${text} · ${clock(Math.max(0, a.time))}`;
+      chip.querySelector("i").style.width = `${(a.time / a.total) * 100}%`;
+    }
+    const enc = ev.hudEncargo();
+    const e = $("encargo-chip");
+    e.hidden = !enc;
+    if (enc) {
+      e.querySelector(".chip-text").textContent =
+        `${enc.title} · ${clock(Math.max(0, enc.time))}`;
+      e.querySelector("i").style.width = `${(enc.time / enc.total) * 100}%`;
+    }
   }
 
   setPrompt(label, touch) {
@@ -118,14 +170,28 @@ export class UI {
     el.className = `toast ${kind}`;
     el.textContent = text;
     $("toasts").appendChild(el);
-    setTimeout(() => el.classList.add("out"), 2600);
-    setTimeout(() => el.remove(), 3100);
-    while ($("toasts").children.length > 4) $("toasts").firstChild.remove();
+    const life = kind === "event" ? 4200 : 2600;
+    setTimeout(() => el.classList.add("out"), life);
+    setTimeout(() => el.remove(), life + 500);
+    while ($("toasts").children.length > 3) $("toasts").firstChild.remove();
+  }
+
+  // "+$12" que sube desde el contador de dinero.
+  floatMoney(amount) {
+    if (!amount) return;
+    const el = document.createElement("div");
+    el.className = `money-float ${amount < 0 ? "neg" : ""}`;
+    el.textContent = `${amount > 0 ? "+" : "−"}${money(Math.abs(Math.round(amount * 100) / 100))}`;
+    $("money-floats").appendChild(el);
+    setTimeout(() => el.remove(), 1400);
+    $("hud-money").classList.remove("bump");
+    void $("hud-money").offsetWidth;
+    $("hud-money").classList.add("bump");
   }
 
   missionComplete(m, next) {
     const el = $("mission-done");
-    el.innerHTML = `<b>¡Objetivo cumplido!</b><span>${m.text}</span>${m.reward ? `<em>+${money(m.reward)}</em>` : ""}${next ? `<small>Siguiente: ${next.text}</small>` : ""}`;
+    el.innerHTML = `<b>✓ ${m.text}</b>${m.reward ? `<em>+${money(m.reward)}</em>` : ""}${next ? `<small>Siguiente: ${next.text}</small>` : ""}`;
     el.classList.remove("show");
     void el.offsetWidth;
     el.classList.add("show");
@@ -146,40 +212,26 @@ export class UI {
   }
 
   close() {
+    const was = this.panel;
     this.panel = null;
     $("panel").hidden = true;
+    if (was && this.onClose) {
+      const fn = this.onClose;
+      this.onClose = null;
+      fn();
+    }
   }
 
   bind(selector, fn) {
     $("panel-body")
       .querySelectorAll(selector)
-      .forEach((el) => (el.onclick = () => fn(el.dataset, el)));
-  }
-
-  showWelcome() {
-    const touch = this.game.input.isTouch;
-    this.open(
-      "welcome",
-      "De Cero a Millonario",
-      `
-      <p class="lead">Empiezas con <b>$150</b> y una pequeña tienda de barrio. ¡Conviértela en un imperio!</p>
-      <ol class="steps">
-        <li>Camina hasta <b>Mi Tiendita</b> (sigue la flecha verde).</li>
-        <li>Compra mercadería en el <b>Mayorista</b>, al otro lado de la calle.</li>
-        <li>Lleva las cajas y repón las estanterías.</li>
-        <li>Cobra a los clientes en la caja y ¡haz crecer tu negocio!</li>
-      </ol>
-      ${this.controlsHtml(touch)}
-      <button class="primary big" data-go>¡A jugar!</button>`,
-    );
-    this.bind("[data-go]", () => this.close());
-  }
-
-  controlsHtml(touch) {
-    if (touch) {
-      return `<div class="controls"><span>🕹️ Joystick: moverse</span><span>👆 Arrastrar: girar cámara</span><span>✋ Interactuar</span><span>🏃 Correr</span><span>⤒ Saltar</span></div>`;
-    }
-    return `<div class="controls"><span><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> moverse</span><span><kbd>Shift</kbd> correr</span><span><kbd>Espacio</kbd> saltar</span><span><kbd>E</kbd> interactuar</span><span>Arrastrar ratón: cámara · Rueda: zoom</span><span><kbd>G</kbd> gestión · <kbd>M</kbd> mapa · <kbd>V</kbd> scooter · <kbd>Esc</kbd> menú</span></div>`;
+      .forEach(
+        (el) =>
+          (el.onclick = () => {
+            this.game.audio.sfx("click");
+            fn(el.dataset, el);
+          }),
+      );
   }
 
   openSupplier() {
@@ -196,7 +248,8 @@ export class UI {
     const rows = items
       .map(([id, p]) => {
         const units = p.boxUnits ?? BOX_UNITS;
-        const price = p.cost * units * discount;
+        const sale = g.events.discount(id);
+        const price = p.cost * units * discount * sale;
         const n = this.order[id] ?? 0;
         total += price * n;
         const locked = (p.stage ?? 0) > stage;
@@ -207,15 +260,22 @@ export class UI {
             : "";
         return `<div class="row ${locked ? "locked" : ""}">
         <span class="chip" style="background:${hex(p.color)}"></span>
-        <div class="grow"><b>${p.name}</b><small>Caja de ${units} uds. · ${money(price)}${p.base ? ` · venta sugerida ${money(p.base)}/ud.` : ""}${note}${locked ? ` · requiere ${STAGES[p.stage].name}` : ""}</small></div>
+        <div class="grow"><b>${p.name}</b>${sale < 1 ? ` <span class="tag good">OFERTA −40%</span>` : ""}<small>Caja de ${units} uds. · ${money(price)}${p.base ? ` · venta sugerida ${money(p.base)}/ud.` : ""}${note}${locked ? ` · requiere ${STAGES[p.stage].name}` : ""}</small></div>
         ${locked ? "" : `<div class="stepper"><button data-dec="${id}">−</button><span>${n}</span><button data-inc="${id}">+</button></div>`}
       </div>`;
       })
       .join("");
-    const deliveryHtml = g.state.items.furgoneta
-      ? `<label class="field">Entrega: <select id="deliver"><option value="">Recoger aquí</option>${owned.map((b) => `<option value="${b.id}" ${deliver === b.id ? "selected" : ""}>Furgoneta → ${b.name} (+$5)</option>`).join("")}</select></label>`
-      : `<p class="hint">Las cajas aparecerán en la zona <b>RECOGIDA</b>. Puedes llevar ${g.carryCapacity()} caja/s a la vez.</p>`;
-    if (deliver) total += 5;
+    const van = g.state.items.furgoneta;
+    const fee = van ? 0 : 4;
+    const deliveryHtml = `<label class="field">Entrega: <select id="deliver"><option value="">Recoger aquí en RECOGIDA</option>${owned
+      .map(
+        (b) =>
+          `<option value="${b.id}" ${deliver === b.id ? "selected" : ""}>${van ? "Tu furgoneta" : "Camión de reparto"} → ${b.name} (${fee ? `+$${fee}` : "gratis"})</option>`,
+      )
+      .join(
+        "",
+      )}</select></label><p class="hint">${van ? "Tu furgoneta lo deja al instante en el almacén." : "El camión llega en unos segundos y lo deja en el almacén."} Puedes cargar ${g.carryCapacity()} caja/s a la vez.</p>`;
+    if (deliver) total += fee;
     const tools = g.state.items.carretilla
       ? ""
       : `<div class="row"><span class="chip" style="background:#9aa7b0"></span><div class="grow"><b>${SHOP_ITEMS.carretilla.name}</b><small>${SHOP_ITEMS.carretilla.desc}</small></div><button data-item="carretilla">${money(SHOP_ITEMS.carretilla.price)}</button></div>`;
@@ -395,39 +455,6 @@ export class UI {
     return `<p class="hint">Los empleados trabajan solos, pero tú sigues comprando la mercadería y tomando decisiones.</p><div class="list">${rows}</div>`;
   }
 
-  openBoutique() {
-    const g = this.game;
-    const s = g.state;
-    const stage = g.stageIndex();
-    const item = (kind, o, owned, current) => {
-      const locked = (o.stage ?? 0) > stage;
-      let btn;
-      if (current) btn = `<span class="tag good">Puesto</span>`;
-      else if (owned)
-        btn = `<button data-wear="${kind}:${o.id}">Ponerse</button>`;
-      else if (locked)
-        btn = `<span class="tag">Etapa ${STAGES[o.stage].name}</span>`;
-      else
-        btn = `<button data-wear="${kind}:${o.id}">${money(o.price)}</button>`;
-      const chip = o.body
-        ? `<span class="chip" style="background:${hex(o.body)}"></span>`
-        : `<span class="chip">🎩</span>`;
-      return `<div class="row">${chip}<div class="grow"><b>${o.name}</b></div>${btn}</div>`;
-    };
-    this.open(
-      "boutique",
-      "Boutique Estilo",
-      `
-      <h3>Ropa</h3><div class="list">${OUTFITS.map((o) => item("outfit", o, s.ownedOutfits.includes(o.id), s.outfit === o.id)).join("")}</div>
-      <h3>Accesorios</h3><div class="list">${HATS.map((o) => item("hat", o, s.ownedHats.includes(o.id), s.hat === o.id)).join("")}</div>`,
-    );
-    this.bind("[data-wear]", (d) => {
-      const [kind, id] = d.wear.split(":");
-      g.buyOutfit(kind, id);
-      this.openBoutique();
-    });
-  }
-
   openDealer() {
     const g = this.game;
     const stage = g.stageIndex();
@@ -531,22 +558,29 @@ export class UI {
   }
 
   openMenu() {
-    const touch = this.game.input.isTouch;
     this.open(
       "menu",
-      "Menú",
+      "Pausa",
       `
       <div class="menu">
-        <button class="primary" data-act="continue">Continuar</button>
-        <button data-act="save">Guardar partida</button>
-        <button data-act="load">Cargar última partida</button>
+        <button class="primary" data-act="continue">▶ Continuar</button>
+        <button data-act="wardrobe">👕 Personalizar personaje</button>
+        <button data-act="bag">🎒 Inventario</button>
+        <button data-act="options">⚙️ Opciones</button>
+        <button data-act="save">💾 Guardar partida</button>
+        <button data-act="title">🏠 Menú principal</button>
         <button class="ghost" data-act="new">Nueva partida</button>
-      </div>
-      <h3>Controles</h3>${this.controlsHtml(touch)}`,
+      </div>`,
     );
     this.bind("[data-act]", (d) => {
       const g = this.game;
       if (d.act === "continue") this.close();
+      if (d.act === "wardrobe") {
+        this.close();
+        g.openWardrobe("game");
+      }
+      if (d.act === "bag") this.openInventory();
+      if (d.act === "options") this.openOptions(() => this.openMenu());
       if (d.act === "save") {
         const ok = g.save();
         this.toast(
@@ -555,29 +589,168 @@ export class UI {
         );
         this.close();
       }
-      if (d.act === "load") location.reload();
-      if (d.act === "new") this.confirmNewGame();
+      if (d.act === "title") {
+        this.close();
+        g.save();
+        g.goToTitle();
+      }
+      if (d.act === "new") this.confirmNewGame(() => this.openMenu());
     });
   }
 
   // Confirmación dentro del juego (algunos visores bloquean confirm()).
-  confirmNewGame() {
+  confirmNewGame(back) {
     this.open(
       "confirm",
       "¿Nueva partida?",
-      `<p>Se borrará el progreso guardado y empezarás de nuevo con $150.</p>
+      `<p>Se borrará el progreso guardado y empezarás de nuevo con $150. Tu ropa desbloqueada también se perderá.</p>
       <div class="menu">
         <button class="ghost" data-act="new">Sí, empezar de cero</button>
-        <button class="primary" data-act="back">No, volver al menú</button>
+        <button class="primary" data-act="back">No, volver</button>
       </div>`,
     );
     this.bind("[data-act]", (d) => {
       if (d.act === "new") this.game.newGame();
-      else this.openMenu();
+      else if (back) back();
+      else this.close();
     });
   }
 
+  controlsHtml(touch) {
+    if (touch) {
+      return `<div class="controls"><span>🕹️ Toca la mitad izquierda: moverse</span><span>👆 Arrastra a la derecha: cámara</span><span>✋ Interactuar</span><span>🏃 Correr</span><span>⤒ Saltar</span></div>`;
+    }
+    return `<div class="controls"><span><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> moverse</span><span><kbd>Shift</kbd> correr</span><span><kbd>Espacio</kbd> saltar</span><span><kbd>E</kbd> interactuar</span><span>Arrastrar ratón: cámara · Rueda: zoom</span><span><kbd>G</kbd> gestión · <kbd>M</kbd> mapa · <kbd>I</kbd> inventario · <kbd>V</kbd> scooter · <kbd>Esc</kbd> pausa</span></div>`;
+  }
+
+  openOptions(back) {
+    const g = this.game;
+    const st = g.settings;
+    const pct = (v) => Math.round(v * 100);
+    this.open(
+      "options",
+      "Opciones",
+      `
+      <div class="options">
+        <label>🎵 Música <input id="opt-music" type="range" min="0" max="100" value="${pct(st.music)}"><output>${pct(st.music)}%</output></label>
+        <label>🔔 Efectos <input id="opt-sfx" type="range" min="0" max="100" value="${pct(st.sfx)}"><output>${pct(st.sfx)}%</output></label>
+        <label>🔇 Silenciar todo <input id="opt-mute" type="checkbox" ${st.muted ? "checked" : ""}></label>
+        <label>🎥 Sensibilidad de cámara <input id="opt-sens" type="range" min="30" max="250" value="${pct(st.sensitivity)}"><output>${pct(st.sensitivity)}%</output></label>
+        <label>↕️ Invertir eje vertical <input id="opt-invert" type="checkbox" ${st.invertY ? "checked" : ""}></label>
+        <label>🏃 Correr siempre (Shift / 🏃 para caminar) <input id="opt-run" type="checkbox" ${st.alwaysRun ? "checked" : ""}></label>
+        <div class="seg"><span>🖼️ Calidad gráfica</span>${["baja", "media", "alta"].map((q) => `<button data-quality="${q}" class="${st.quality === q ? "on" : ""}">${q[0].toUpperCase() + q.slice(1)}</button>`).join("")}</div>
+        <p class="hint">Baja: sin sombras y menos peatones (ideal para móviles). Alta: sombras nítidas y ciudad más llena.</p>
+      </div>
+      <h3>Controles</h3>${this.controlsHtml(g.input.isTouch)}
+      <button class="primary big" data-act="back">Listo</button>`,
+    );
+    const range = (id, key, scale = 100) => {
+      const el = $(id);
+      el.oninput = () => {
+        st[key] = el.value / scale;
+        el.nextElementSibling.textContent = `${el.value}%`;
+        g.applySettings();
+      };
+    };
+    range("opt-music", "music");
+    range("opt-sfx", "sfx");
+    range("opt-sens", "sensitivity");
+    const check = (id, key) => {
+      $(id).onchange = () => {
+        st[key] = $(id).checked;
+        g.applySettings();
+      };
+    };
+    check("opt-mute", "muted");
+    check("opt-invert", "invertY");
+    check("opt-run", "alwaysRun");
+    this.bind("[data-quality]", (d) => {
+      st.quality = d.quality;
+      g.applySettings();
+      this.openOptions(back);
+    });
+    this.bind("[data-act]", () => (back ? back() : this.close()));
+  }
+
+  openCredits() {
+    this.open(
+      "credits",
+      "Créditos",
+      `<div class="credits">
+        <h3>De Cero a Millonario</h3>
+        <p>Un simulador de negocios en una ciudad de juguete.</p>
+        <p><b>Diseño, programación, modelos 3D y música:</b> creados para este proyecto con Claude (Anthropic).</p>
+        <p><b>Motor 3D:</b> three.js (licencia MIT).</p>
+        <p><b>Música y sonidos:</b> sintetizados en tiempo real con Web Audio; no se usa ningún archivo de audio.</p>
+        <p><b>Tipografía:</b> Baloo 2 (SIL Open Font License).</p>
+        <p><b>Modelos:</b> geometría procedural: personajes, ropa, edificios y vehículos.</p>
+        <p class="hint">¡Gracias por jugar!</p>
+      </div>
+      <button class="primary big" data-act="back">Volver</button>`,
+    );
+    this.bind("[data-act]", () => this.close());
+  }
+
+  openInventory() {
+    const g = this.game;
+    const s = g.state;
+    const carried = s.carried.length
+      ? s.carried
+          .map(
+            (b) =>
+              `<div class="row"><span class="chip" style="background:${hex(PRODUCTS[b.product].color)}"></span><div class="grow"><b>Caja de ${PRODUCTS[b.product].name}</b><small>${b.units} unidades</small></div></div>`,
+          )
+          .join("")
+      : `<p class="hint">No llevas nada. Recoge cajas en el Mayorista o en tus almacenes.</p>`;
+    const stores = Object.values(g.businesses)
+      .filter((b) => b.owned)
+      .map((b) => {
+        const list =
+          Object.entries(b.storage)
+            .filter(([, n]) => n > 0)
+            .map(([p, n]) => `${PRODUCTS[p].name} ${n}`)
+            .join(" · ") || "vacío";
+        return `<div class="row"><div class="grow"><b>${b.name}</b><small>Almacén ${b.storageUnits()}/${b.storageCap()}: ${list}</small></div></div>`;
+      })
+      .join("");
+    const items = Object.entries(s.items)
+      .filter(([, v]) => v)
+      .map(([id]) => SHOP_ITEMS[id]?.name)
+      .filter(Boolean);
+    const clothes = s.wardrobe
+      .map((id) =>
+        ["top", "bottom", "shoes", "hat", "glasses", "back", "neck", "skin"]
+          .map((slot) => findItem(slot, id))
+          .find(Boolean),
+      )
+      .filter((i) => i && i.id !== "none");
+    this.open(
+      "bag",
+      "Inventario",
+      `<h3>En tus manos (${s.carried.length}/${g.carryCapacity()})</h3><div class="list">${carried}</div>
+      <h3>Almacenes</h3><div class="list">${stores}</div>
+      <h3>Pertenencias</h3><p>${items.length ? items.join(" · ") : "Aún nada: ¡ahorra para tu primer vehículo!"}</p>
+      <h3>Armario (${clothes.length})</h3><p>${clothes.map((c) => c.name).join(" · ")}</p>
+      <h3>Logros</h3><p>Encargos completados: <b>${s.stats.encargos ?? 0}</b> · Monedas encontradas: <b>${s.stats.coins ?? 0}</b> · Lugares descubiertos: <b>${s.discovered.length}</b></p>`,
+    );
+  }
+
+  // Informe del día: tarjeta breve que no detiene el juego.
   showReport(r) {
+    const gross = r.lines.reduce((a, l) => a + l.profit, 0);
+    const net = Math.round((gross - r.expenses) * 100) / 100;
+    const el = $("day-report");
+    el.innerHTML = `<b>Fin del día ${r.day}</b><span>Ganancia ${money(Math.round(gross))} · Gastos −${money(r.expenses)}</span><em class="${net >= 0 ? "good" : "bad"}">${net > 0 ? "+" : ""}${money(net)}</em><button>Ver informe</button>`;
+    el.classList.remove("show");
+    void el.offsetWidth;
+    el.classList.add("show");
+    el.querySelector("button").onclick = () => {
+      el.classList.remove("show");
+      this.openReport(r);
+    };
+  }
+
+  openReport(r) {
     const rows = r.lines
       .map(
         (l) =>
@@ -590,12 +763,11 @@ export class UI {
     this.open(
       "report",
       `Fin del día ${r.day}`,
-      `
-      <table class="report"><tr><th>Negocio</th><th>Ventas</th><th>Ingresos</th><th>Ganancia bruta</th><th>Gastos</th></tr>${rows}</table>
+      `<div class="table-wrap"><table class="report"><tr><th>Negocio</th><th>Ventas</th><th>Ingresos</th><th>Ganancia bruta</th><th>Gastos</th></tr>${rows}</table></div>
       <p>Gastos totales del día (alquiler, salarios, luz, vehículos): <b>−${money(r.expenses)}</b></p>
       <p class="net ${net >= 0 ? "good" : "bad"}">Resultado neto: <b>${net > 0 ? "+" : ""}${money(net)}</b></p>
       ${lost ? `<p class="hint">${lost} productos no se vendieron por falta de existencias. ¡Repón más!</p>` : ""}
-      <button class="primary big" data-go>Empezar el día ${r.day + 1}</button>`,
+      <button class="primary big" data-go>Seguir jugando</button>`,
     );
     this.bind("[data-go]", () => this.close());
   }

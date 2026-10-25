@@ -167,7 +167,7 @@ export class Business {
     this.employees = [];
     this.decor = [];
     this.machine = null;
-    this.spawnTimer = 4;
+    this.spawnTimer = 2;
     this.reputation = 50;
     this.today = { revenue: 0, profit: 0, sales: 0, lost: 0 };
     this.interactables = [];
@@ -411,6 +411,7 @@ export class Business {
           game.state.carried.splice(game.state.carried.indexOf(box), 1);
         game.state.stats.unitsStocked += moved;
         game.player.char.playAction("stock", 0.6);
+        game.audio.sfx("place");
         game.ui.toast(
           `+${moved} ${PRODUCTS[box.product].name} en la estantería`,
         );
@@ -484,10 +485,11 @@ export class Business {
         );
         if (box) {
           const accepted = this.addToStorage(box.product, box.units);
-          if (!accepted) return game.ui.toast("El almacén está lleno");
+          if (!accepted) return game.ui.toast("El almacén está lleno", "bad");
           box.units -= accepted;
           if (box.units <= 0)
             game.state.carried.splice(game.state.carried.indexOf(box), 1);
+          game.state.stats.unitsStored += accepted;
           game.ui.toast(`Guardadas ${accepted} uds. en el almacén`);
         } else {
           const best = this.bestStorageProduct();
@@ -500,6 +502,7 @@ export class Business {
           game.state.carried.push({ product: best, units });
         }
         game.player.char.playAction("pickup", 0.5);
+        game.audio.sfx(box ? "place" : "pickup");
         this.updateStoragePile();
         game.onCarryChanged();
       },
@@ -612,13 +615,14 @@ export class Business {
 
   // ---------- Clientes ----------
 
-  rollWants() {
+  rollWants(count = 0) {
     const stocked = this.catalog().filter((p) => this.shelfStock(p) > 0);
     const all = this.catalog().filter(
       (p) =>
         !PRODUCTS[p].cold || this.displays.some((d) => d.def.kind === "fridge"),
     );
     const n =
+      count ||
       1 + Math.floor(Math.random() * (this.def.type === "cafe" ? 2 : 3.4));
     const wants = [];
     for (let i = 0; i < n; i++) {
@@ -704,7 +708,8 @@ export class Business {
     const c = reg.queue[0];
     if (!c || !c.ready) return false;
     reg.queue.shift();
-    const total = basketTotal(c.basket);
+    // Los clientes VIP pagan el doble y dejan buena fama.
+    const total = basketTotal(c.basket) * (c.vip ? 2 : 1);
     const cost = c.basket.reduce(
       (a, it) =>
         a +
@@ -725,6 +730,7 @@ export class Business {
     c.paid();
     reg.queue.forEach((q) => q.goToQueueSpot());
     this.game.fx.coins(reg.pos, total);
+    this.game.onSale(this, c, total);
     return true;
   }
 
@@ -754,9 +760,10 @@ export class Business {
       (this.upgrades.has("plantas") ? 0.05 : 0) +
       (this.upgrades.has("suelo") ? 0.1 : 0);
     const sign = this.upgrades.has("letrero") ? 1.15 : 1;
+    const rush = this.game.events?.rushFactor(this) ?? 1;
     return (
       this.layout.spawnEvery /
-      (stockFactor * repFactor * sign * this.priceFactor())
+      (stockFactor * repFactor * sign * this.priceFactor() * rush)
     );
   }
 
@@ -919,6 +926,7 @@ export class Business {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = this.spawnInterval() * (0.6 + Math.random() * 0.8);
+      this.spawnTimer = Math.min(this.spawnTimer, 25);
       if (
         this.customers.length < this.maxCustomers() &&
         budget.customers > 0 &&
@@ -944,12 +952,28 @@ export class Business {
     const side = Math.random() < 0.5 ? -1 : 1;
     const x = Math.max(
       -72,
-      Math.min(72, door.x + side * (14 + Math.random() * 16)),
+      Math.min(72, door.x + side * (8 + Math.random() * 12)),
     );
     const z =
       (Math.random() < 0.7 ? Math.sign(door.z) : -Math.sign(door.z)) *
       (6.5 + Math.random());
     return { x, z };
+  }
+
+  spawnVip() {
+    if (!this.owned || !this.displays.length) return null;
+    const c = new Customer(this.game, this, this.spawnPoint(), true);
+    c.patience = 120;
+    this.customers.push(c);
+    return c;
+  }
+
+  // Partida nueva: algo de género para vender desde el primer minuto.
+  seedStarterStock() {
+    const [s1, s2] = this.displays;
+    this.stockDisplay(s1, "agua", 12);
+    this.stockDisplay(s2, "galletas", 12);
+    this.addToStorage("refresco", 10);
   }
 
   actors() {

@@ -28,38 +28,121 @@
   </head>
   <body>
     <canvas id="game"></canvas>
-    <div id="loading">Cargando la ciudad…</div>
+    <div id="loading">
+      <div class="loader"></div>
+      <span>Cargando la ciudad…</span>
+    </div>
 
-    <div id="hud">
-      <div id="hud-left" class="card">
-        <div id="money">$150</div>
-        <div id="stage">Principiante</div>
-        <div id="today">Ganancia hoy: $0</div>
+    <!-- Pantalla de inicio (la ciudad 3D sigue viva detrás) -->
+    <div id="title" hidden>
+      <h1 class="logo" aria-label="De Cero a Millonario">
+        <span class="logo-small">DE CERO A</span>
+        <span class="logo-big" id="logo-big">MILLONARIO</span>
+      </h1>
+      <p class="tagline">Construye tu imperio, caja a caja</p>
+      <nav class="title-menu">
+        <button id="t-continue" class="tbtn green" hidden>
+          CONTINUAR<small id="t-continue-info"></small>
+        </button>
+        <button id="t-play" class="tbtn purple">JUGAR</button>
+        <button id="t-custom" class="tbtn teal">PERSONALIZAR PERSONAJE</button>
+        <div class="tbtn-row">
+          <button id="t-options" class="tbtn orange small">OPCIONES</button>
+          <button id="t-credits" class="tbtn pink small">CRÉDITOS</button>
+        </div>
+      </nav>
+      <button id="t-sound" class="sound-chip">
+        🔈 Toca para activar la música
+      </button>
+      <div class="title-version">v2.0</div>
+    </div>
+
+    <!-- Personalización -->
+    <div id="wardrobe" hidden>
+      <div id="wardrobe-view"></div>
+      <section id="wd-panel">
+        <header>
+          <h2>Tu personaje</h2>
+          <span id="wd-money" class="pill-money"></span>
+        </header>
+        <div id="wd-slots"></div>
+        <div class="wd-picker">
+          <button id="wd-prev" class="wd-arrow">◀<span>ANTERIOR</span></button>
+          <div class="wd-current">
+            <b id="wd-item"></b>
+            <small id="wd-count"></small>
+            <span id="wd-status" class="tag"></span>
+          </div>
+          <button id="wd-next" class="wd-arrow"><span>SIGUIENTE</span>▶</button>
+        </div>
+        <div id="wd-colors"></div>
+        <button id="wd-equip" class="wd-equip">EQUIPAR</button>
+        <div class="wd-actions">
+          <button id="wd-back" class="wd-ghost">Volver</button>
+          <button id="wd-start" class="wd-start">COMENZAR PARTIDA</button>
+        </div>
+        <small class="wd-hint">Arrastra el personaje para girarlo</small>
+      </section>
+    </div>
+
+    <!-- HUD durante la partida -->
+    <div id="hud" hidden>
+      <div class="hud-left">
+        <div id="hud-money" class="pill">
+          <span class="coin">$</span>
+          <div>
+            <b id="money">$150</b>
+            <small
+              ><span id="today">+$0 hoy</span> · <span id="stage"></span
+            ></small>
+          </div>
+        </div>
+        <button id="objective" class="objective">
+          <span class="obj-icon">🎯</span>
+          <span class="obj-body">
+            <span id="objective-text"></span>
+            <small id="objective-hint"></small>
+            <span id="objective-bar" class="bar-track" hidden><i></i></span>
+          </span>
+          <span class="obj-side">
+            <em id="objective-reward"></em>
+            <small id="objective-count"></small>
+          </span>
+        </button>
+        <div id="event-chip" class="chip" hidden>
+          <span class="chip-icon"></span><span class="chip-text"></span><i></i>
+        </div>
+        <div id="encargo-chip" class="chip encargo" hidden>
+          <span class="chip-icon">📦</span><span class="chip-text"></span
+          ><i></i>
+        </div>
       </div>
-      <div id="objective" class="card">
-        <small>OBJETIVO</small>
-        <div id="objective-text"></div>
-        <div id="objective-reward"></div>
-      </div>
-      <div id="hud-right">
-        <div id="clock" class="card">Día 1 · 07:00</div>
-        <div class="buttons">
-          <button id="btn-map" title="Mapa (M)">🗺️<span>Mapa</span></button>
-          <button id="btn-manage" title="Gestión (G)">
-            📊<span>Gestión</span>
-          </button>
-          <button id="btn-menu" title="Menú (Esc)">☰<span>Menú</span></button>
+      <div class="hud-right">
+        <div class="pill clock-pill">
+          <span id="clock-icon">☀️</span><b id="clock">07:00</b
+          ><small id="day">Día 1</small>
+        </div>
+        <div class="hud-buttons">
+          <button id="btn-sound" title="Sonido">🔊</button>
+          <button id="btn-bag" title="Inventario (I)">🎒</button>
+          <button id="btn-map" title="Mapa (M)">🗺️</button>
+          <button id="btn-manage" title="Gestión (G)">📊</button>
+          <button id="btn-menu" title="Pausa (Esc)">⏸</button>
         </div>
       </div>
     </div>
 
-    <div id="carry" class="card" hidden></div>
+    <div id="money-floats"></div>
+    <div id="carry" hidden></div>
     <div id="prompt" hidden></div>
     <div id="toasts"></div>
     <div id="mission-done"></div>
+    <div id="day-report"></div>
 
     <div id="touch-controls">
-      <div id="joystick"><div id="joystick-knob"></div></div>
+      <div id="joy-zone">
+        <div id="joystick"><div id="joystick-knob"></div></div>
+      </div>
       <div id="touch-buttons">
         <button id="btn-ride" hidden>🛴</button>
         <button id="btn-jump">⤒</button>
@@ -77,6 +160,8 @@
         <div id="panel-body"></div>
       </div>
     </div>
+
+    <div id="fade"></div>
 
     <script type="module" src="src/main.js"></script>
   </body>

@@ -15,6 +15,7 @@ import {
 import * as props from "./props.js";
 import { Traffic, toyCar, toyVan, toyScooter } from "./vehicles.js";
 import { ToyCharacter } from "./character.js";
+import { workerLook } from "./look.js";
 
 const SIDEWALK = 0.12;
 
@@ -24,6 +25,7 @@ export class World {
     this.physics = new Physics();
     this.occluders = [];
     this.lamps = [];
+    this.treeTops = [];
     this.buildings = {};
     this.staticInteractables = [];
     this.buildGround();
@@ -68,16 +70,32 @@ export class World {
       if (Math.abs(z) < 6) continue;
       this.scene.add(mesh(box(0.18, 0.02, 2), line, 0, 0.025, z, false));
     }
-    // Pasos de cebra.
+    // Pasos de cebra: los peatones los prefieren para cruzar.
     const white = mat(0xffffff);
-    for (let i = 0; i < 6; i++) {
-      this.scene.add(
-        mesh(box(0.5, 0.02, 3.2), white, -20 + i * 0.9 - 2.25, 0.03, 0, false),
-      );
-      this.scene.add(
-        mesh(box(3.2, 0.02, 0.5), white, 0, 0.03, -12 + i * 0.9, false),
-      );
+    this.crosswalks = [];
+    for (const cx of [-51.5, -22, 19, 58]) {
+      for (let z = -3.4; z <= 3.5; z += 0.85)
+        this.scene.add(mesh(box(3, 0.02, 0.42), white, cx, 0.03, z, false));
+      this.crosswalks.push([cx - 1.6, -4.5, cx + 1.6, 4.5]);
     }
+    for (const cz of [-12, 14]) {
+      for (let x = -3.4; x <= 3.5; x += 0.85)
+        this.scene.add(mesh(box(0.42, 0.02, 3), white, x, 0.03, cz, false));
+      this.crosswalks.push([-4.5, cz - 1.6, 4.5, cz + 1.6]);
+    }
+    this.roads = [
+      [WORLD.minX - 6, -4, WORLD.maxX + 6, 4],
+      [-4, WORLD.minZ - 6, 4, WORLD.maxZ + 6],
+    ];
+    this.physics.setRoads(this.roads, this.crosswalks);
+    // Líneas de detención del semáforo.
+    for (const [x, z, w, d] of [
+      [-6.2, 2, 0.35, 3.6],
+      [6.2, -2, 0.35, 3.6],
+      [-2, -6.2, 3.6, 0.35],
+      [2, 6.2, 3.6, 0.35],
+    ])
+      this.scene.add(mesh(box(w, 0.02, d), white, x, 0.03, z, false));
     // Aceras elevadas (con bordillo) a lo largo de las calles.
     const walk = mat(0xf3e1b9);
     const curb = mat(0xd9c49a);
@@ -275,9 +293,8 @@ export class World {
     const sign = signMesh("PEDIDOS", 2, 0.5, { bg: "#ff8a3d", fg: "#ffffff" });
     b.interior.add(b.place(sign, 6, 2.52, 0, 1.8));
     this.supplierNpc = new ToyCharacter({
-      body: 0x4a76c9,
+      look: workerLook("azul"),
       apron: 0xf2a531,
-      hat: "gorra",
     });
     b.place(this.supplierNpc.root, 6, 0.9);
     this.scene.add(this.supplierNpc.root);
@@ -390,7 +407,13 @@ export class World {
     );
     b.interior.add(b.place(mirror, -4.75, -1, Math.PI / 2, 1.2));
     this.boutiqueCounter = b.toWorld(2.4, -1.6);
-    const clerk = new ToyCharacter({ body: 0xff6fa8 });
+    const clerk = new ToyCharacter({
+      look: {
+        ...workerLook("rosa"),
+        hat: { id: "sombrero" },
+        glasses: { id: "redondas", color: "rosa" },
+      },
+    });
     b.place(clerk.root, 2.4, -3.6);
     this.scene.add(clerk.root);
     this.clerk = clerk;
@@ -462,6 +485,7 @@ export class World {
     g.scale.setScalar(s);
     g.position.set(x, 0, z);
     this.scene.add(g);
+    this.treeTops.push(g);
     this.physics.addCentered(x, z, 0.6 * s, 0.6 * s);
   }
 
@@ -475,6 +499,9 @@ export class World {
       emissiveIntensity: 0.1,
     });
     g.add(mesh(sphere(0.2, 12), bulbMat, 0, 3.5, 0, false));
+    const halo = this.lampHalo();
+    halo.position.y = 3.45;
+    g.add(halo);
     g.position.set(x, SIDEWALK, z);
     this.scene.add(g);
     this.lamps.push(bulbMat);
@@ -499,7 +526,7 @@ export class World {
       this.lamp(x, -4.6);
       this.lamp(x + 6, 4.6);
     }
-    for (const x of [-38, -8.5, 31, 48]) this.tree(x, -8.6, 0.8);
+    for (const x of [-38, -8.5, 48]) this.tree(x, -8.6, 0.8);
     for (const x of [-40, -64, 46, 70, 24.5]) this.tree(x, 8.6, 0.8);
     for (let z = -44; z <= -14; z += 9) this.tree(-5.6, z, 0.8);
     for (let z = 16; z <= 48; z += 9) this.tree(5.6, z, 0.8);
@@ -521,6 +548,21 @@ export class World {
     this.physics.addCentered(30, 38, 6.4, 6.4);
     this.bench(-11.5, -8.6, 0);
     this.bench(8.8, 8.8, Math.PI);
+    for (const [x, z] of [
+      [-13.4, -9.3],
+      [10.4, 9.3],
+      [-34.4, 9.3],
+      [35.6, -9.3],
+      [-41, -9.3],
+      [53, 9.3],
+    ])
+      this.trashBin(x, z);
+    this.busStop(33, -8.4);
+    this.fruitStand(-27.2, -9.0);
+    for (const x of [16.2, 25.8]) this.cafeTable(x, -7.9);
+    this.fountain(40, 29.5);
+    this.buildClouds();
+    this.buildButterflies();
     this.bench(-36, 8.8, Math.PI);
     // Parterres de flores como en la referencia.
     const beds = [
@@ -566,8 +608,258 @@ export class World {
       );
   }
 
+  trashBin(x, z) {
+    const g = new THREE.Group();
+    g.add(mesh(cylinder(0.26, 0.22, 0.75, 14), mat(0x3fbf5f), 0, 0.38, 0));
+    g.add(mesh(cylinder(0.29, 0.29, 0.08, 14), mat(0x2e8a43), 0, 0.78, 0));
+    g.position.set(x, SIDEWALK, z);
+    this.scene.add(g);
+    this.physics.addCentered(x, z, 0.55, 0.55);
+  }
+
+  busStop(x, z) {
+    const g = new THREE.Group();
+    g.add(mesh(roundedBox(3.4, 0.12, 1.5, 0.05), mat(0x4f8dff), 0, 2.5, 0));
+    g.add(
+      mesh(
+        box(3.2, 2.2, 0.06),
+        new THREE.MeshStandardMaterial({
+          color: 0xcff3ff,
+          transparent: true,
+          opacity: 0.35,
+        }),
+        0,
+        1.3,
+        -0.65,
+        false,
+      ),
+    );
+    for (const s of [-1, 1])
+      g.add(
+        mesh(cylinder(0.06, 0.06, 2.5, 8), mat(0x3e4a59), s * 1.6, 1.25, -0.6),
+      );
+    g.add(mesh(roundedBox(2.4, 0.1, 0.5, 0.04), mat(0xff9f43), 0, 0.5, -0.3));
+    g.add(mesh(box(2.2, 0.45, 0.08), mat(0xff9f43), 0, 0.8, -0.55));
+    const sign = signMesh("BUS", 0.8, 0.8, {
+      bg: "#4f8dff",
+      fg: "#ffffff",
+      font: "bold 220px",
+      w: 256,
+      h: 256,
+    });
+    sign.position.set(2.1, 2.6, 0.9);
+    g.add(
+      sign,
+      mesh(cylinder(0.05, 0.05, 2.6, 8), mat(0x3e4a59), 2.1, 1.3, 0.85),
+    );
+    g.position.set(x, SIDEWALK, z);
+    this.scene.add(g);
+    this.physics.addBox(x - 1.7, z - 0.75, x + 1.7, z - 0.45);
+    this.physics.addCentered(x + 2.1, z + 0.85, 0.2, 0.2);
+    this.busStopPoint = { x, z: z + 0.6 };
+  }
+
+  fruitStand(x, z) {
+    const g = new THREE.Group();
+    g.add(mesh(roundedBox(2.0, 0.6, 0.8, 0.05), mat(0xb98551), 0, 0.3, 0));
+    const fruits = [0xe8392f, 0xffc22e, 0x5bd47a, 0xff8a3d];
+    for (let i = 0; i < 4; i++) {
+      g.add(
+        mesh(box(0.42, 0.12, 0.6), mat(0xd9a066), -0.72 + i * 0.48, 0.66, 0),
+      );
+      for (let k = 0; k < 5; k++)
+        g.add(
+          mesh(
+            sphere(0.085, 10),
+            mat(fruits[i]),
+            -0.85 + i * 0.48 + (k % 3) * 0.13,
+            0.78,
+            -0.12 + Math.floor(k / 3) * 0.2,
+            false,
+          ),
+        );
+    }
+    g.position.set(x, SIDEWALK, z);
+    this.scene.add(g);
+    this.physics.addCentered(x, z, 2.0, 0.8);
+  }
+
+  cafeTable(x, z) {
+    const g = props.tableSet();
+    g.add(mesh(cylinder(0.04, 0.04, 1.6, 6), mat(0xffffff), 0, 1.5, 0));
+    const umbrella = mesh(
+      cylinder(0.05, 1.1, 0.45, 12),
+      mat(0xff9f43),
+      0,
+      2.35,
+      0,
+    );
+    g.add(umbrella);
+    g.position.set(x, SIDEWALK, z);
+    this.scene.add(g);
+    this.physics.addCentered(x, z, 2.3, 1.1);
+  }
+
+  fountain(x, z) {
+    const g = new THREE.Group();
+    g.add(mesh(cylinder(1.8, 1.9, 0.5, 28), mat(0xdfe6ea), 0, 0.25, 0));
+    g.add(
+      mesh(
+        cylinder(1.55, 1.55, 0.06, 28),
+        mat(0x63c5f0, { roughness: 0.1 }),
+        0,
+        0.47,
+        0,
+        false,
+      ),
+    );
+    g.add(mesh(cylinder(0.2, 0.3, 1.2, 12), mat(0xdfe6ea), 0, 0.9, 0));
+    g.add(mesh(cylinder(0.7, 0.5, 0.18, 20), mat(0xdfe6ea), 0, 1.5, 0));
+    const water = new THREE.MeshStandardMaterial({
+      color: 0x9fe3ff,
+      transparent: true,
+      opacity: 0.7,
+      roughness: 0.1,
+    });
+    this.fountainJets = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const jet = mesh(
+        sphere(0.09, 8),
+        water,
+        Math.cos(a) * 0.5,
+        1.7,
+        Math.sin(a) * 0.5,
+        false,
+      );
+      g.add(jet);
+      this.fountainJets.push({ mesh: jet, a, t: i / 6 });
+    }
+    g.add(mesh(sphere(0.18, 12), water, 0, 1.9, 0, false));
+    g.position.set(x, 0, z);
+    this.scene.add(g);
+    this.fountainGroup = g;
+    this.physics.addCentered(x, z, 3.6, 3.6);
+  }
+
+  buildClouds() {
+    this.clouds = [];
+    const m = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.15,
+    });
+    for (let i = 0; i < 9; i++) {
+      const g = new THREE.Group();
+      for (let k = 0; k < 4; k++) {
+        const puff = new THREE.Mesh(sphere(3 + Math.random() * 2, 10), m);
+        puff.position.set(k * 3.5 - 5, Math.random() * 1.5, Math.random() * 3);
+        puff.scale.y = 0.6;
+        g.add(puff);
+      }
+      g.position.set(
+        -90 + i * 22,
+        38 + Math.random() * 12,
+        -70 + Math.random() * 120,
+      );
+      this.scene.add(g);
+      this.clouds.push(g);
+    }
+  }
+
+  buildButterflies() {
+    this.butterflies = [];
+    const colors = [0xff7eb6, 0xffd23f, 0x9b6dff, 0x4f8dff];
+    const homes = [
+      [-33, -8.8],
+      [11.5, -8.8],
+      [-46, 8.8],
+      [-30, 8.8],
+      [30, 33],
+      [22, 44],
+    ];
+    homes.forEach(([x, z], i) => {
+      const g = new THREE.Group();
+      const wingMat = new THREE.MeshStandardMaterial({
+        color: colors[i % 4],
+        side: THREE.DoubleSide,
+      });
+      const wings = [-1, 1].map((s) => {
+        const w = new THREE.Mesh(new THREE.CircleGeometry(0.12, 10), wingMat);
+        w.position.x = s * 0.1;
+        const pivot = new THREE.Group();
+        pivot.add(w);
+        g.add(pivot);
+        return pivot;
+      });
+      this.scene.add(g);
+      this.butterflies.push({
+        g,
+        wings,
+        home: { x, z },
+        t: Math.random() * 10,
+      });
+    });
+  }
+
+  // Halo cálido alrededor de cada farola encendida.
+  lampHalo() {
+    if (!this.haloMat) {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const ctx = c.getContext("2d");
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, "rgba(255,230,160,1)");
+      grad.addColorStop(1, "rgba(255,200,120,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+      this.haloMat = new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(c),
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0,
+      });
+    }
+    const sp = new THREE.Sprite(this.haloMat);
+    sp.scale.set(2.6, 2.6, 1);
+    return sp;
+  }
+
   setNight(amount) {
     for (const m of this.lamps) m.emissiveIntensity = 0.1 + amount * 2.4;
+    if (this.haloMat) this.haloMat.opacity = Math.max(0, amount - 0.1) * 0.9;
+    for (const b of Object.values(this.buildings)) b.setNight(amount);
+  }
+
+  animateAmbient(dt, time) {
+    for (const c of this.clouds) {
+      c.position.x += dt * 1.2;
+      if (c.position.x > 110) c.position.x = -110;
+    }
+    for (const j of this.fountainJets) {
+      j.t = (j.t + dt * 0.9) % 1;
+      const r = 0.5 + j.t * 1.0;
+      j.mesh.position.set(
+        Math.cos(j.a) * r,
+        1.7 + Math.sin(j.t * Math.PI) * 0.5 - j.t * 1.1,
+        Math.sin(j.a) * r,
+      );
+    }
+    for (const b of this.butterflies) {
+      b.t += dt;
+      const x = b.home.x + Math.sin(b.t * 0.7) * 1.4;
+      const z = b.home.z + Math.sin(b.t * 0.9 + 1) * 0.9;
+      b.g.position.set(x, 0.9 + Math.sin(b.t * 2.3) * 0.25, z);
+      b.g.rotation.y = Math.atan2(Math.cos(b.t * 0.7), Math.cos(b.t * 0.9 + 1));
+      const flap = Math.sin(b.t * 18) * 0.9;
+      b.wings[0].rotation.z = flap;
+      b.wings[1].rotation.z = -flap;
+    }
+    // Las copas de los árboles se mecen un poco.
+    for (const t of this.treeTops)
+      t.rotation.z = Math.sin(time * 0.8 + t.position.x) * 0.02;
   }
 
   update(dt, actors, player) {
@@ -584,6 +876,7 @@ export class World {
       b.roof.visible = !inside;
     }
     this.traffic.update(dt, actors);
+    this.animateAmbient(dt, performance.now() / 1000);
     this.supplierNpc.animate(dt, 0);
     this.clerk.animate(dt, 0);
     this.displayScooter.rotation.y += dt * 0.5;

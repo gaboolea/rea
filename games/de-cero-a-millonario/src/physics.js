@@ -27,6 +27,13 @@ export class Physics {
     if (c && this.colliders.delete(c)) this.navDirty = true;
   }
 
+  // Calzadas (caras de cruzar) y pasos de cebra (baratos) para la navegación.
+  setRoads(roads, crosswalks) {
+    this.roads = roads;
+    this.crosswalks = crosswalks;
+    this.navDirty = true;
+  }
+
   addFloor(minX, minZ, maxX, maxZ, height) {
     this.floors.push({ minX, minZ, maxX, maxZ, height });
   }
@@ -152,6 +159,20 @@ export class NavGrid {
         }
       }
     }
+    // Peso por celda: cruzar fuera de un paso de cebra cuesta mucho más.
+    this.weight = new Uint8Array(this.w * this.h).fill(1);
+    const paint = (rects, value) => {
+      for (const [x0, z0, x1, z1] of rects ?? []) {
+        for (let z = this.toCellZ(z0); z <= this.toCellZ(z1); z++) {
+          for (let x = this.toCellX(x0); x <= this.toCellX(x1); x++) {
+            if (x >= 0 && z >= 0 && x < this.w && z < this.h)
+              this.weight[z * this.w + x] = value;
+          }
+        }
+      }
+    };
+    paint(physics.roads, 8);
+    paint(physics.crosswalks, 1);
     this.g = new Float32Array(this.w * this.h);
     this.parent = new Int32Array(this.w * this.h);
     this.stamp = new Uint32Array(this.w * this.h);
@@ -228,7 +249,7 @@ export class NavGrid {
           if (dx && dz && (!this.free(cx + dx, cz) || !this.free(cx, cz + dz)))
             continue;
           const n = nz * W + nx;
-          const cost = this.g[cur] + (dx && dz ? 1.414 : 1);
+          const cost = this.g[cur] + (dx && dz ? 1.414 : 1) * this.weight[n];
           if (this.stamp[n] === run && cost >= this.g[n]) continue;
           this.stamp[n] = run;
           this.g[n] = cost;
@@ -259,7 +280,7 @@ export class NavGrid {
       const t = steps ? i / steps : 0;
       const x = Math.round(x0 + (x1 - x0) * t);
       const z = Math.round(z0 + (z1 - z0) * t);
-      if (!this.free(x, z)) return false;
+      if (!this.free(x, z) || this.weight[z * W + x] > 1) return false;
     }
     return true;
   }

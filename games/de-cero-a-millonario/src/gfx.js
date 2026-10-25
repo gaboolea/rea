@@ -22,7 +22,7 @@ export function mat(color, opts = {}) {
   return materials.get(key);
 }
 
-function geo(key, make) {
+export function geo(key, make) {
   if (!geometries.has(key)) geometries.set(key, make());
   return geometries.get(key);
 }

@@ -1,76 +1,140 @@
-// Cadena de misiones: cada una comprueba condiciones reales del estado.
-import { GOAL_NET_WORTH } from "./config.js";
+// Cadena de misiones. Las primeras forman un tutorial práctico de un par de
+// minutos; después se alternan metas cortas y objetivos de progreso. Cada
+// misión comprueba condiciones reales del estado; `base` es la foto de las
+// estadísticas al empezar la misión, para contar solo lo hecho desde entonces.
+import { GOAL_NET_WORTH, STAGES } from "./config.js";
 
 const owns = (g, id) => g.businesses[id]?.owned;
 const upg = (g, biz, id) => g.businesses[biz]?.upgrades.has(id);
+const delta = (g, base, key) => (g.state.stats[key] ?? 0) - (base[key] ?? 0);
+const count = (n, max) => [Math.min(n, max), max];
 
 export const MISSIONS = [
   {
-    text: "Camina hasta tu tienda «Mi Tiendita»",
-    target: (g) => g.world.buildings.tienda.doorPoint(0),
+    text: "Entra en tu tienda",
+    hint: "Usa WASD o el joystick",
+    target: (g) => g.world.buildings.tienda.doorPoint(-1),
     done: (g) =>
       g.world.buildings.tienda.contains(g.player.pos.x, g.player.pos.z),
-    reward: 0,
+    reward: 5,
   },
   {
-    text: "Ve al Mayorista y compra tus primeros 10 productos",
-    target: (g) => g.world.supplierCounter,
-    done: (g) => g.state.stats.unitsBought >= 10,
+    text: "Cobra a tu primer cliente en la caja",
+    hint: "Acércate a la caja y pulsa E",
+    target: (g) => g.businesses.tienda.registers[0]?.cashierPoint,
+    done: (g, b) => delta(g, b, "sales") >= 1,
     reward: 10,
   },
   {
-    text: "Recoge la caja en RECOGIDA y repón una estantería de tu tienda",
+    text: "Toma una caja del ALMACÉN y repón la estantería vacía",
+    hint: "E en el almacén, luego E en la estantería",
+    target: (g) =>
+      g.state.carried.length
+        ? g.businesses.tienda.displays[2]?.approach
+        : g.businesses.tienda.storagePoint,
+    done: (g, b) => delta(g, b, "unitsStocked") >= 1,
+    reward: 10,
+  },
+  {
+    text: "Completa 5 ventas",
+    target: (g) => g.businesses.tienda.registers[0]?.cashierPoint,
+    progress: (g, b) => count(delta(g, b, "sales"), 5),
+    done: (g, b) => delta(g, b, "sales") >= 5,
+    reward: 15,
+  },
+  {
+    text: "Cruza la calle y compra 2 cajas en el Mayorista",
+    hint: "Mostrador PEDIDOS",
+    target: (g) => g.world.supplierCounter,
+    progress: (g, b) => count(delta(g, b, "unitsBought") / 10, 2),
+    done: (g, b) => delta(g, b, "unitsBought") >= 20,
+    reward: 15,
+  },
+  {
+    text: "Lleva tu mercadería a la tienda",
+    hint: "Recoge en RECOGIDA y reponla o guárdala",
     target: (g) =>
       g.state.carried.length
         ? g.world.buildings.tienda.doorPoint(0)
         : g.world.pickupPoint,
-    done: (g) => g.state.stats.unitsStocked >= 1,
-    reward: 10,
+    progress: (g, b) =>
+      count(
+        Math.floor(
+          (delta(g, b, "unitsStocked") + delta(g, b, "unitsStored")) / 10,
+        ),
+        2,
+      ),
+    done: (g, b) =>
+      delta(g, b, "unitsStocked") + delta(g, b, "unitsStored") >= 20,
+    reward: 15,
   },
   {
-    text: "Atiende la caja: completa tus primeras 5 ventas",
-    target: (g) => g.businesses.tienda.registers[0]?.cashierPoint,
-    done: (g) => g.state.stats.sales >= 5,
+    text: "Compra una estantería extra",
+    hint: "Gestión → Mejoras",
+    done: (g) => upg(g, "tienda", "estanteria1"),
     reward: 20,
   },
   {
-    text: "Gana tu primer beneficio: $40 de ganancia bruta",
-    done: (g) => g.state.stats.grossProfit >= 40,
+    text: "Descubre 3 lugares de la ciudad",
+    hint: "Cada lugar nuevo da $10",
+    progress: (g) => count(g.state.discovered.length - 1, 3),
+    done: (g) => g.state.discovered.length - 1 >= 3,
+    reward: 15,
+  },
+  {
+    text: "Gana $120 de ganancia bruta",
+    progress: (g, b) => count(Math.floor(delta(g, b, "grossProfit")), 120),
+    done: (g, b) => delta(g, b, "grossProfit") >= 120,
     reward: 25,
   },
   {
-    text: "Abre Gestión (G) y ajusta el precio de un producto",
-    done: (g) => g.state.stats.priceChanges >= 1,
-    reward: 10,
+    text: "Completa un encargo de un comerciante",
+    hint: "Busca a quien tenga un «!» encima",
+    target: (g) =>
+      g.events.merchants.find((m) => m.request)?.char.root.position,
+    done: (g) => (g.state.stats.encargos ?? 0) >= 1,
+    reward: 25,
   },
   {
-    text: "Llega a la etapa Comerciante ($400 en ventas totales)",
+    text: `Llega a la etapa Comerciante ($${STAGES[1].revenue} en ventas)`,
+    progress: (g) =>
+      count(Math.floor(g.state.stats.revenue), STAGES[1].revenue),
     done: (g) => g.stageIndex() >= 1,
-    reward: 40,
-  },
-  {
-    text: "Compra una estantería extra (Gestión → Mejoras)",
-    done: (g) => upg(g, "tienda", "estanteria1"),
     reward: 30,
   },
   {
-    text: "Contrata a tu primer empleado (Gestión → Personal)",
+    text: "Contrata a tu primer empleado",
+    hint: "Gestión → Personal",
     done: (g) =>
       Object.values(g.businesses).some((b) => b.employees.length > 0),
-    reward: 50,
+    reward: 40,
   },
   {
-    text: "Compra un refrigerador o una segunda caja registradora",
+    text: "Estrena ropa nueva en la Boutique",
+    target: (g) => g.world.boutiqueCounter,
+    done: (g) => (g.state.stats.clothesBought ?? 0) >= 1,
+    reward: 20,
+  },
+  {
+    text: "Ajusta el precio de un producto",
+    hint: "Gestión → Precios",
+    done: (g, b) => delta(g, b, "priceChanges") >= 1,
+    reward: 10,
+  },
+  {
+    text: "Compra un refrigerador o una segunda caja",
     done: (g) => upg(g, "tienda", "refrigerador") || upg(g, "tienda", "caja2"),
     reward: 50,
   },
   {
     text: "Amplía tu negocio: derriba la pared trasera",
     done: (g) => upg(g, "tienda", "ampliacion"),
-    reward: 100,
+    reward: 80,
   },
   {
-    text: "Llega a la etapa Empresario ($1.500 en ventas totales)",
+    text: `Llega a la etapa Empresario ($${STAGES[2].revenue.toLocaleString("es")} en ventas)`,
+    progress: (g) =>
+      count(Math.floor(g.state.stats.revenue), STAGES[2].revenue),
     done: (g) => g.stageIndex() >= 2,
     reward: 100,
   },
@@ -82,11 +146,12 @@ export const MISSIONS = [
   },
   {
     text: "Vende 20 cafés (compra granos en el Mayorista)",
-    done: (g) => g.state.stats.coffeeSold >= 20,
-    reward: 150,
+    progress: (g, b) => count(delta(g, b, "coffeeSold"), 20),
+    done: (g, b) => delta(g, b, "coffeeSold") >= 20,
+    reward: 120,
   },
   {
-    text: "Compra tu primer vehículo en el Concesionario",
+    text: "Compra tu primer vehículo",
     target: (g) => g.world.dealerCounter,
     done: (g) => g.state.items.scooter || g.state.items.furgoneta,
     reward: 100,
@@ -98,13 +163,15 @@ export const MISSIONS = [
     reward: 300,
   },
   {
-    text: "Múdate a una casa mejor: compra la «Villa Bonita»",
+    text: "Múdate a la «Villa Bonita»",
     target: (g) => g.world.buildings.casagrande.doorPoint(1.4),
     done: (g) => g.state.items.casa,
     reward: 500,
   },
   {
-    text: "Llega a la etapa Magnate ($8.000 en ventas totales)",
+    text: `Llega a la etapa Magnate ($${STAGES[3].revenue.toLocaleString("es")} en ventas)`,
+    progress: (g) =>
+      count(Math.floor(g.state.stats.revenue), STAGES[3].revenue),
     done: (g) => g.stageIndex() >= 3,
     reward: 500,
   },
@@ -116,6 +183,7 @@ export const MISSIONS = [
   },
   {
     text: `Conviértete en millonario: patrimonio de $${GOAL_NET_WORTH.toLocaleString("es")}`,
+    progress: (g) => count(Math.floor(g.netWorth()), GOAL_NET_WORTH),
     done: (g) => g.netWorth() >= GOAL_NET_WORTH,
     reward: 0,
   },
@@ -123,16 +191,32 @@ export const MISSIONS = [
 
 export function checkMissions(game) {
   const s = game.state;
-  while (s.mission < MISSIONS.length && MISSIONS[s.mission].done(game)) {
+  s.missionBase ??= { ...s.stats };
+  while (
+    s.mission < MISSIONS.length &&
+    MISSIONS[s.mission].done(game, s.missionBase)
+  ) {
     const m = MISSIONS[s.mission];
     s.mission++;
-    if (m.reward) game.state.money += m.reward;
+    s.missionBase = { ...s.stats };
+    if (m.reward) {
+      s.money += m.reward;
+      game.ui.floatMoney(m.reward);
+    }
     game.ui.missionComplete(m, MISSIONS[s.mission]);
+    game.audio.sfx("mission");
     game.player.char.playAction("cheer", 0.9);
+    game.unlockRewards();
     game.save();
   }
 }
 
 export function currentMission(game) {
   return MISSIONS[game.state.mission] ?? null;
+}
+
+export function missionProgress(game) {
+  const m = currentMission(game);
+  if (!m?.progress) return null;
+  return m.progress(game, game.state.missionBase ?? game.state.stats);
 }

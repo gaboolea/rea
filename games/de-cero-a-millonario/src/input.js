@@ -61,19 +61,24 @@ export class Input {
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   }
 
+  // Joystick dinámico: aparece donde el pulgar toca la mitad izquierda.
   bindTouch(canvas) {
+    const zone = document.getElementById("joy-zone");
     const base = document.getElementById("joystick");
     const knob = document.getElementById("joystick-knob");
     let joyId = null;
     let center = null;
     const lookTouches = new Map();
-    base.addEventListener(
+    zone.addEventListener(
       "touchstart",
       (e) => {
         const t = e.changedTouches[0];
         joyId = t.identifier;
-        const r = base.getBoundingClientRect();
-        center = [r.left + r.width / 2, r.top + r.height / 2];
+        center = [t.clientX, t.clientY];
+        const zr = zone.getBoundingClientRect();
+        base.style.left = `${t.clientX - zr.left}px`;
+        base.style.top = `${t.clientY - zr.top}px`;
+        base.classList.add("active");
         this.updateJoy(t, center, knob);
         e.preventDefault();
       },
@@ -100,6 +105,9 @@ export class Input {
           joyId = null;
           this.joy = { x: 0, y: 0, active: false };
           knob.style.transform = "translate(-50%, -50%)";
+          base.classList.remove("active");
+          base.style.left = "";
+          base.style.top = "";
         }
         lookTouches.delete(t.identifier);
       }
@@ -134,12 +142,15 @@ export class Input {
     };
     hold("btn-interact", () => this.pressed.add("e"));
     hold("btn-jump", () => this.pressed.add(" "));
-    hold("btn-run", () => (this.touchRun = !this.touchRun));
+    hold("btn-run", () => {
+      this.touchRun = !this.touchRun;
+      document.getElementById("btn-run").classList.toggle("on", this.touchRun);
+    });
     hold("btn-ride", () => this.pressed.add("v"));
   }
 
   updateJoy(t, center, knob) {
-    const max = 46;
+    const max = 44;
     let dx = t.clientX - center[0];
     let dy = t.clientY - center[1];
     const len = Math.hypot(dx, dy);
@@ -169,7 +180,8 @@ export class Input {
   }
 
   running() {
-    return this.keys.has("shift") || this.touchRun;
+    const held = this.keys.has("shift") || this.touchRun;
+    return this.settings?.alwaysRun ? !held : held;
   }
 
   consume(key) {

@@ -2,11 +2,18 @@
 // navegación y respetan las colisiones. Los clientes y empleados añaden su
 // propia máquina de estados encima.
 import { ToyCharacter } from "./character.js";
+import { randomLook, workerLook } from "./look.js";
 
-const CUSTOMER_COLORS = [
-  0xf2a531, 0xf7b733, 0xff8f3d, 0xffc94a, 0xe9893a, 0x7ec8e3, 0xff9ab8,
-  0x9bd770,
-];
+const VIP_LOOK = {
+  skin: "melocoton",
+  top: { id: "traje", color: "morado" },
+  bottom: { id: "pantalon_traje", color: "negro" },
+  shoes: { id: "zapatos" },
+  hat: { id: "chistera" },
+  glasses: { id: "sol" },
+  back: { id: "none" },
+  neck: { id: "cadena_oro" },
+};
 
 export class Agent {
   constructor(game, character, x, z) {
@@ -109,19 +116,22 @@ export function turnTowards(current, target, maxStep) {
 }
 
 export class Customer extends Agent {
-  constructor(game, business, spawn) {
-    const color =
-      CUSTOMER_COLORS[Math.floor(Math.random() * CUSTOMER_COLORS.length)];
+  constructor(game, business, spawn, vip = false) {
     super(
       game,
-      new ToyCharacter({ body: color, scale: 0.85 + Math.random() * 0.15 }),
+      new ToyCharacter({
+        look: vip ? VIP_LOOK : randomLook(),
+        scale: 0.85 + Math.random() * 0.15,
+      }),
       spawn.x,
       spawn.z,
     );
     this.business = business;
     this.spawn = spawn;
-    this.speed = 1.7 + Math.random() * 0.6;
-    this.wants = business.rollWants();
+    this.vip = vip;
+    this.speed = 2.1 + Math.random() * 0.6;
+    this.wants = business.rollWants(vip ? 4 : 0);
+    if (vip) this.char.think("★", "#e0a100", 4);
     this.basket = [];
     this.patience = 45 + Math.random() * 20;
     this.waited = 0;
@@ -238,10 +248,10 @@ export class Customer extends Agent {
 export class Employee extends Agent {
   constructor(game, business, role) {
     const door = business.building.doorPoint(-1.5);
-    const colors = { cajero: 0x5bd47a, reponedor: 0x4f8dff, barista: 0x8b5a3c };
+    const colors = { cajero: "menta", reponedor: "azul", barista: "marron" };
     super(
       game,
-      new ToyCharacter({ body: colors[role], apron: 0xffffff, hat: "gorra" }),
+      new ToyCharacter({ look: workerLook(colors[role]), apron: 0xffffff }),
       door.x,
       door.z,
     );

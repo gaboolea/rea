@@ -113,7 +113,7 @@ export const PRODUCTS = {
 
 export const STAGES = [
   { name: "Principiante", revenue: 0 },
-  { name: "Comerciante", revenue: 400 },
+  { name: "Comerciante", revenue: 300 },
   { name: "Empresario", revenue: 1500 },
   { name: "Magnate", revenue: 8000 },
 ];
@@ -180,33 +180,33 @@ export const BUSINESSES = {
 export const UPGRADES = {
   estanteria1: {
     name: "Estantería extra",
-    price: 120,
+    price: 60,
     desc: "Un mueble más para exponer productos.",
     types: ["grocery"],
   },
   estanteria2: {
     name: "Estantería extra II",
-    price: 180,
+    price: 120,
     desc: "Otra estantería en la tienda.",
     needs: ["estanteria1"],
     types: ["grocery"],
   },
   refrigerador: {
     name: "Refrigerador",
-    price: 260,
+    price: 200,
     desc: "Permite vender Leche y Yogur. +$5/día de luz.",
     types: ["grocery"],
     stage: 1,
   },
   caja2: {
     name: "Segunda caja registradora",
-    price: 400,
+    price: 300,
     desc: "Una segunda fila para atender más clientes.",
     stage: 1,
   },
   ampliacion: {
     name: "Ampliación del local",
-    price: 900,
+    price: 700,
     desc: "Derriba la pared trasera: +3 estanterías y más clientes.",
     types: ["grocery"],
     stage: 1,
@@ -227,12 +227,12 @@ export const UPGRADES = {
   },
   plantas: {
     name: "Plantas decorativas",
-    price: 40,
+    price: 25,
     desc: "Un ambiente agradable: +5 reputación.",
   },
   letrero: {
     name: "Letrero luminoso",
-    price: 150,
+    price: 120,
     desc: "Atrae a más clientes de la calle (+15%).",
   },
   suelo: {
@@ -277,27 +277,5 @@ export const SHOP_ITEMS = {
     stage: 2,
   },
 };
-
-export const OUTFITS = [
-  { id: "turquesa", name: "Turquesa clásico", price: 0, body: 0x2ec4c4 },
-  { id: "verde", name: "Verde menta", price: 60, body: 0x5bd47a },
-  { id: "azul", name: "Azul cielo", price: 60, body: 0x4f8dff },
-  { id: "rosa", name: "Rosa chicle", price: 80, body: 0xff7eb6 },
-  {
-    id: "traje",
-    name: "Traje de ejecutivo",
-    price: 900,
-    body: 0x34405c,
-    stage: 2,
-  },
-  { id: "dorado", name: "Traje dorado", price: 9000, body: 0xf2c230, stage: 3 },
-];
-
-export const HATS = [
-  { id: "none", name: "Sin accesorio", price: 0 },
-  { id: "gorra", name: "Gorra", price: 40 },
-  { id: "sombrero", name: "Sombrero", price: 150 },
-  { id: "corona", name: "Corona", price: 20000, stage: 3 },
-];
 
 export const GOAL_NET_WORTH = 1000000;
