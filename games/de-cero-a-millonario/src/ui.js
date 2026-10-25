@@ -548,20 +548,32 @@ export class UI {
       const g = this.game;
       if (d.act === "continue") this.close();
       if (d.act === "save") {
+        const ok = g.save();
         this.toast(
-          g.save()
-            ? "Partida guardada"
-            : "No se pudo guardar en este navegador",
-          g.save() ? "good" : "bad",
+          ok ? "Partida guardada" : "No se pudo guardar en este navegador",
+          ok ? "good" : "bad",
         );
         this.close();
       }
       if (d.act === "load") location.reload();
-      if (
-        d.act === "new" &&
-        confirm("¿Empezar una partida nueva? Se perderá el progreso guardado.")
-      )
-        g.newGame();
+      if (d.act === "new") this.confirmNewGame();
+    });
+  }
+
+  // Confirmación dentro del juego (algunos visores bloquean confirm()).
+  confirmNewGame() {
+    this.open(
+      "confirm",
+      "¿Nueva partida?",
+      `<p>Se borrará el progreso guardado y empezarás de nuevo con $150.</p>
+      <div class="menu">
+        <button class="ghost" data-act="new">Sí, empezar de cero</button>
+        <button class="primary" data-act="back">No, volver al menú</button>
+      </div>`,
+    );
+    this.bind("[data-act]", (d) => {
+      if (d.act === "new") this.game.newGame();
+      else this.openMenu();
     });
   }
 
