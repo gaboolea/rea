@@ -41,9 +41,9 @@ class Pedestrian extends Agent {
     return !this.char.root.visible;
   }
 
-  go(target, then) {
+  go(target, then, reach) {
     this.state = "walk";
-    this.moveTo(target, then);
+    this.moveTo(target, then, reach);
   }
 
   idle(seconds) {
@@ -67,20 +67,35 @@ class Pedestrian extends Agent {
 
   visitShop() {
     const b = pick(this.crowd.shops());
-    this.go(b.doorPoint(1.6), () => {
-      if (b.shutter) {
-        this.face(b.x, b.z);
-        this.char.think(b.id === "restaurante" ? "🔒" : "$", "#7f8c8d", 2);
-        this.idle(2);
-        return;
-      }
-      this.go(b.doorPoint(-1.2), () => {
-        this.char.root.visible = false;
-        this.state = "inside";
-        this.timer = rand(4, 9);
-        this.shop = b;
-      });
-    });
+    const lane = rand(0.5, 1.1);
+    if (b.shutter) {
+      // Cerrado: lo mira desde la acera, sin plantarse en la puerta.
+      this.go(
+        b.doorPoint(2.6, rand(-1.5, 1.5)),
+        () => {
+          this.face(b.x, b.z);
+          this.char.think(b.id === "restaurante" ? "🔒" : "$", "#7f8c8d", 2);
+          this.idle(2);
+        },
+        0.8,
+      );
+      return;
+    }
+    this.go(
+      b.doorPoint(1.6, lane),
+      () =>
+        this.go(
+          b.doorPoint(-1.2, lane),
+          () => {
+            this.char.root.visible = false;
+            this.state = "inside";
+            this.timer = rand(4, 9);
+            this.shop = b;
+          },
+          0.6,
+        ),
+      0.6,
+    );
   }
 
   tryChat() {
@@ -170,7 +185,12 @@ class Pedestrian extends Agent {
     if (this.state === "inside" && this.timer <= 0) {
       this.char.root.visible = true;
       this.state = "walk";
-      this.moveTo(this.shop.doorPoint(1.8), () => this.idle(0.5));
+      // Sale por el carril izquierdo y se aparta de la puerta.
+      this.moveTo(
+        this.shop.doorPoint(2.8, -rand(0.5, 1.1)),
+        () => this.idle(0.2),
+        0.8,
+      );
       return;
     }
     if (this.state === "bus" && this.timer <= 0) this.idle(0.2);

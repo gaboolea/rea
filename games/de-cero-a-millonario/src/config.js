@@ -3,6 +3,8 @@
 
 export const DAY_SECONDS = 300;
 export const BOX_UNITS = 10;
+// Cajas que caben en un carro de carga del Mayorista.
+export const CART_CAPACITY = 10;
 export const START_MONEY = 150;
 
 // shape: forma del producto en estanterías; cat: zona del Mayorista.

@@ -60,7 +60,8 @@ export class Player {
     const mv = input.moveVector();
     const run = input.running();
     let speed = this.riding ? 9.5 : run ? RUN : WALK;
-    if (this.game.state.carried.length && !this.riding) speed *= 0.88;
+    const st = this.game.state;
+    if (st.carried.length && !this.riding && !st.cart) speed *= 0.88;
     // Dirección deseada relativa a la cámara, con aceleración suave.
     const sin = Math.sin(cameraYaw);
     const cos = Math.cos(cameraYaw);
@@ -86,6 +87,7 @@ export class Player {
     if (mag > 0.05)
       this.heading = turnTowards(this.heading, Math.atan2(dirX, dirZ), dt * 11);
     physics.resolveCircle(this.pos, this.radius);
+    if (this.game.state.cart) this.resolveCart(physics);
     this.game.world.traffic.pushOut(this.pos, this.radius);
     this.pushFromAgents();
     // Escalones: subir aceras bajas; si es más alto, se comporta como pared.
@@ -141,6 +143,22 @@ export class Player {
     }
     this.lastHeading = this.heading;
     this.speedNow = moved;
+  }
+
+  // El carro va delante: si choca con una pared o un mueble, el jugador
+  // retrocede lo mismo, para que el carro no atraviese nada.
+  resolveCart(physics) {
+    const fx = Math.sin(this.heading);
+    const fz = Math.cos(this.heading);
+    for (const reach of [0.75, 1.3]) {
+      const c = { x: this.pos.x + fx * reach, z: this.pos.z + fz * reach };
+      const bx = c.x;
+      const bz = c.z;
+      physics.resolveCircle(c, 0.42);
+      this.pos.x += c.x - bx;
+      this.pos.z += c.z - bz;
+    }
+    physics.resolveCircle(this.pos, this.radius);
   }
 
   // Empuje suave contra personas para no atravesarlas.

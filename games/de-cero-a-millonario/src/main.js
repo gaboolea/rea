@@ -3,6 +3,7 @@
 // "wardrobe" (personalización) y "play" (partida).
 import * as THREE from "three";
 import { World } from "./world.js";
+import { Scenery } from "./scenery.js";
 import { Business } from "./business.js";
 import { Player, CameraRig } from "./player.js";
 import { Input } from "./input.js";
@@ -30,6 +31,8 @@ import {
   BOX_UNITS,
   START_MONEY,
   PLOTS,
+  CART_CAPACITY,
+  CATEGORIES,
 } from "./config.js";
 
 const SAVE_KEY = "de-cero-a-millonario-v1";
@@ -86,6 +89,8 @@ function freshState() {
     wardrobe: [...STARTER_ITEMS],
     discovered: [],
     carried: [],
+    // Carro de carga del Mayorista (lleva muchas cajas a la vez).
+    cart: false,
     pickup: [],
     deliveries: [],
     warehouse: {},
@@ -114,15 +119,16 @@ class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.12;
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 260);
+    this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 330);
     this.setupLights();
     this.timers = [];
     this.settings = this.loadSettings();
     this.audio = new AudioManager(this.settings);
     this.state = freshState();
     this.world = new World(this.scene);
+    this.scenery = new Scenery(this.scene);
     this.fx = new Fx(this.scene);
     this.input = new Input(this.canvas);
     this.input.settings = this.settings;
@@ -431,9 +437,9 @@ class Game {
   }
 
   setupLights() {
-    this.hemi = new THREE.HemisphereLight(0xcfeaff, 0xf3d9a4, 1.25);
+    this.hemi = new THREE.HemisphereLight(0xcfeaff, 0xb9d98a, 1.3);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.3);
+    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     const s = this.sun.shadow.camera;
@@ -446,11 +452,8 @@ class Game {
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
-    this.skyDay = new THREE.Color(0x9fdcff);
-    this.skyDusk = new THREE.Color(0xffb38a);
-    this.skyNight = new THREE.Color(0x3a3f7a);
-    this.scene.background = this.skyDay.clone();
-    this.scene.fog = new THREE.Fog(this.skyDay.clone(), 70, 180);
+    this.scene.background = new THREE.Color(0xc4ebff);
+    this.scene.fog = new THREE.Fog(0xc4ebff, 95, 240);
   }
 
   resize() {
@@ -683,12 +686,17 @@ class Game {
   }
 
   carryCapacity() {
+    if (this.state.cart) return CART_CAPACITY;
     return this.state.items.carretilla ? 3 : 1;
   }
 
   onCarryChanged() {
-    this.player.char.setCarry(this.state.carried.map((b) => b.product));
-    if (this.state.carried.length && this.player.riding) this.toggleRide(false);
+    this.player.char.setCarry(
+      this.state.carried.map((b) => b.product),
+      this.state.cart,
+    );
+    if ((this.state.carried.length || this.state.cart) && this.player.riding)
+      this.toggleRide(false);
     this.ui.refreshHud(true);
   }
 
@@ -918,6 +926,12 @@ class Game {
     const on = force ?? !this.player.riding;
     if (on && this.state.carried.length)
       return this.ui.toast("No puedes ir en scooter cargando cajas", "bad");
+    if (on && this.state.cart) {
+      // El carro vacío vuelve solo al Mayorista.
+      this.state.cart = false;
+      this.onCarryChanged();
+      this.ui.toast("🛒 Carro devuelto al Mayorista");
+    }
     const inside = Object.values(this.world.buildings).some((b) =>
       b.contains(this.player.pos.x, this.player.pos.z),
     );
@@ -925,6 +939,19 @@ class Game {
       return this.ui.toast("Sal a la calle para usar el scooter", "bad");
     this.player.setRiding(on);
     this.audio.sfx(on ? "jump" : "land");
+  }
+
+  toggleCart() {
+    if (this.state.cart && this.state.carried.length) return;
+    this.state.cart = !this.state.cart;
+    if (this.state.cart && this.player.riding) this.toggleRide(false);
+    this.audio.sfx(this.state.cart ? "pickup" : "place");
+    this.ui.toast(
+      this.state.cart
+        ? "🛒 Carro listo: carga todas tus cajas de una vez en la zona B"
+        : "🛒 Carro devuelto",
+    );
+    this.onCarryChanged();
   }
 
   // ---------- Interacciones fijas del mundo ----------
@@ -935,20 +962,51 @@ class Game {
       {
         x: w.supplierCounter.x,
         z: w.supplierCounter.z,
-        radius: 1.8,
-        label: () => ({ text: "HACER PEDIDO", enabled: true }),
-        action: () => this.ui.openSupplier(),
+        radius: 2.6,
+        label: () => ({ text: "🛒 CAJA · COMPRAR MERCADERÍA", enabled: true }),
+        action: () => this.ui.openSupplier("todos"),
       },
       ...w.orderTerminals.map((t) => ({
         x: t.x,
         z: t.z,
         radius: 1.3,
         label: () => ({
-          text: "Terminal de pedidos · HACER PEDIDO",
+          text: "Terminal de pedidos · COMPRAR MERCADERÍA",
           enabled: true,
         }),
         action: () => this.ui.openSupplier(),
       })),
+      // Las estanterías del fondo enseñan el género: desde ellas se abre
+      // el pedido de esa categoría (se paga igual, como en la caja).
+      ...w.warehouseSpots.racks.map((r, i) => {
+        const cat = w.warehouseSpots.rackCats[i];
+        return {
+          x: r.x,
+          z: r.z,
+          radius: 1.6,
+          label: () => ({
+            text: `🛒 Pedir ${CATEGORIES[cat].name} · se recoge en la zona B`,
+            enabled: true,
+          }),
+          action: () => this.ui.openSupplier(cat),
+        };
+      }),
+      {
+        x: w.cartPoint.x,
+        z: w.cartPoint.z,
+        radius: 1.5,
+        label: () => {
+          if (!this.state.cart)
+            return {
+              text: `🛒 Tomar un carro (hasta ${CART_CAPACITY} cajas)`,
+              enabled: true,
+            };
+          return this.state.carried.length
+            ? { text: "Vacía el carro antes de devolverlo", enabled: false }
+            : { text: "Devolver el carro", enabled: true };
+        },
+        action: () => this.toggleCart(),
+      },
       {
         x: w.pickupPoint.x,
         z: w.pickupPoint.z,
@@ -956,6 +1014,7 @@ class Game {
         label: () => {
           const next = this.state.pickup[0];
           const wait = this.warehouse.pendingSeconds();
+          const room = this.carryCapacity() - this.state.carried.length;
           if (!next && wait > 0)
             return {
               text: `Tu pedido se está preparando… (${Math.ceil(wait)} s)`,
@@ -963,13 +1022,20 @@ class Game {
             };
           if (!next)
             return {
-              text: "No tienes pedidos para recoger · pide en el mostrador A",
+              text: "No tienes pedidos para recoger · compra en la CAJA",
               enabled: false,
             };
-          if (this.state.carried.length >= this.carryCapacity())
+          if (room <= 0)
             return {
-              text: `Manos llenas (${this.carryCapacity()} caja/s máx.)`,
+              text: this.state.cart
+                ? `Carro lleno (${CART_CAPACITY} cajas)`
+                : `Manos llenas (${this.carryCapacity()} caja/s máx.) · toma un carro en la entrada`,
               enabled: false,
+            };
+          if (this.state.cart)
+            return {
+              text: `Cargar ${Math.min(room, this.state.pickup.length)} caja/s en el carro`,
+              enabled: true,
             };
           return {
             text: `Recoger caja de ${PRODUCTS[next.product].name} (${this.state.pickup.length} en espera)`,
@@ -977,12 +1043,17 @@ class Game {
           };
         },
         action: () => {
-          const box = this.state.pickup.shift();
-          this.state.carried.push(box);
+          const room = this.carryCapacity() - this.state.carried.length;
+          const boxes = this.state.pickup.splice(0, Math.max(1, room));
+          this.state.carried.push(...boxes);
           this.world.pickupPile.setCount(this.state.pickup.length);
           this.player.char.playAction("pickup", 0.5);
           this.audio.sfx("pickup");
           this.onCarryChanged();
+          if (!this.state.cart && this.state.pickup.length)
+            this.ui.toast(
+              "💡 Con un carro de la entrada llevas hasta 10 cajas a la vez",
+            );
         },
       },
       {
@@ -1133,6 +1204,18 @@ class Game {
   carryHint() {
     const p = this.player.pos;
     const inWarehouse = this.world.buildings.mayorista.contains(p.x, p.z);
+    // Al entrar: recordatorio de dónde se compra (si no hay tutorial).
+    if (inWarehouse && !this.wasInWarehouse && !this.tutorial.active()) {
+      const now = this.elapsed;
+      if (now - (this.warehouseHintAt ?? -1e9) > 90) {
+        this.warehouseHintAt = now;
+        this.ui.toast(
+          "🛒 Se compra en la CAJA (sigue las flechas amarillas) · hay carros en la entrada",
+          "event",
+        );
+      }
+    }
+    this.wasInWarehouse = inWarehouse;
     if (!this.state.carried.length) this.carryHintShown = false;
     else if (inWarehouse && !this.carryHintShown) {
       this.carryHintShown = true;
@@ -1157,22 +1240,32 @@ class Game {
     return list;
   }
 
+  // Empuje suave entre personas. Además de separarlas, las desvía de lado
+  // (las dos hacia su derecha) para que al cruzarse se esquiven en vez de
+  // empujarse de frente; quien acaba de atascarse pasa a través un momento.
   separateAgents(agents) {
     const physics = this.world.physics;
     for (let i = 0; i < agents.length; i++) {
-      const a = agents[i].pos;
+      const A = agents[i];
+      if (A.ghost > 0) continue;
+      const a = A.pos;
       for (let j = i + 1; j < agents.length; j++) {
-        const b = agents[j].pos;
+        const B = agents[j];
+        if (B.ghost > 0) continue;
+        const b = B.pos;
         const dx = b.x - a.x;
         const dz = b.z - a.z;
         const d2 = dx * dx + dz * dz;
         if (d2 > 0.36 || d2 < 1e-6) continue;
         const d = Math.sqrt(d2);
+        const nx = dx / d;
+        const nz = dz / d;
         const push = (0.6 - d) * 0.25;
-        a.x -= (dx / d) * push;
-        a.z -= (dz / d) * push;
-        b.x += (dx / d) * push;
-        b.z += (dz / d) * push;
+        const side = A.target && B.target ? push * 0.8 : 0;
+        a.x -= nx * push - nz * side;
+        a.z -= nz * push + nx * side;
+        b.x += nx * push - nz * side;
+        b.z += nz * push + nx * side;
       }
     }
     for (const ag of agents) {
@@ -1395,18 +1488,21 @@ class Game {
       focus.z + 18,
     );
     this.sun.target.position.set(focus.x, 0, focus.z);
-    this.sun.intensity = 2.3 * (1 - night * 0.65);
+    this.sun.intensity = 2.6 * (1 - night * 0.65);
     this.sun.color.setHSL(
       0.09 - dusk * 0.04,
       0.6 + dusk * 0.35,
       0.9 - night * 0.2,
     );
-    this.hemi.intensity = 1.25 - night * 0.45;
-    this.scene.background
-      .copy(this.skyDay)
-      .lerp(this.skyDusk, dusk * 0.7)
-      .lerp(this.skyNight, night);
-    this.scene.fog.color.copy(this.scene.background);
+    this.hemi.intensity = 1.3 - night * 0.45;
+    const horizon = this.scenery.update(
+      this.camera,
+      dusk * 0.7,
+      night,
+      this.elapsed,
+    );
+    this.scene.background.copy(horizon);
+    this.scene.fog.color.copy(horizon);
     this.world.setNight(night);
   }
 

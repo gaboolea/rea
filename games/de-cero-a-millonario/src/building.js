@@ -10,9 +10,14 @@ import {
   signMesh,
   stripedTexture,
   tileTexture,
+  sphere,
+  mergeParts,
+  facadeTexture,
 } from "./gfx.js";
 
 const H = 3.4;
+// Altura de la planta alta decorativa.
+const UPPER_H = 2.7;
 const T = 0.3;
 const FLOOR_Y = 0.12;
 
@@ -38,6 +43,7 @@ export class Building {
     this.group.add(this.interior);
     world.scene.add(this.group);
     this.walls = [];
+    this.windowMats = [];
     this.glassMats = [];
     this.lightMats = [];
     this.build();
@@ -81,9 +87,9 @@ export class Building {
     );
   }
 
-  // Punto justo fuera de la puerta y justo dentro.
-  doorPoint(offset) {
-    return this.toWorld(0, this.d / 2 + offset);
+  // Punto frente a la puerta; lateral > 0 = carril de entrada, < 0 = salida.
+  doorPoint(offset, lateral = 0) {
+    return this.toWorld(lateral, this.d / 2 + offset);
   }
 
   addLocalCollider(lx, lz, w, d, tag = this.id) {
@@ -300,11 +306,18 @@ export class Building {
     }
     for (const m of this.lightMats)
       m.emissiveIntensity = lit ? 0.4 + n * 1.4 : 0;
+    // Algunas ventanas de arriba se encienden al anochecer.
+    for (const m of this.windowMats) m.emissiveIntensity = n * 0.7;
   }
 
   buildRoof() {
     const { w, d, roofColor } = this.opts;
     this.roof = new THREE.Group();
+    // Planta alta con ventanas (como los edificios de la referencia). Va en
+    // el grupo del techo: se oculta al entrar, igual que la azotea.
+    const floors = this.opts.floors ?? 2;
+    if (floors > 1) this.buildUpperFloor();
+    const top = floors > 1 ? H + UPPER_H + 0.35 : H;
     const slab = mesh(
       roundedBox(w + 0.5, 0.35, d + 0.5, 0.1),
       mat(roofColor).clone(),
@@ -312,7 +325,7 @@ export class Building {
       0,
       0,
     );
-    this.place(slab, 0, 0, 0, H + 0.17);
+    this.place(slab, 0, 0, 0, top + 0.17);
     this.roof.add(slab);
     this.world.occluders.push(slab);
     // Detalles de azotea: unidades de aire acondicionado.
@@ -324,9 +337,117 @@ export class Building {
       0,
     );
     this.world.occluders.push(ac);
-    this.place(ac, -w / 4, -d / 4, 0, H + 0.7);
+    this.place(ac, -w / 4, -d / 4, 0, top + 0.7);
     this.roof.add(ac);
     this.group.add(this.roof);
+  }
+
+  buildUpperFloor() {
+    const { w, d, wallColor, trimColor } = this.opts;
+    const y0 = H + 0.35;
+    // Franja entre plantas (cierra el hueco sobre las paredes de abajo).
+    const band = mesh(
+      roundedBox(w + 0.25, 0.35, d + 0.25, 0.08),
+      mat(trimColor),
+      0,
+      0,
+      0,
+    );
+    this.place(band, 0, 0, 0, H + 0.17);
+    this.roof.add(band);
+    this.world.occluders.push(band);
+    const body = mesh(
+      box(w - 0.2, UPPER_H, d - 0.2),
+      new THREE.MeshStandardMaterial({
+        map: facadeTexture(`#${new THREE.Color(wallColor).getHexString()}`, [
+          w / 2,
+          UPPER_H / 2,
+        ]),
+        roughness: 0.8,
+      }),
+      0,
+      0,
+      0,
+    );
+    this.place(body, 0, 0, 0, y0 + UPPER_H / 2);
+    this.roof.add(body);
+    this.world.occluders.push(body);
+    // Ventanas: marco blanco, cristal y jardinera con flores, en la fachada
+    // y en los laterales. Cada material es una sola malla.
+    const frames = [];
+    const glass = [];
+    const boxes = [];
+    const flowers = [];
+    const petals = [0xff6b9a, 0xffd23f, 0xff8a3d, 0xffffff, 0xb07cff];
+    const wy = y0 + UPPER_H * 0.55;
+    const addWindow = (lx, lz, ry, k) => {
+      const out = 0.06;
+      const ox = Math.sin(ry) * out;
+      const oz = Math.cos(ry) * out;
+      frames.push([box(1.25, 1.3, 0.12), lx, wy, lz, ry]);
+      glass.push([box(1.0, 1.05, 0.06), lx + ox, wy, lz + oz, ry]);
+      frames.push([box(0.06, 1.05, 0.08), lx + ox, wy, lz + oz, ry]);
+      boxes.push([
+        box(1.3, 0.24, 0.32),
+        lx + ox * 3,
+        wy - 0.75,
+        lz + oz * 3,
+        ry,
+      ]);
+      for (let i = 0; i < 4; i++)
+        flowers.push([
+          sphere(0.11, 6),
+          lx + ox * 3 + Math.cos(ry) * (-0.45 + i * 0.3),
+          wy - 0.56,
+          lz + oz * 3 - Math.sin(ry) * (-0.45 + i * 0.3),
+          0,
+          petals[(k + i) % petals.length],
+        ]);
+    };
+    const front = Math.max(2, Math.floor(w / 3.2));
+    let k = Math.floor(Math.abs(this.x + this.z));
+    for (let i = 0; i < front; i++)
+      addWindow(-w / 2 + ((i + 0.5) * w) / front, d / 2 - 0.1, 0, k++);
+    const side = Math.max(1, Math.floor(d / 4.5));
+    for (const s of [-1, 1])
+      for (let i = 0; i < side; i++)
+        addWindow(
+          s * (w / 2 - 0.1),
+          -d / 2 + ((i + 0.5) * d) / side,
+          (s * Math.PI) / 2,
+          k++,
+        );
+    const windowMat = new THREE.MeshStandardMaterial({
+      color: 0x9fd8ff,
+      roughness: 0.15,
+      metalness: 0.2,
+      emissive: 0xffd27a,
+      emissiveIntensity: 0,
+    });
+    this.windowMats.push(windowMat);
+    const parts = [
+      [frames, mat(0xffffff)],
+      [glass, windowMat],
+      [boxes, mat(trimColor)],
+      [flowers, new THREE.MeshStandardMaterial({ vertexColors: true })],
+    ];
+    for (const [list, material] of parts) {
+      const m = new THREE.Mesh(mergeParts(list), material);
+      m.castShadow = false;
+      this.place(m, 0, 0, 0, 0);
+      this.roof.add(m);
+    }
+    // Cornisa de color en lo alto.
+    const cornice = mesh(
+      roundedBox(w + 0.3, 0.3, d + 0.3, 0.08),
+      mat(trimColor),
+      0,
+      0,
+      0,
+    );
+    this.place(cornice, 0, 0, 0, y0 + UPPER_H - 0.1);
+    this.roof.add(cornice);
+    this.world.occluders.push(cornice);
   }
 
   setLocked(locked, label) {

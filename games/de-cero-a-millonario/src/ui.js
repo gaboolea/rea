@@ -291,11 +291,12 @@ export class UI {
 
   // Mostrador A del Mayorista: catálogo por categorías, varias líneas de
   // pedido, total, dinero disponible y lo que falta si no alcanza.
-  openSupplier() {
+  // cat: categoría que se muestra al abrir (desde una estantería).
+  openSupplier(startCat) {
+    if (startCat) this.supplierCat = startCat;
     const g = this.game;
     const types = g.ownedTypes();
     const stage = g.stageIndex();
-    const cat = this.supplierCat ?? "todos";
     const items = Object.entries(PRODUCTS).filter(
       ([, p]) => !p.crafted && types.has(p.kind),
     );
@@ -305,6 +306,7 @@ export class UI {
         items.some(([, p]) => p.cat === c),
       ),
     ];
+    const cat = cats.includes(this.supplierCat) ? this.supplierCat : "todos";
     const owned = Object.values(g.businesses).filter(
       (b) => b.owned && !b.remote,
     );
@@ -926,7 +928,7 @@ export class UI {
       "Ayuda",
       `<h3>📦 Comprar en el Mayorista</h3>
       <ol class="steps">${WHOLESALE_STEPS.map((t) => `<li>${t}</li>`).join("")}</ol>
-      <p class="hint">El Mayorista tiene tres zonas: <b>A · Pedidos</b> (mostrador y terminales), <b>B · Recogida</b> (tus cajas aparecen en el palé cuando el pedido está listo) y <b>C · Carga y salida</b>.</p>
+      <p class="hint">El Mayorista tiene tres zonas: <b>A · CAJA</b> (el mostrador grande con el cartel «COMPRA AQUÍ»: allí se paga todo; las estanterías del fondo solo muestran el género), <b>B · Recogida</b> (tus cajas aparecen en el palé cuando el pedido está listo) y <b>C · Carga y salida</b>. En la entrada hay <b>carros</b>: con uno cargas hasta 10 cajas de una vez y en tu almacén las descargas todas juntas.</p>
       <button data-act="tutorial">Repetir el tutorial del Mayorista</button>
       <h3>🧭 Orientación</h3>
       <p>El botón <b>🏪 IR A MI TIENDA</b> marca la ruta por las calles. Toca el minimapa para abrir el mapa y elegir otro destino.</p>

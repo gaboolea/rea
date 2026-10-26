@@ -331,6 +331,16 @@ export class Traffic {
     ) {
       limit = Math.min(limit, Math.max(0, toLine * 1.1));
     }
+    // No quedarse parado encima de un paso de cebra: si al otro lado no hay
+    // sitio (cola del semáforo), espera antes de pisarlo.
+    for (const [c0, c1] of this.crosswalkSpans?.[v.axis] ?? []) {
+      const start = v.dir > 0 ? c0 : c1;
+      const end = v.dir > 0 ? c1 : c0;
+      const toStart = (start - front) * v.dir;
+      if (toStart < -0.1 || toStart > 8) continue;
+      if (this.roomAfter(v, end, light) < v.len * 2 + 1.5)
+        limit = Math.min(limit, Math.max(0, (toStart - 0.4) * 1.5));
+    }
     // Paradas programadas (autobús y reparto).
     const stopX =
       v.kind === "bus" ? (v.served ? null : this.busStopX) : v.stopAt;
@@ -346,6 +356,32 @@ export class Traffic {
     if (v.axis === "x") p.x += v.dir * v.current * dt;
     else p.z += v.dir * v.current * dt;
     this.wrap(v);
+  }
+
+  // crosswalks: rectángulos [x0, z0, x1, z1] de los pasos de cebra.
+  setCrosswalks(crosswalks) {
+    this.crosswalkSpans = { x: [], z: [] };
+    for (const [x0, z0, x1, z1] of crosswalks) {
+      if (x1 - x0 < z1 - z0) this.crosswalkSpans.x.push([x0, x1]);
+      else this.crosswalkSpans.z.push([z0, z1]);
+    }
+  }
+
+  // Espacio libre en el carril más allá de `end`: hasta la trasera del
+  // vehículo lento más próximo o hasta la línea del semáforo en rojo.
+  roomAfter(v, end, light) {
+    let room = Infinity;
+    for (const o of this.vehicles) {
+      if (o === v || o.axis !== v.axis || o.dir !== v.dir || o.current > 1)
+        continue;
+      const rear = (this.along(o) - end) * v.dir - o.len;
+      if (rear > -o.len * 2) room = Math.min(room, rear);
+    }
+    if (light !== "green") {
+      const line = (-6 * v.dir - end) * v.dir;
+      if (line > 0) room = Math.min(room, line);
+    }
+    return room;
   }
 
   arrive(v) {

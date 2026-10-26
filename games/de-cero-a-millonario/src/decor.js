@@ -408,3 +408,159 @@ export function terminal() {
   );
   return g;
 }
+
+// Carro de carga del Mayorista: plataforma con rejilla y asa. Mira hacia +z
+// (el asa queda en -z, donde empuja el personaje).
+export function cargoCart(color = 0x3fbf5f) {
+  const g = new THREE.Group();
+  const frame = metal();
+  const grid = new THREE.MeshStandardMaterial({
+    color: 0xdfe6ea,
+    transparent: true,
+    opacity: 0.35,
+    metalness: 0.3,
+  });
+  g.add(mesh(roundedBox(0.86, 0.08, 1.12, 0.03), mat(color), 0, 0.26, 0));
+  for (const s of [-1, 1]) {
+    g.add(mesh(box(0.02, 0.42, 1.1), grid, s * 0.42, 0.52, 0, false));
+    const rail = mesh(cylinder(0.02, 0.02, 1.12, 6), frame, s * 0.42, 0.74, 0);
+    rail.rotation.x = Math.PI / 2;
+    g.add(rail);
+  }
+  g.add(mesh(box(0.86, 0.42, 0.02), grid, 0, 0.52, 0.55, false));
+  for (const s of [-1, 1])
+    g.add(mesh(cylinder(0.022, 0.022, 0.8, 6), frame, s * 0.36, 0.66, -0.56));
+  const bar = mesh(cylinder(0.035, 0.035, 0.8, 8), mat(color), 0, 1.04, -0.56);
+  bar.rotation.z = Math.PI / 2;
+  g.add(bar);
+  for (const x of [-0.34, 0.34])
+    for (const z of [-0.44, 0.44])
+      g.add(mesh(sphere(0.09, 10), mat(0x2b2b33), x, 0.09, z, false));
+  return g;
+}
+
+// Hilera de carros aparcados (punto para tomar un carro).
+export function cartCorral(n = 3) {
+  const g = new THREE.Group();
+  for (let i = 0; i < n; i++) {
+    const c = cargoCart([0x3fbf5f, 0xff8a3d, 0x3d8bff][i % 3]);
+    c.position.set(i * 0.95, 0, 0);
+    g.add(c);
+  }
+  const sign = signMesh("🛒 CARROS · LLEVA HASTA 10 CAJAS", 2.8, 0.42, {
+    bg: "#ff8a3d",
+    fg: "#ffffff",
+    font: "bold 46px",
+  });
+  sign.position.set((n - 1) * 0.475, 1.75, 0);
+  const back = sign.clone();
+  back.rotation.y = Math.PI;
+  back.position.z = -0.01;
+  g.add(sign, back);
+  for (const x of [-0.4, (n - 1) * 0.95 + 0.4])
+    g.add(mesh(cylinder(0.04, 0.04, 1.75, 8), metal(), x, 0.87, 0));
+  return g;
+}
+
+// Mostrador de caja grande, con frontal de color y franja luminosa.
+export function checkoutDesk(w = 6, color = 0x3fbf5f) {
+  const g = new THREE.Group();
+  g.add(mesh(roundedBox(w, 1.0, 1.1, 0.08), mat(0xfff6e0), 0, 0.5, 0));
+  g.add(mesh(roundedBox(w + 0.1, 0.08, 1.2, 0.03), mat(color), 0, 1.04, 0));
+  const glow = mesh(
+    box(w - 0.4, 0.12, 0.02),
+    new THREE.MeshStandardMaterial({
+      color: 0xfff1a8,
+      emissive: 0xffd23f,
+      emissiveIntensity: 0.9,
+    }),
+    0,
+    0.7,
+    0.56,
+    false,
+  );
+  g.add(glow);
+  const front = signMesh("CAJA · PEDIDOS", Math.min(3.4, w - 1), 0.42, {
+    bg: "#ffffff",
+    fg: "#2e8a43",
+    font: "bold 60px",
+  });
+  front.position.set(0, 0.38, 0.56);
+  g.add(front);
+  return g;
+}
+
+// Pórtico con un cartel grande sobre la caja, visible desde la entrada.
+export function archSign(text, color, w = 7, h = 3.3) {
+  const g = new THREE.Group();
+  const post = mat(color);
+  for (const s of [-1, 1])
+    g.add(mesh(roundedBox(0.22, h, 0.22, 0.06), post, s * (w / 2), h / 2, 0));
+  g.add(mesh(roundedBox(w + 0.3, 0.9, 0.2, 0.08), post, 0, h - 0.1, 0));
+  const front = signMesh(text, w - 0.2, 0.74, {
+    bg: "#ffffff",
+    fg: "#1f6f35",
+    font: "bold 72px",
+  });
+  front.position.set(0, h - 0.1, 0.11);
+  const back = front.clone();
+  back.rotation.y = Math.PI;
+  back.position.z = -0.11;
+  g.add(front, back);
+  // Bombillas a lo largo del cartel.
+  const bulb = new THREE.MeshStandardMaterial({
+    color: 0xfff6c0,
+    emissive: 0xffd23f,
+    emissiveIntensity: 1.2,
+  });
+  for (let i = 0; i <= 10; i++)
+    for (const z of [0.12, -0.12])
+      g.add(
+        mesh(sphere(0.05, 8), bulb, -w / 2 + (w * i) / 10, h + 0.38, z, false),
+      );
+  return g;
+}
+
+// Cartel informativo de varias líneas (doble cara).
+export function infoBoard(text, w, h, bg = "#2e3a48", fg = "#ffffff") {
+  const g = new THREE.Group();
+  g.add(mesh(box(w + 0.1, h + 0.1, 0.05), mat(0xffffff), 0, 0, 0, false));
+  const opts = { bg, fg, font: "bold 40px", h: Math.round((512 * h) / w) };
+  const front = signMesh(text, w, h, opts);
+  front.position.z = 0.03;
+  const back = signMesh(text, w, h, opts);
+  back.rotation.y = Math.PI;
+  back.position.z = -0.03;
+  g.add(front, back);
+  for (const s of [-1, 1])
+    g.add(
+      mesh(
+        cylinder(0.01, 0.01, 0.6, 4),
+        mat(0x555555),
+        s * (w / 2 - 0.2),
+        h / 2 + 0.3,
+        0,
+        false,
+      ),
+    );
+  return g;
+}
+
+// Aro pulsante en el suelo que señala un punto importante.
+export function pulseRing(color = 0xffd23f, r = 1.1) {
+  const m = new THREE.Mesh(
+    new THREE.RingGeometry(r * 0.8, r, 40),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+    }),
+  );
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = 0.03;
+  const g = new THREE.Group();
+  g.add(m);
+  g.userData.ring = m;
+  return g;
+}

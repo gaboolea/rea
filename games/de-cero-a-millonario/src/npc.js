@@ -31,13 +31,19 @@ export class Agent {
     this.target = null;
     this.onArrive = null;
     this.waitTimer = 0;
+    // Tiempo durante el que atraviesa a otras personas tras atascarse.
+    this.ghost = 0;
+    this.reach = 0.12;
     character.root.position.set(x, this.pos.y, z);
     game.scene.add(character.root);
   }
 
-  moveTo(target, onArrive) {
+  // reach: distancia a la que se da por llegado (mayor en puntos de paso,
+  // como la puerta, para que nadie se quede rondando un punto exacto).
+  moveTo(target, onArrive, reach = 0.12) {
     this.target = { x: target.x, z: target.z };
     this.onArrive = onArrive ?? null;
+    this.reach = reach;
     this.path = this.game.world.physics
       .navGrid()
       .findPath(this.pos, this.target) ?? [this.target];
@@ -54,6 +60,7 @@ export class Agent {
 
   update(dt) {
     let speed = 0;
+    if (this.ghost > 0) this.ghost -= dt;
     if (this.waitTimer > 0) this.waitTimer -= dt;
     else if (this.target && this.path.length) {
       const wp = this.path[0];
@@ -61,9 +68,12 @@ export class Agent {
       const dz = wp.z - this.pos.z;
       const dist = Math.hypot(dx, dz);
       const last = this.path.length === 1;
-      if (dist < (last ? 0.12 : 0.35)) {
+      if (dist < (last ? this.reach : 0.35)) {
         this.path.shift();
         if (!this.path.length) this.finish();
+      } else if (last && dist < 0.9 && this.stuck > 0.4) {
+        // Hay alguien en el sitio exacto: basta con estar cerca.
+        this.finish();
       } else {
         const step = Math.min(dist, this.speed * dt);
         const before = { x: this.pos.x, z: this.pos.z };
@@ -73,8 +83,13 @@ export class Agent {
         const moved = Math.hypot(this.pos.x - before.x, this.pos.z - before.z);
         speed = moved / Math.max(dt, 1e-4);
         this.heading = turnTowards(this.heading, Math.atan2(dx, dz), dt * 10);
+        // Atasco = no acercarse al punto (empujones de ida y vuelta incluidos).
+        const progress =
+          dist - Math.hypot(wp.x - this.pos.x, wp.z - this.pos.z);
         this.stuck =
-          moved < step * 0.3 ? this.stuck + dt : Math.max(0, this.stuck - dt);
+          progress < step * 0.3
+            ? this.stuck + dt
+            : Math.max(0, this.stuck - dt);
         if (this.stuck > 1.5) this.recover();
       }
     }
@@ -85,17 +100,18 @@ export class Agent {
     this.char.animate(dt, speed);
   }
 
-  // Si algo bloquea el paso, recalcula la ruta o se desplaza un poco.
+  // Si algo bloquea el paso: cerca del destino se da por llegado; si no,
+  // recalcula la ruta y durante un momento atraviesa a la gente.
   recover() {
     this.stuck = 0;
     if (!this.target) return;
     const t = this.target;
-    const cb = this.onArrive;
-    if (Math.hypot(t.x - this.pos.x, t.z - this.pos.z) < 1.0) {
+    if (Math.hypot(t.x - this.pos.x, t.z - this.pos.z) < 1.5) {
       this.finish();
       return;
     }
-    this.moveTo(t, cb);
+    this.moveTo(t, this.onArrive, this.reach);
+    this.ghost = 2.5;
   }
 
   finish() {
@@ -150,12 +166,22 @@ export class Customer extends Agent {
     this.ready = false;
     this.state = "toStore";
     this.done = false;
-    this.moveTo(business.building.doorPoint(1.6), () => this.enter());
+    this.lane = 0.5 + Math.random() * 0.6;
+    this.moveTo(
+      business.building.doorPoint(1.6, this.lane),
+      () => this.enter(),
+      0.6,
+    );
   }
 
+  // Se entra por la mitad derecha de la puerta y se sale por la izquierda.
   enter() {
     this.state = "enter";
-    this.moveTo(this.business.building.doorPoint(-1.4), () => this.nextWant());
+    this.moveTo(
+      this.business.building.doorPoint(-1.4, this.lane),
+      () => this.nextWant(),
+      0.6,
+    );
   }
 
   nextWant() {
@@ -204,11 +230,17 @@ export class Customer extends Agent {
       this.leave();
       return;
     }
-    const reg = this.business.pickRegister();
-    if (!reg) {
+    if (!this.business.registers.length) {
       this.business.returnItems(this.basket);
       this.basket = [];
       this.leave();
+      return;
+    }
+    const reg = this.business.pickRegister();
+    if (!reg) {
+      // Filas llenas: espera dentro mirando estanterías y vuelve a probar.
+      this.state = "waitQueue";
+      this.waitTimer = 1.5;
       return;
     }
     this.register = reg;
@@ -236,16 +268,36 @@ export class Customer extends Agent {
 
   leave() {
     this.state = "leaving";
-    this.moveTo(this.business.building.doorPoint(1.8), () => {
-      this.state = "exit";
-      this.moveTo(this.spawn, () => (this.done = true));
-    });
+    const b = this.business.building;
+    const lane = -(this.lane ?? 0.8);
+    const out = () =>
+      this.moveTo(
+        b.doorPoint(1.8, lane),
+        () => {
+          this.state = "exit";
+          this.moveTo(this.spawn, () => (this.done = true), 0.8);
+        },
+        0.6,
+      );
+    if (b.contains(this.pos.x, this.pos.z))
+      this.moveTo(b.doorPoint(-1.2, lane), out, 0.6);
+    else out();
   }
 
   update(dt) {
     super.update(dt);
     if (this.state === "browsing" && this.waitTimer <= 0 && this.browseEntry)
       this.takeFromShelf();
+    if (this.state === "waitQueue") {
+      this.waited += dt;
+      if (this.waited > this.patience) {
+        this.char.think("!", "#c0392b", 3);
+        this.business.returnItems(this.basket);
+        this.basket = [];
+        this.business.disappoint(3);
+        this.leave();
+      } else if (this.waitTimer <= 0) this.goPay();
+    }
     if (this.state === "queued") {
       this.waited += dt;
       if (this.waited > this.patience) {

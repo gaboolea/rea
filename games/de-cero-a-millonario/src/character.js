@@ -15,6 +15,7 @@ import {
   bubbleMaterial,
 } from "./gfx.js";
 import { PRODUCTS } from "./config.js";
+import { cargoCart } from "./decor.js";
 import { COLORS, SKINS, defaultLook } from "./look.js";
 
 const dome = (r) =>
@@ -548,20 +549,46 @@ export class ToyCharacter {
     }
   }
 
-  // items: lista de ids de producto para dibujar cajas apiladas en brazos.
-  setCarry(items) {
-    const key = items.join(",");
+  // items: lista de ids de producto. Sin carro se dibujan en brazos; con
+  // carro (cart = true) van apiladas dentro del carro que empuja.
+  setCarry(items, cart = false) {
+    const key = items.join(",") + (cart ? "|carro" : "");
     if (key === this.carryKey) return;
     this.carryKey = key;
     this.carryGroup.clear();
+    if (cart && !this.cart) {
+      this.cart = cargoCart();
+      this.cart.position.set(0, 0, 0.98);
+      this.cartBoxes = new THREE.Group();
+      this.cart.add(this.cartBoxes);
+      this.root.add(this.cart);
+    }
+    if (this.cart) {
+      this.cart.visible = cart;
+      this.cartBoxes.clear();
+    }
     items.forEach((id, i) => {
       const color = PRODUCTS[id]?.color ?? 0xc98d4f;
-      this.carryGroup.add(
-        mesh(roundedBox(0.55, 0.36, 0.42, 0.04), mat(0xd9a066), 0, i * 0.37, 0),
-        mesh(roundedBox(0.3, 0.14, 0.02, 0.01), mat(color), 0, i * 0.37, 0.215),
+      const crate = new THREE.Group();
+      crate.add(
+        mesh(roundedBox(0.55, 0.36, 0.42, 0.04), mat(0xd9a066), 0, 0, 0),
+        mesh(roundedBox(0.3, 0.14, 0.02, 0.01), mat(color), 0, 0, 0.215),
       );
+      if (cart) {
+        // 2 × 2 por piso, girada para que quepan a lo ancho.
+        crate.rotation.y = Math.PI / 2;
+        crate.position.set(
+          i % 2 ? 0.2 : -0.2,
+          0.49 + Math.floor(i / 4) * 0.37,
+          Math.floor(i / 2) % 2 ? -0.27 : 0.27,
+        );
+        this.cartBoxes.add(crate);
+      } else {
+        crate.position.y = i * 0.37;
+        this.carryGroup.add(crate);
+      }
     });
-    this.carrying = items.length > 0;
+    this.carrying = items.length > 0 || cart;
   }
 
   playAction(kind, duration = 0.6) {

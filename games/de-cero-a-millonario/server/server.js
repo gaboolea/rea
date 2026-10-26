@@ -16,7 +16,12 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { Store } from "./store.js";
 import * as eco from "./economy.js";
-import { PLOTS, ROOM_MAX_PLAYERS, PRODUCTS } from "../src/config.js";
+import {
+  PLOTS,
+  ROOM_MAX_PLAYERS,
+  PRODUCTS,
+  CART_CAPACITY,
+} from "../src/config.js";
 import { ITEMS, SKINS, STARTER_ITEMS, defaultLook } from "../src/look.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -68,15 +73,13 @@ function serveFile(res, file) {
 const httpServer = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (url.pathname === "/health") {
-    res
-      .writeHead(200, { "Content-Type": "application/json" })
-      .end(
-        JSON.stringify({
-          ok: true,
-          players: sessions.size,
-          cities: Object.keys(store.data.cities).length,
-        }),
-      );
+    res.writeHead(200, { "Content-Type": "application/json" }).end(
+      JSON.stringify({
+        ok: true,
+        players: sessions.size,
+        cities: Object.keys(store.data.cities).length,
+      }),
+    );
     return;
   }
   if (url.pathname.startsWith("/vendor/three/") && hasLocalThree) {
@@ -332,8 +335,11 @@ function handleState(s, m) {
     z: m.z,
     h: m.h,
     s: num(m.s, 0, 20) ? m.s : 0,
-    c: Array.isArray(m.c) ? m.c.filter((p) => PRODUCTS[p]).slice(0, 3) : [],
+    c: Array.isArray(m.c)
+      ? m.c.filter((p) => PRODUCTS[p]).slice(0, CART_CAPACITY)
+      : [],
     r: !!m.r,
+    k: !!m.k,
     at: now,
   };
   s.dirty = true;
@@ -592,6 +598,7 @@ setInterval(() => {
           s.state.s,
           s.state.c,
           s.state.r ? 1 : 0,
+          s.state.k ? 1 : 0,
         ]);
     for (const s of set)
       send(s.ws, {

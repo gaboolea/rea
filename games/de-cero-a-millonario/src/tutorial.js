@@ -4,10 +4,10 @@
 const $ = (id) => document.getElementById(id);
 
 export const WHOLESALE_STEPS = [
-  "Acércate al mostrador A · PEDIR MERCADERÍA",
+  "Sigue las flechas amarillas hasta la CAJA",
   "Elige tus productos con + y −",
   "Confirma el pedido con COMPRAR",
-  "Recoge las cajas en la zona B · RECOGER PEDIDO",
+  "Recoge tus cajas en la zona B (con un carro, todas a la vez)",
   "Lleva la mercadería a tu tienda",
   "Coloca los productos en las estanterías",
 ];
@@ -46,7 +46,7 @@ export class Tutorial {
       case 0:
       case 1:
       case 2:
-        return { ...w.supplierCounter, label: "Pedir mercadería" };
+        return { ...w.supplierCounter, label: "CAJA · comprar aquí" };
       case 3:
         return { ...w.pickupPoint, label: "Recoger pedido" };
       case 4:

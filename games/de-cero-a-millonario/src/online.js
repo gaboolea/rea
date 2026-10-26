@@ -63,6 +63,7 @@ function sample(buf, t) {
     s: b.s,
     c: b.c,
     r: b.r,
+    k: b.k,
   };
 }
 
@@ -95,6 +96,7 @@ class RemoteAvatar {
       s: st.s ?? 0,
       c: st.c ?? [],
       r: !!st.r,
+      k: !!st.k,
     });
     if (this.buf.length > 30) this.buf.shift();
     this.char.root.visible = true;
@@ -121,7 +123,7 @@ class RemoteAvatar {
     this.pos.z = st.z;
     this.char.root.position.set(st.x, st.y, st.z);
     this.char.root.rotation.y = st.h;
-    this.char.setCarry(st.c);
+    this.char.setCarry(st.c, st.k);
     this.scooter.visible = st.r;
     this.char.animate(dt, st.r ? 0 : st.s, true);
     if (st.r) this.char.rig.position.y = 0.42;
@@ -217,7 +219,7 @@ export class Online {
     const n = this.net;
     n.on("snap", (m) => {
       const t = performance.now() / 1000;
-      for (const [id, x, y, z, h, s, c, r] of m.players) {
+      for (const [id, x, y, z, h, s, c, r, k] of m.players) {
         let av = this.avatars.get(id);
         if (!av) {
           const info = this.members.get(id);
@@ -225,7 +227,7 @@ export class Online {
           av = new RemoteAvatar(this.game, info);
           this.avatars.set(id, av);
         }
-        av.push({ x, y, z, h, s, c, r }, t);
+        av.push({ x, y, z, h, s, c, r, k }, t);
       }
     });
     n.on("playerJoined", (m) => {
@@ -488,6 +490,7 @@ export class Online {
       s: Math.round(g.player.speedNow * 10) / 10,
       c: g.state.carried.map((b) => b.product),
       r: g.player.riding,
+      k: g.state.cart,
     };
     const key = JSON.stringify(st);
     // Solo si cambió algo (o cada segundo como latido).

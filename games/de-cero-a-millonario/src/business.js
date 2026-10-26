@@ -482,9 +482,28 @@ export class Business {
 
   queueSpot(reg, idx) {
     return {
-      x: reg.service.x + reg.dir.x * idx,
-      z: reg.service.z + reg.dir.z * idx,
+      x: reg.service.x + reg.dir.x * idx * 0.9,
+      z: reg.service.z + reg.dir.z * idx * 0.9,
     };
+  }
+
+  // Cuántas personas caben en la fila sin salir del local ni chocar con
+  // muebles (se calcula una vez, con la rejilla ya construida).
+  queueCapacity(reg) {
+    if (reg.capacity) return reg.capacity;
+    const grid = this.game.world.physics.navGrid();
+    let n = 0;
+    while (n < 8) {
+      const p = this.queueSpot(reg, n);
+      if (
+        !this.building.contains(p.x, p.z, 0.5) ||
+        !grid.free(grid.toCellX(p.x), grid.toCellZ(p.z))
+      )
+        break;
+      n++;
+    }
+    reg.capacity = Math.max(2, n);
+    return reg.capacity;
   }
 
   // ---------- Interacciones del jugador ----------
@@ -579,10 +598,15 @@ export class Business {
       z: this.storagePoint.z,
       radius: 1.6,
       label: () => {
-        const box = game.state.carried.find((b) =>
+        const boxes = game.state.carried.filter((b) =>
           this.supplies().includes(b.product),
         );
-        if (box)
+        if (boxes.length > 1 && game.state.cart)
+          return {
+            text: `Descargar el carro: ${boxes.length} cajas (${this.storageUnits()}/${this.storageCap()})`,
+            enabled: true,
+          };
+        if (boxes.length)
           return {
             text: `Dejar caja en el almacén (${this.storageUnits()}/${this.storageCap()})`,
             enabled: true,
@@ -596,17 +620,28 @@ export class Business {
         return { text: `Almacén: ${this.storageUnits()} uds.`, enabled: false };
       },
       action: () => {
-        const box = game.state.carried.find((b) =>
+        const boxes = game.state.carried.filter((b) =>
           this.supplies().includes(b.product),
         );
+        // Con carro se descarga todo de una vez; en brazos, caja a caja.
+        const unload = game.state.cart ? boxes : boxes.slice(0, 1);
+        const box = unload[0];
         if (box) {
-          const accepted = this.addToStorage(box.product, box.units);
-          if (!accepted) return game.ui.toast("El almacén está lleno", "bad");
-          box.units -= accepted;
-          if (box.units <= 0)
-            game.state.carried.splice(game.state.carried.indexOf(box), 1);
-          game.state.stats.unitsStored += accepted;
-          game.ui.toast(`Guardadas ${accepted} uds. en el almacén`);
+          let total = 0;
+          for (const b of unload) {
+            const accepted = this.addToStorage(b.product, b.units);
+            b.units -= accepted;
+            total += accepted;
+            if (b.units <= 0)
+              game.state.carried.splice(game.state.carried.indexOf(b), 1);
+          }
+          if (!total) return game.ui.toast("El almacén está lleno", "bad");
+          game.state.stats.unitsStored += total;
+          game.ui.toast(
+            game.state.carried.some((b) => this.supplies().includes(b.product))
+              ? `Guardadas ${total} uds. · el almacén está lleno`
+              : `Guardadas ${total} uds. en el almacén`,
+          );
         } else {
           const best = this.bestStorageProduct();
           if (!best) return;
@@ -800,11 +835,13 @@ export class Business {
     this.reputation = Math.max(0, this.reputation - amount);
   }
 
+  // Caja con la fila más corta que aún tenga sitio (null si están llenas).
   pickRegister() {
-    if (!this.registers.length) return null;
-    return this.registers.reduce((a, b) =>
-      b.queue.length < a.queue.length ? b : a,
+    const open = this.registers.filter(
+      (r) => r.queue.length < this.queueCapacity(r),
     );
+    if (!open.length) return null;
+    return open.reduce((a, b) => (b.queue.length < a.queue.length ? b : a));
   }
 
   abandonQueue(customer) {

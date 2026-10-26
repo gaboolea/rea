@@ -11,6 +11,8 @@ import {
   sphere,
   roundedBox,
   signMesh,
+  mergeParts,
+  surfaceTexture,
 } from "./gfx.js";
 import * as props from "./props.js";
 import * as decor from "./decor.js";
@@ -19,6 +21,24 @@ import { ToyCharacter } from "./character.js";
 import { workerLook } from "./look.js";
 
 const SIDEWALK = 0.12;
+
+const TREE_MAT = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  roughness: 0.6,
+});
+const LAMP_IRON = new THREE.MeshStandardMaterial({
+  color: 0x232a33,
+  roughness: 0.45,
+  metalness: 0.3,
+});
+
+// Material de acera con baldosas de 1,4 m (la textura se repite por tamaño).
+function sidewalkMat(base, w, d) {
+  const map = base.clone();
+  map.repeat.set(w / 1.4, d / 1.4);
+  map.needsUpdate = true;
+  return new THREE.MeshStandardMaterial({ map, roughness: 0.85 });
+}
 
 export class World {
   constructor(scene) {
@@ -38,24 +58,34 @@ export class World {
     this.buildDecor();
     this.buildBounds();
     this.traffic = new Traffic(scene);
+    this.traffic.setCrosswalks(this.crosswalks);
   }
 
   buildGround() {
+    const gw = WORLD.maxX - WORLD.minX + 40;
+    const gd = WORLD.maxZ - WORLD.minZ + 40;
     const grass = mesh(
-      box(WORLD.maxX - WORLD.minX + 40, 0.2, WORLD.maxZ - WORLD.minZ + 40),
-      mat(0x8fd16a),
+      box(gw, 0.2, gd),
+      new THREE.MeshStandardMaterial({
+        map: surfaceTexture("grass", "#86d063", [gw / 6, gd / 6]),
+        roughness: 1,
+      }),
       0,
       -0.1,
       2,
       false,
     );
     this.scene.add(grass);
-    const road = mat(0x5d6670, { roughness: 0.9 });
-    this.scene.add(mesh(box(160, 0.02, 8), road, 0, 0.01, 0, false));
+    const asphalt = (w, d) =>
+      new THREE.MeshStandardMaterial({
+        map: surfaceTexture("asphalt", "#58616d", [w / 5, d / 5]),
+        roughness: 0.9,
+      });
+    this.scene.add(mesh(box(160, 0.02, 8), asphalt(160, 8), 0, 0.01, 0, false));
     this.scene.add(
       mesh(
         box(8, 0.02, WORLD.maxZ - WORLD.minZ + 10),
-        road,
+        asphalt(8, WORLD.maxZ - WORLD.minZ + 10),
         0,
         0.012,
         2,
@@ -98,8 +128,8 @@ export class World {
     ])
       this.scene.add(mesh(box(w, 0.02, d), white, x, 0.03, z, false));
     // Aceras elevadas (con bordillo) a lo largo de las calles.
-    const walk = mat(0xf3e1b9);
-    const curb = mat(0xd9c49a);
+    const pavers = surfaceTexture("pavers", "#f2dcb0", [1, 1]);
+    const curb = mat(0xe8e2d6);
     const slabs = [
       [WORLD.minX - 6, -10, -4, -4],
       [4, -10, WORLD.maxX + 6, -4],
@@ -116,7 +146,7 @@ export class World {
       this.scene.add(
         mesh(
           box(w, SIDEWALK, d),
-          walk,
+          sidewalkMat(pavers, w, d),
           x0 + w / 2,
           SIDEWALK / 2,
           z0 + d / 2,
@@ -347,31 +377,48 @@ export class World {
     }
     add(decor.forklift(), 10.3, 0.8, -Math.PI / 2);
     b.addLocalCollider(10.3, 0.8, 2.6, 1.4);
-    // Zona A: Pedidos (mostrador grande, dependiente y terminales).
-    const desk = props.counter(4.2, 1.0, 0xf2a531, 0xfff1c9);
-    add(desk, 7, 4.4);
-    b.addLocalCollider(7, 4.4, 4.2, 1.0);
-    add(decor.terminal(), 6.0, 4.4, 0, FLOOR_Y + 0.98);
-    add(
-      decor.hangingSign("A · PEDIR MERCADERÍA", "#3fbf5f", 4.6),
-      7,
-      4.6,
-      0,
-      3.05,
-    );
-    add(decor.floorZone(5.6, 3.6, 0x3fbf5f), 7, 5.2);
-    for (const lx of [4.0, 10.2]) {
-      add(decor.terminal(), lx, 6.6);
-      b.addLocalCollider(lx, 6.6, 0.4, 0.4);
-    }
-    this.supplierNpc = new ToyCharacter({
-      look: workerLook("azul"),
-      apron: 0xf2a531,
+    // Zona A: la CAJA. Grande, iluminada y de frente a la entrada, con un
+    // camino de flechas amarillas desde la puerta: aquí se compra todo.
+    add(decor.checkoutDesk(6.2), 6, 4.2);
+    b.addLocalCollider(6, 4.2, 6.2, 1.1);
+    add(decor.archSign("🛒 CAJA · COMPRA AQUÍ", 0x3fbf5f, 7), 6, 4.2);
+    add(decor.terminal(), 4.2, 4.2, 0, FLOOR_Y + 1.08);
+    add(decor.floorZone(7, 3.2, 0x3fbf5f), 6, 6.1);
+    this.cajaRing = decor.pulseRing(0xffd23f, 1.2);
+    add(this.cajaRing, 6, 5.7);
+    this.warehouseClerks = [4.8, 7.4].map((lx, i) => {
+      const npc = new ToyCharacter({
+        look: workerLook(i ? "menta" : "azul"),
+        apron: 0xf2a531,
+      });
+      b.place(npc.root, lx, 3.2);
+      this.scene.add(npc.root);
+      return npc;
     });
-    b.place(this.supplierNpc.root, 7.6, 3.3);
-    this.scene.add(this.supplierNpc.root);
-    this.supplierCounter = b.toWorld(7, 5.5);
-    this.orderTerminals = [b.toWorld(4.0, 7.3), b.toWorld(10.2, 7.3)];
+    this.supplierCounter = b.toWorld(6, 5.4);
+    add(decor.terminal(), 10.8, 6.4);
+    b.addLocalCollider(10.8, 6.4, 0.4, 0.4);
+    this.orderTerminals = [b.toWorld(10.8, 7.1)];
+    const arrow = (color, lx, lz, tx, tz) =>
+      add(decor.floorArrow(color), lx, lz, Math.atan2(-(tx - lx), -(tz - lz)));
+    for (const [lx, lz] of [
+      [1.0, 8.4],
+      [2.2, 7.6],
+      [3.5, 6.9],
+    ])
+      arrow(0xffd23f, lx, lz, 6, 5.6);
+    // Cartel de bienvenida sobre la entrada (se ve nada más entrar).
+    add(
+      decor.infoBoard(
+        "1 · PIDE Y PAGA EN LA CAJA ➜\n2 · RECOGE TUS CAJAS EN LA ZONA B\n3 · LLÉVALAS A TU TIENDA (¡usa un carro!)",
+        3.8,
+        1.1,
+      ),
+      0,
+      6.4,
+      Math.PI,
+      2.95,
+    );
     // Zona B: Recogida (las cajas compradas aparecen en este palé).
     add(decor.floorZone(5.6, 3.6, 0xff8a3d), -7, 5.2);
     add(
@@ -387,20 +434,24 @@ export class World {
     b.addLocalCollider(-7, 4.6, 2.0, 1.4);
     this.pickupPoint = b.toWorld(-7, 6.1);
     this.pickupPallet = b.toWorld(-7, 4.6);
+    for (const lx of [2.2, 0.2, -1.8, -3.8]) arrow(0xff8a3d, lx, 3.4, -7, 3.4);
+    // Carros de carga junto a la entrada.
+    add(decor.cartCorral(3), -5.0, 8.6, Math.PI / 2);
+    b.addLocalCollider(-5.0, 7.65, 1.0, 2.9);
+    this.cartPoint = b.toWorld(-3.9, 7.6);
     // Zona C: Carga y salida, con flechas hacia la puerta.
-    add(decor.floorZone(5, 3.2, 0x3d8bff), 0, 7.6);
-    for (const lz of [4.0, 6.0, 8.0]) add(decor.floorArrow(0x3d8bff), 0, lz);
+    add(decor.floorZone(3.2, 2.4, 0x3d8bff), -1.6, 8.0);
+    for (const lz of [6.6, 8.0])
+      add(decor.floorArrow(0x3d8bff), -1.6, lz, Math.PI);
     add(
-      decor.hangingSign("C · CARGA Y SALIDA ➜", "#3d8bff", 4.2),
-      0,
-      8.4,
+      decor.hangingSign("C · CARGA Y SALIDA", "#3d8bff", 3.4),
+      -1.6,
+      8.6,
       0,
       3.05,
     );
-    add(decor.handTruck(), -3.3, 8.4, Math.PI);
-    b.addLocalCollider(-3.3, 8.4, 0.7, 0.6);
-    add(decor.handTruck(), 3.3, 8.4, Math.PI);
-    b.addLocalCollider(3.3, 8.4, 0.7, 0.6);
+    add(decor.handTruck(), 3.6, 8.6, Math.PI);
+    b.addLocalCollider(3.6, 8.6, 0.7, 0.6);
     this.warehouseExit = b.doorPoint(-1.5);
     // Iluminación de almacén.
     for (const lx of [-8, -2.5, 2.5, 8])
@@ -409,8 +460,9 @@ export class World {
     // Puntos de trabajo para los operarios que mueven cajas.
     this.warehouseSpots = {
       racks: cats.map((_, i) => b.toWorld(-9.6 + i * 4.8, -6.8)),
+      rackCats: ["bebidas", "alimentos", "limpieza", "snacks", "frescos"],
       pallet: b.toWorld(-7, 3.2),
-      counter: b.toWorld(7, 3.0),
+      counter: b.toWorld(6, 2.9),
     };
   }
 
@@ -573,39 +625,135 @@ export class World {
     this.scene.add(this.ownVan);
   }
 
-  tree(x, z, s = 1) {
+  // Árbol frondoso de juguete: copa de varias esferas en dos verdes, unida
+  // en una sola malla (muchos árboles, pocas llamadas de dibujo).
+  tree(x, z, s = 1, planter = false) {
     const g = new THREE.Group();
-    g.add(mesh(cylinder(0.18, 0.25, 1.4, 8), mat(0x8b5a3c), 0, 0.7, 0));
-    const leaf = mat(
-      [0x5cc46a, 0x4fb35d, 0x6ad178][Math.floor(Math.abs(x * 7 + z * 3)) % 3],
-    );
-    g.add(mesh(sphere(0.95, 14), leaf, 0, 2.0, 0));
-    g.add(mesh(sphere(0.7, 12), leaf, 0.5, 1.7, 0.3));
-    g.add(mesh(sphere(0.65, 12), leaf, -0.45, 1.8, -0.25));
+    g.add(mesh(cylinder(0.17, 0.26, 1.6, 8), mat(0x8b5a3c), 0, 0.8, 0));
+    const k = Math.floor(Math.abs(x * 7 + z * 3));
+    const dark = [0x3fa55a, 0x4bb05c, 0x379a4f][k % 3];
+    const light = [0x6fd67a, 0x7fdc6a, 0x63cc73][k % 3];
+    const leaves = [
+      [0, 2.35, 0, 1.05, dark],
+      [0.62, 2.0, 0.25, 0.75, dark],
+      [-0.6, 2.1, -0.2, 0.72, dark],
+      [0.1, 2.05, -0.65, 0.7, dark],
+      [-0.2, 2.75, 0.35, 0.72, light],
+      [0.45, 2.55, -0.3, 0.6, light],
+      [-0.5, 2.5, 0.45, 0.55, light],
+    ].map(([px, py, pz, r, c]) => [
+      sphere(r, 10).clone().scale(1, 0.88, 1),
+      px,
+      py,
+      pz,
+      0,
+      c,
+    ]);
+    g.add(mesh(mergeParts(leaves), TREE_MAT, 0, 0, 0));
+    if (planter) {
+      g.add(mesh(cylinder(0.75, 0.68, 0.45, 16), mat(0xd9cbb3), 0, 0.22, 0));
+      g.add(
+        mesh(cylinder(0.66, 0.66, 0.05, 16), mat(0x6b4a2f), 0, 0.44, 0, false),
+      );
+    }
     g.scale.setScalar(s);
-    g.position.set(x, 0, z);
+    g.position.set(x, planter ? SIDEWALK : 0, z);
     this.scene.add(g);
     this.treeTops.push(g);
-    this.physics.addCentered(x, z, 0.6 * s, 0.6 * s);
+    const c = (planter ? 1.3 : 0.6) * s;
+    this.physics.addCentered(x, z, c, c);
   }
 
-  lamp(x, z) {
+  // Farola clásica negra con farol de cristal y banderola de color.
+  lamp(x, z, banner = 0xffc22e) {
     const g = new THREE.Group();
-    g.add(mesh(cylinder(0.08, 0.12, 3.6, 8), mat(0x3e4a59), 0, 1.8, 0));
-    g.add(mesh(cylinder(0.3, 0.2, 0.25, 10), mat(0x3e4a59), 0, 3.7, 0));
+    const arm = cylinder(0.025, 0.025, 0.7, 6)
+      .clone()
+      .rotateZ(Math.PI / 2);
+    const iron = [
+      [cylinder(0.24, 0.3, 0.5, 10), 0, 0.25, 0],
+      [cylinder(0.07, 0.11, 3.8, 10), 0, 2.3, 0],
+      [cylinder(0.14, 0.14, 0.18, 10), 0, 1.0, 0],
+      [cylinder(0.26, 0.12, 0.22, 8), 0, 4.25, 0],
+      [cylinder(0.05, 0.28, 0.22, 8), 0, 4.95, 0],
+      [sphere(0.06, 8), 0, 5.1, 0],
+      [arm, 0.35, 3.55, 0],
+    ];
+    g.add(mesh(mergeParts(iron), LAMP_IRON, 0, 0, 0));
     const bulbMat = new THREE.MeshStandardMaterial({
       color: 0xfff3c4,
       emissive: 0xffd26e,
       emissiveIntensity: 0.1,
+      roughness: 0.2,
     });
-    g.add(mesh(sphere(0.2, 12), bulbMat, 0, 3.5, 0, false));
+    g.add(mesh(cylinder(0.2, 0.15, 0.5, 8), bulbMat, 0, 4.6, 0, false));
+    g.add(mesh(box(0.55, 1.0, 0.03), mat(banner), 0.42, 3.0, 0));
     const halo = this.lampHalo();
-    halo.position.y = 3.45;
+    halo.position.y = 4.6;
     g.add(halo);
     g.position.set(x, SIDEWALK, z);
     this.scene.add(g);
     this.lamps.push(bulbMat);
-    this.physics.addCentered(x, z, 0.3, 0.3);
+    this.physics.addCentered(x, z, 0.4, 0.4);
+  }
+
+  // Jardinera rectangular con flores de colores y un arbusto.
+  planter(x, z, rot = 0, w = 1.6) {
+    const g = new THREE.Group();
+    g.add(mesh(roundedBox(w, 0.5, 0.6, 0.06), mat(0x9a6b46), 0, 0.25, 0));
+    g.add(mesh(box(w - 0.12, 0.05, 0.48), mat(0x6b4a2f), 0, 0.5, 0, false));
+    const colors = [0xff6b9a, 0xffd23f, 0xff8a3d, 0xffffff, 0xb07cff, 0xff4d4d];
+    const parts = [];
+    const n = Math.round(w * 5);
+    for (let i = 0; i < n; i++) {
+      const px = -w / 2 + 0.15 + ((w - 0.3) * i) / Math.max(1, n - 1);
+      const pz = i % 2 ? 0.12 : -0.12;
+      parts.push([
+        sphere(0.13, 6),
+        px,
+        0.66 + (i % 3) * 0.04,
+        pz,
+        0,
+        colors[(i + Math.abs(Math.round(x))) % colors.length],
+      ]);
+    }
+    for (const px of [-w / 4, w / 4])
+      parts.push([sphere(0.24, 8), px, 0.62, 0, 0, 0x4fb35d]);
+    const flowers = new THREE.Mesh(
+      mergeParts(parts),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }),
+    );
+    flowers.castShadow = false;
+    g.add(flowers);
+    g.position.set(x, SIDEWALK, z);
+    g.rotation.y = rot;
+    this.scene.add(g);
+    const along = Math.abs(Math.sin(rot)) > 0.5;
+    this.physics.addCentered(x, z, along ? 0.6 : w, along ? w : 0.6);
+  }
+
+  // Pizarra de caballete junto a la puerta de una tienda.
+  chalkboard(x, z, rot, text) {
+    const g = new THREE.Group();
+    const wood = mat(0xb07a4a);
+    for (const s of [-1, 1]) {
+      const leg = mesh(box(0.06, 1.1, 0.06), wood, s * 0.32, 0.55, 0);
+      g.add(leg);
+    }
+    const board = signMesh(text, 0.6, 0.8, {
+      bg: "#2f3b36",
+      fg: "#ffffff",
+      font: "bold 54px",
+    });
+    board.position.set(0, 0.62, 0.04);
+    g.add(board, mesh(box(0.7, 0.9, 0.04), wood, 0, 0.62, 0));
+    g.rotation.x = -0.12;
+    const holder = new THREE.Group();
+    holder.add(g);
+    holder.position.set(x, SIDEWALK, z);
+    holder.rotation.y = rot;
+    this.scene.add(holder);
+    this.physics.addCentered(x, z, 0.5, 0.5);
   }
 
   bench(x, z, rot) {
@@ -681,6 +829,34 @@ export class World {
     for (let x = -70; x <= 70; x += 7)
       if (Math.abs(x) < 4 || Math.abs(x) > 27)
         this.tree(x, -40 + (Math.abs(x) % 3), 1.2);
+    // Calle principal como en la referencia: árboles en alcorque junto al
+    // bordillo, jardineras a los lados de cada puerta y pizarras.
+    const busy = (x) =>
+      Math.abs(x) < 9 ||
+      Math.abs(x - 33) < 4 ||
+      [-51.5, -22, 19, 58].some((c) => Math.abs(x - c) < 3);
+    for (let x = -66; x <= 66; x += 12)
+      for (const [tx, tz] of [
+        [x + 3, -4.95],
+        [x + 9, 4.95],
+      ])
+        if (!busy(tx) && Math.abs(tx) < 70) this.tree(tx, tz, 0.75, true);
+    for (const b of Object.values(this.buildings)) {
+      if (!b.opts.sign || b.id === "casa" || b.id === "casagrande") continue;
+      for (const side of [-1, 1]) {
+        const p = b.doorPoint(0.45, side * (b.opts.doorW / 2 + 1.4));
+        this.planter(p.x, p.z, b.worldRot(0));
+      }
+    }
+    for (const [id, text] of [
+      ["tienda", "¡ABIERTO!\nfruta fresca"],
+      ["cafeteria", "CAFÉ\nrecién hecho"],
+      ["boutique", "NUEVA\ncolección"],
+    ]) {
+      const b = this.buildings[id];
+      const p = b.doorPoint(1.3, -(b.opts.doorW / 2 + 0.7));
+      this.chalkboard(p.x, p.z, b.worldRot(0), text);
+    }
     // Coches aparcados.
     const parked = [
       [toyCar(0x69db7c), -38, 13, 0],
@@ -849,20 +1025,26 @@ export class World {
       color: 0xffffff,
       roughness: 1,
       emissive: 0xffffff,
-      emissiveIntensity: 0.15,
+      emissiveIntensity: 0.35,
     });
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 16; i++) {
       const g = new THREE.Group();
-      for (let k = 0; k < 4; k++) {
-        const puff = new THREE.Mesh(sphere(3 + Math.random() * 2, 10), m);
-        puff.position.set(k * 3.5 - 5, Math.random() * 1.5, Math.random() * 3);
-        puff.scale.y = 0.6;
+      const n = 5 + (i % 3);
+      for (let k = 0; k < n; k++) {
+        const r = 3.5 + Math.random() * 3 + (k === Math.floor(n / 2) ? 2 : 0);
+        const puff = new THREE.Mesh(sphere(r, 12), m);
+        puff.position.set(
+          (k - n / 2) * 3.6,
+          Math.random() * 2 + (k === Math.floor(n / 2) ? 2 : 0),
+          Math.random() * 4,
+        );
+        puff.scale.y = 0.72;
         g.add(puff);
       }
       g.position.set(
-        -90 + i * 22,
-        38 + Math.random() * 12,
-        -70 + Math.random() * 120,
+        -160 + i * 21,
+        48 + Math.random() * 26,
+        -150 + Math.random() * 300,
       );
       this.scene.add(g);
       this.clouds.push(g);
@@ -937,7 +1119,7 @@ export class World {
   animateAmbient(dt, time) {
     for (const c of this.clouds) {
       c.position.x += dt * 1.2;
-      if (c.position.x > 110) c.position.x = -110;
+      if (c.position.x > 170) c.position.x = -170;
     }
     for (const j of this.fountainJets) {
       j.t = (j.t + dt * 0.9) % 1;
@@ -978,7 +1160,10 @@ export class World {
     }
     this.traffic.update(dt, actors);
     this.animateAmbient(dt, performance.now() / 1000);
-    this.supplierNpc.animate(dt, 0);
+    for (const npc of this.warehouseClerks) npc.animate(dt, 0);
+    const pulse = (performance.now() / 900) % 1;
+    this.cajaRing.scale.setScalar(0.8 + pulse * 0.5);
+    this.cajaRing.userData.ring.material.opacity = 0.8 * (1 - pulse);
     this.clerk.animate(dt, 0);
     this.displayScooter.rotation.y += dt * 0.5;
   }

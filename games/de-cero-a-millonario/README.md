@@ -127,13 +127,17 @@ cortas (entrar, cobrar, reponer desde el almacén, 5 ventas, comprar en el
 Mayorista, llevar la mercadería…) y después se alternan metas rápidas con
 objetivos de progreso.
 
-1. Compra en el **Mayorista**. La primera visita activa un tutorial de 6
-   pasos (se puede repetir desde Ayuda). Tiene tres zonas:
-   **A · PEDIR MERCADERÍA** (terminales con categorías, stock disponible,
-   cantidad, total y lo que te falta), **B · RECOGER PEDIDO** (las cajas
-   aparecen en el palé cuando el pedido está listo) y **C · CARGA Y
-   SALIDA**. También puedes pedir que el **camión de reparto** las lleve a
-   tu almacén.
+1. Compra en el **Mayorista**. Al entrar, flechas amarillas en el suelo y
+   un cartel llevan a la **CAJA**, un mostrador grande con el pórtico
+   «🛒 CAJA · COMPRA AQUÍ»: ahí se paga todo. Las estanterías del fondo
+   también abren el pedido de su categoría. La primera visita activa un
+   tutorial de 6 pasos (se puede repetir desde Ayuda). Zonas:
+   **A · CAJA** (categorías, stock disponible, cantidad, total y lo que te
+   falta), **B · RECOGER PEDIDO** (las cajas aparecen en el palé cuando el
+   pedido está listo) y **C · CARGA Y SALIDA**. Junto a la entrada hay
+   **carros**: con uno cargas hasta 10 cajas de una vez y en el almacén de
+   tu tienda las descargas todas juntas. También puedes pedir que el
+   **camión de reparto** las lleve a tu almacén.
 2. Repón estanterías, cobra en la caja, ajusta precios y contrata personal.
 3. Mientras tanto surgen **eventos**: ofertas flash del Mayorista con reto
    de ventas, hora punta, clientes VIP que pagan el doble y monedas perdidas
@@ -159,6 +163,11 @@ Magnate ($8.000).
   prendas son geometría 3D montada en las articulaciones del personaje, así
   que se mueven con él. Hay un conjunto gratuito; el resto se compra o se
   gana jugando (encargos, etapa Magnate).
+- **Aspecto de ciudad costera**: cielo con degradado y nubes grandes,
+  montañas al fondo, mar con playa al final de la avenida, edificios de dos
+  plantas con ventanas y jardineras, farolas negras clásicas con
+  banderolas, árboles frondosos en alcorques, jardineras junto a las
+  puertas, pizarras, aceras de baldosas y césped con textura.
 - **Ciudad viva**: peatones con ropa variada que pasean, cruzan por los
   pasos de cebra, entran en comercios, charlan, saludan, esperan y suben al
   autobús; tráfico con semáforos funcionales en el cruce, autobús con
@@ -189,6 +198,10 @@ Magnate ($8.000).
 - **Mayorista grande**: estanterías por categorías (BEBIDAS, ALIMENTOS,
   LIMPIEZA, SNACKS, PRODUCTOS FRESCOS), carretilla elevadora, carros,
   lámparas y trabajadores que mueven cajas.
+- **Tráfico de personas sin atascos**: se entra por un lado de la puerta y
+  se sale por el otro, las filas de caja no salen del local, quien se
+  atasca se desvía o pasa de largo, y los coches no se paran encima de los
+  pasos de cebra.
 - Todo lo de la versión anterior: tienda con existencias reales, clientes y
   empleados con navegación A\*, mejoras, cafetería, minimercado,
   supermercado, scooter, furgoneta, Villa Bonita y misiones.
@@ -205,6 +218,7 @@ Magnate ($8.000).
 | `src/look.js`        | Catálogo de ropa y accesorios, looks por defecto y aleatorios  |
 | `src/main.js`        | Arranque, modos (inicio, armario, partida), economía, guardado |
 | `src/world.js`       | Ciudad, decoración, interiores fijos y animaciones ambientales |
+| `src/scenery.js`     | Cielo, montañas, mar y terreno exterior (solo decorativo)      |
 | `src/building.js`    | Edificio genérico: paredes, puertas, techo, letreros, luces    |
 | `src/business.js`    | Negocios: mobiliario, existencias, cajas, clientes y empleados |
 | `src/npc.js`         | Agentes con navegación; clientes (y VIP) y empleados           |
