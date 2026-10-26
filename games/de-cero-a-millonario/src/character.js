@@ -652,7 +652,7 @@ export class ToyCharacter {
   }
 
   land(strength = 1) {
-    this.jellyV -= Math.min(1, strength) * 2.4;
+    this.jellyV -= Math.min(1, strength) * 3.8;
   }
 
   think(icon, color, seconds = 2.5) {
@@ -715,15 +715,15 @@ export class ToyCharacter {
     }
     // Gelatina: un muelle amortiguado en la escala. Los pasos, los cambios
     // de velocidad y los aterrizajes le dan pequeños empujones.
-    if (this.stepped) this.jellyV -= 0.35 * Math.min(1, s / 4);
-    this.jellyV += (s - (this.prevSpeed ?? s)) * 0.12;
+    if (this.stepped) this.jellyV -= 0.62 * Math.min(1, s / 4);
+    this.jellyV += (s - (this.prevSpeed ?? s)) * 0.22;
     this.prevSpeed = s;
-    this.jellyV += (-this.jelly * 170 - this.jellyV * 8) * Math.min(dt, 0.05);
+    this.jellyV += (-this.jelly * 150 - this.jellyV * 5.5) * Math.min(dt, 0.05);
     this.jelly = Math.max(
-      -0.2,
-      Math.min(0.2, this.jelly + this.jellyV * Math.min(dt, 0.05)),
+      -0.28,
+      Math.min(0.28, this.jelly + this.jellyV * Math.min(dt, 0.05)),
     );
-    const breathe = moving ? 0 : Math.sin(this.phase * 1.3) * 0.012;
+    const breathe = moving ? 0 : Math.sin(this.phase * 1.3) * 0.022;
     const k = this.jelly + breathe;
     this.rig.scale.set(
       this.baseScale * (1 - k * 0.5),

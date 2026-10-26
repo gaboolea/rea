@@ -7,14 +7,14 @@ import { seededRandom } from "./look.js";
 const SKY_RADIUS = 300;
 // Colores del cielo (cénit y horizonte) según la hora.
 const SKY = {
-  day: [0x2f8fe8, 0xc4ebff],
+  day: [0x0a5fd8, 0x62b9ff],
   dusk: [0x5b63c9, 0xffb38a],
   night: [0x101640, 0x3a3f7a],
 };
 const color = (hex) => new THREE.Color(hex);
 const TOP = [color(SKY.day[0]), color(SKY.dusk[0]), color(SKY.night[0])];
 const HORIZON = [color(SKY.day[1]), color(SKY.dusk[1]), color(SKY.night[1])];
-const SEA = color(0x2fb4e6);
+const SEA = color(0x0aa6e8);
 
 export class Scenery {
   constructor(scene) {
@@ -63,7 +63,7 @@ export class Scenery {
 
   // Campo verde alrededor de la ciudad hasta las montañas.
   buildOuterGround() {
-    const tex = surfaceTexture("grass", "#86cf5f", [60, 60]);
+    const tex = surfaceTexture("grass", "#5fc93a", [60, 60]);
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(260, 48),
       new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }),
@@ -123,7 +123,7 @@ export class Scenery {
       const cone = new THREE.ConeGeometry(28 + rnd() * 22, h, 7, 1);
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
-      far.push([cone, x, h / 2 - 2, z, rnd() * 3, 0x86a9cf]);
+      far.push([cone, x, h / 2 - 2, z, rnd() * 3, 0x5f8fd0]);
       // Cima más clara.
       const cap = new THREE.ConeGeometry(8 + h * 0.12, h * 0.26, 7, 1);
       far.push([cap, x, h - h * 0.13 - 1.6, z, 0, 0xe8f3ff]);
@@ -141,7 +141,7 @@ export class Scenery {
         -2,
         Math.sin(a) * r,
         rnd() * 3,
-        [0x7cc46a, 0x8fd16a, 0x6db85f][i % 3],
+        [0x52bd40, 0x6bd14a, 0x45b03b][i % 3],
       ]);
     }
     for (const list of [far, near]) {

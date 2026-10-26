@@ -9,6 +9,7 @@ import {
   BOX_UNITS,
   DAY_SECONDS,
   CATEGORIES,
+  CART_CAPACITY,
 } from "./config.js";
 import { productIcon } from "./icons.js";
 import { upgradeApplies } from "./business.js";
@@ -51,7 +52,6 @@ export class UI {
     this.game = game;
     this.hudTimer = 0;
     this.panel = null;
-    this.order = {};
     this.selectedBiz = "tienda";
     this.tab = "resumen";
     const click = (id, fn) =>
@@ -164,8 +164,19 @@ export class UI {
     this.refreshChips();
     const carry = s.carried;
     $("carry").hidden = !carry.length;
+    // Agrupado por producto (cajas), y aviso si hay cajas sin pagar.
+    const groups = {};
+    for (const b of carry) groups[b.product] = (groups[b.product] ?? 0) + 1;
+    const unpaid = carry.some((b) => b.unpaid);
     $("carry").innerHTML =
-      `📦 <b>${carry.length}/${g.carryCapacity()}</b> ${carry.map((b) => `<span style="--c:${hex(PRODUCTS[b.product].color)}">${PRODUCTS[b.product].name} ×${b.units}</span>`).join("")}`;
+      `${g.state.cart ? "🛒" : "📦"} <b>${carry.length}/${g.carryCapacity()}</b> ${Object.entries(
+        groups,
+      )
+        .map(
+          ([id, n]) =>
+            `<span style="--c:${hex(PRODUCTS[id].color)}">${PRODUCTS[id].name}${n > 1 ? ` ×${n}` : ""}</span>`,
+        )
+        .join("")}${unpaid ? ` <em class="unpaid">🧾 sin pagar</em>` : ""}`;
     $("btn-sound").textContent = g.settings.muted ? "🔇" : "🔊";
     const on = g.online;
     $("net-pill").hidden = !on;
@@ -289,133 +300,159 @@ export class UI {
       );
   }
 
-  // Mostrador A del Mayorista: catálogo por categorías, varias líneas de
-  // pedido, total, dinero disponible y lo que falta si no alcanza.
-  // cat: categoría que se muestra al abrir (desde una estantería).
-  openSupplier(startCat) {
-    if (startCat) this.supplierCat = startCat;
+  // Precio de una caja en el Mayorista (descuentos y ofertas incluidos).
+  boxPrice(id) {
     const g = this.game;
+    const p = PRODUCTS[id];
+    return (
+      p.cost *
+      (p.boxUnits ?? BOX_UNITS) *
+      g.supplierDiscount() *
+      g.events.discount(id)
+    );
+  }
+
+  // Estantería del Mayorista: se cogen cajas al carro (sin pagar).
+  openShelf(cat) {
+    const g = this.game;
+    this.shelfCat = cat;
     const types = g.ownedTypes();
     const stage = g.stageIndex();
     const items = Object.entries(PRODUCTS).filter(
-      ([, p]) => !p.crafted && types.has(p.kind),
+      ([, p]) => !p.crafted && p.cat === cat,
     );
-    const cats = [
-      "todos",
-      ...Object.keys(CATEGORIES).filter((c) =>
-        items.some(([, p]) => p.cat === c),
-      ),
-    ];
-    const cat = cats.includes(this.supplierCat) ? this.supplierCat : "todos";
-    const owned = Object.values(g.businesses).filter(
-      (b) => b.owned && !b.remote,
-    );
-    const deliver = this.deliverTo ?? "";
-    const discount = g.supplierDiscount();
-    const lines = [];
-    let total = 0;
-    for (const [id, p] of items) {
-      const n = this.order[id] ?? 0;
-      if (!n) continue;
-      const price =
-        p.cost * (p.boxUnits ?? BOX_UNITS) * discount * g.events.discount(id);
-      total += price * n;
-      lines.push(
-        `<div class="order-line"><img src="${productIcon(id)}" alt=""><span>${n} × ${p.name}</span><b>${money(Math.round(price * n * 100) / 100)}</b></div>`,
-      );
-    }
+    const unpaid = g.unpaid();
+    const due =
+      Math.round(
+        unpaid.reduce((a, b) => a + this.boxPrice(b.product), 0) * 100,
+      ) / 100;
     const cards = items
-      .filter(([, p]) => cat === "todos" || p.cat === cat)
       .map(([id, p]) => {
         const units = p.boxUnits ?? BOX_UNITS;
         const sale = g.events.discount(id);
-        const price = p.cost * units * discount * sale;
-        const n = this.order[id] ?? 0;
-        const stock = g.warehouse.available(id);
+        const price = this.boxPrice(id);
+        const inCart = unpaid.filter((b) => b.product === id).length;
+        const stock = g.shelfStock(id);
         const locked = (p.stage ?? 0) > stage;
-        const note = p.cold
-          ? "Necesita refrigerador"
-          : p.frozen
-            ? "Necesita congelador"
-            : p.fresh
-              ? "Puesto de frutas"
-              : p.ingredient
-                ? "Para la máquina de café"
-                : "";
-        return `<div class="pcard ${locked ? "locked" : ""} ${n ? "picked" : ""}">
+        const needs = !types.has(p.kind)
+          ? "Necesitas la cafetería"
+          : p.cold
+            ? "Necesita refrigerador"
+            : p.frozen
+              ? "Necesita congelador"
+              : p.fresh
+                ? "Puesto de frutas"
+                : p.ingredient
+                  ? "Para la máquina de café"
+                  : "";
+        const blocked = locked || !types.has(p.kind);
+        return `<div class="pcard ${blocked ? "locked" : ""} ${inCart ? "picked" : ""}">
           <img src="${productIcon(id)}" alt="">
           <div class="pinfo"><b>${p.name}</b>${sale < 1 ? ` <span class="tag good">−40%</span>` : ""}
             <small>${money(Math.round(price * 100) / 100)} / caja de ${units} · ${money(Math.round((price / units) * 100) / 100)} / ud.</small>
-            <small>${locked ? `🔒 Etapa ${STAGES[p.stage].name}` : `Disponibles: ${stock} cajas`}${note ? ` · ${note}` : ""}</small></div>
-          ${locked ? "" : `<div class="stepper"><button data-dec="${id}" ${n ? "" : "disabled"}>−</button><span>${n}</span><button data-inc="${id}" ${n >= stock ? "disabled" : ""}>+</button></div>`}
+            <small>${locked ? `🔒 Etapa ${STAGES[p.stage].name}` : `En la estantería: ${stock} cajas`}${needs ? ` · ${needs}` : ""}</small></div>
+          ${blocked ? "" : `<div class="stepper"><button data-dec="${id}" ${inCart ? "" : "disabled"}>−</button><span>${inCart}</span><button data-inc="${id}" ${stock ? "" : "disabled"}>+</button></div>`}
         </div>`;
       })
       .join("");
+    const cap = g.carryCapacity();
+    const have = Math.floor(g.state.money * 100) / 100;
+    const missing = Math.max(0, Math.round((due - have) * 100) / 100);
+    this.open(
+      "supplier",
+      `Estantería · ${CATEGORIES[cat].name}`,
+      `
+      <p class="hint">Pulsa <b>+</b> para meter cajas en tu ${g.state.cart ? "carro" : "mano (toma un carro en la entrada para llevar hasta " + CART_CAPACITY + ")"}. Se pagan en la <b>CAJA</b> antes de salir.</p>
+      <div class="pgrid">${cards}</div>
+      <div class="sticky order-box">
+        <div class="total">${g.state.cart ? "🛒 Carro" : "🤲 En mano"}: <b>${g.state.carried.length}/${cap}</b> cajas · Por pagar: <b>${money(due)}</b> · Tienes ${money(have)}</div>
+        ${missing > 0 ? `<p class="bad missing">Te faltan ${money(missing)}: devuelve alguna caja</p>` : ""}
+        <div class="order-actions"><button class="ghost" data-close>SEGUIR COMPRANDO</button><button class="primary" data-pay ${unpaid.length ? "" : "disabled"}>IR A PAGAR ➜</button></div>
+      </div>`,
+    );
+    this.bind("[data-inc]", (d) => {
+      g.takeFromShelf(d.inc);
+      this.openShelf(cat);
+    });
+    this.bind("[data-dec]", (d) => {
+      g.returnToShelf(d.dec);
+      this.openShelf(cat);
+    });
+    this.bind("[data-close]", () => this.close());
+    this.bind("[data-pay]", () => {
+      this.close();
+      g.guide.setDestination({
+        ...g.world.supplierCounter,
+        label: "CAJA · pagar",
+      });
+      this.toast("🧾 Lleva tu compra a la CAJA para pagar");
+    });
+  }
+
+  // CAJA del Mayorista: se paga lo que llevas sin pagar. Opcionalmente, el
+  // camión (o tu furgoneta) lo lleva a uno de tus negocios.
+  openCheckout() {
+    const g = this.game;
+    const unpaid = g.unpaid();
+    const owned = Object.values(g.businesses).filter(
+      (b) => b.owned && !b.remote,
+    );
+    const counts = {};
+    for (const b of unpaid) counts[b.product] = (counts[b.product] ?? 0) + 1;
+    const deliver = owned.some((b) => b.id === this.deliverTo)
+      ? this.deliverTo
+      : "";
     const van = g.state.items.furgoneta;
     const fee = van ? 0 : 4;
+    let total = 0;
+    const lines = Object.entries(counts).map(([id, n]) => {
+      const price = this.boxPrice(id) * n;
+      total += price;
+      return `<div class="order-line"><img src="${productIcon(id)}" alt=""><span>${n} × ${PRODUCTS[id].name}</span><b>${money(Math.round(price * 100) / 100)}</b><button class="mini" data-dec="${id}" title="Devolver una">−</button></div>`;
+    });
     if (deliver && total) total += fee;
     total = Math.round(total * 100) / 100;
     const have = Math.floor(g.state.money * 100) / 100;
     const missing = Math.max(0, Math.round((total - have) * 100) / 100);
-    const deliveryHtml = `<label class="field">Entrega: <select id="deliver"><option value="">Recoger en la zona B (gratis)</option>${owned
-      .map(
-        (b) =>
-          `<option value="${b.id}" ${deliver === b.id ? "selected" : ""}>${van ? "Tu furgoneta" : "Camión de reparto"} → ${b.name} (${fee ? `+$${fee}` : "gratis"})</option>`,
-      )
-      .join("")}</select></label>`;
     const tools = g.state.items.carretilla
       ? ""
       : `<div class="row"><span class="chip" style="background:#9aa7b0"></span><div class="grow"><b>${SHOP_ITEMS.carretilla.name}</b><small>${SHOP_ITEMS.carretilla.desc}</small></div><button data-item="carretilla">${money(SHOP_ITEMS.carretilla.price)}</button></div>`;
+    const body = unpaid.length
+      ? `<div class="order-lines">${lines.join("")}</div>
+        <label class="field">Entrega: <select id="deliver"><option value="">Me lo llevo yo (gratis)</option>${owned
+          .map(
+            (b) =>
+              `<option value="${b.id}" ${deliver === b.id ? "selected" : ""}>${van ? "Tu furgoneta" : "Camión de reparto"} → ${b.name} (${fee ? `+$${fee}` : "gratis"})</option>`,
+          )
+          .join("")}</select></label>
+        <div class="total">Total: <b>${money(total)}</b> · Tienes ${money(have)}</div>
+        ${missing > 0 ? `<p class="bad missing">Te faltan ${money(missing)}: devuelve alguna caja con −</p>` : ""}
+        <div class="order-actions"><button class="ghost" data-close>VOLVER</button><button class="primary" data-buy ${total && !missing ? "" : "disabled"}>PAGAR ${money(total)}</button></div>`
+      : `<p class="hint">Tu ${g.state.cart ? "carro" : "mano"} está vacío. Ve a las <b>estanterías</b> del fondo, elige tus cajas y vuelve aquí para pagar.</p>
+        <div class="order-actions"><button class="primary" data-close>ENTENDIDO</button></div>`;
     this.open(
       "supplier",
-      "A · Pedir mercadería",
-      `
-      ${discount < 1 ? `<p class="hint good">Descuento de Magnate: −15%</p>` : ""}
-      <div class="tabs small">${cats.map((c) => `<button data-cat="${c}" class="${c === cat ? "on" : ""}">${c === "todos" ? "Todo" : CATEGORIES[c].name}</button>`).join("")}</div>
-      <div class="pgrid">${cards}</div>
-      ${tools ? `<h3>Herramientas</h3><div class="list">${tools}</div>` : ""}
-      <div class="sticky order-box">
-        ${lines.length ? `<div class="order-lines">${lines.join("")}</div>` : `<p class="hint">Añade productos con <b>+</b>. Puedes combinar varios en un pedido.</p>`}
-        ${deliveryHtml}
-        <div class="total">Total: <b>${money(total)}</b> · Tienes ${money(have)}</div>
-        ${missing > 0 ? `<p class="bad missing">Te faltan ${money(missing)} para este pedido</p>` : ""}
-        <div class="order-actions"><button class="ghost" data-cancel>CANCELAR</button><button class="primary" data-buy ${total && !missing ? "" : "disabled"}>COMPRAR</button></div>
-      </div>`,
+      "🧾 Caja del Mayorista",
+      `${body}${tools ? `<h3>Herramientas</h3><div class="list">${tools}</div>` : ""}`,
     );
-    this.bind("[data-cat]", (d) => {
-      this.supplierCat = d.cat;
-      this.openSupplier();
-    });
-    this.bind("[data-inc]", (d) => {
-      this.order[d.inc] = Math.min(
-        g.warehouse.available(d.inc),
-        (this.order[d.inc] ?? 0) + 1,
-      );
-      this.openSupplier();
-    });
     this.bind("[data-dec]", (d) => {
-      this.order[d.dec] = Math.max(0, (this.order[d.dec] ?? 0) - 1);
-      this.openSupplier();
+      g.returnToShelf(d.dec);
+      this.openCheckout();
     });
     const sel = $("deliver");
     if (sel)
       sel.onchange = () => {
         this.deliverTo = sel.value;
-        this.openSupplier();
+        this.openCheckout();
       };
     this.bind("[data-item]", async (d) => {
       await g.buyItem(d.item);
-      this.openSupplier();
+      this.openCheckout();
     });
-    this.bind("[data-cancel]", () => {
-      this.order = {};
-      this.close();
-    });
+    this.bind("[data-close]", () => this.close());
     this.bind("[data-buy]", async () => {
-      if (await g.buySupplies(this.order, deliver || null)) {
-        this.order = {};
-        this.close();
-      } else this.openSupplier();
+      if (await g.buySupplies(counts, deliver || null)) this.close();
+      else this.openCheckout();
     });
   }
 
@@ -928,7 +965,7 @@ export class UI {
       "Ayuda",
       `<h3>📦 Comprar en el Mayorista</h3>
       <ol class="steps">${WHOLESALE_STEPS.map((t) => `<li>${t}</li>`).join("")}</ol>
-      <p class="hint">El Mayorista tiene tres zonas: <b>A · CAJA</b> (el mostrador grande con el cartel «COMPRA AQUÍ»: allí se paga todo; las estanterías del fondo solo muestran el género), <b>B · Recogida</b> (tus cajas aparecen en el palé cuando el pedido está listo) y <b>C · Carga y salida</b>. En la entrada hay <b>carros</b>: con uno cargas hasta 10 cajas de una vez y en tu almacén las descargas todas juntas.</p>
+      <p class="hint">El Mayorista es de <b>autoservicio</b>: toma un <b>carro</b> en la entrada (hasta 10 cajas), elige tus cajas en las <b>estanterías</b> por categoría y paga en la <b>CAJA</b>. No se puede salir con cajas sin pagar. Al pagar puedes mandarlo en camión a tu negocio; si te lo llevas, en tu almacén descargas el carro entero de una vez.</p>
       <button data-act="tutorial">Repetir el tutorial del Mayorista</button>
       <h3>🧭 Orientación</h3>
       <p>El botón <b>🏪 IR A MI TIENDA</b> marca la ruta por las calles. Toca el minimapa para abrir el mapa y elegir otro destino.</p>

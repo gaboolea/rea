@@ -7,13 +7,23 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 const materials = new Map();
 const geometries = new Map();
 
+// Colores algo más saturados que los de la paleta base: el juego busca
+// tonos vivos de juguete, no pastel.
+const VIVID = 1.25;
+const hsl = {};
+function vivid(color) {
+  const c = new THREE.Color(color);
+  c.getHSL(hsl);
+  return c.setHSL(hsl.h, Math.min(1, hsl.s * VIVID), hsl.l);
+}
+
 export function mat(color, opts = {}) {
   const key = `${color}|${JSON.stringify(opts)}`;
   if (!materials.has(key)) {
     materials.set(
       key,
       new THREE.MeshStandardMaterial({
-        color,
+        color: vivid(color),
         roughness: 0.55,
         metalness: 0,
         ...opts,

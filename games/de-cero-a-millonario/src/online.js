@@ -554,10 +554,10 @@ export class Online {
       for (const [p, n] of Object.entries(b.storage)) add(p, n);
       if (b.machine) add("granos", b.machine.granos);
     }
+    // Lo que llevas sin pagar aún no es tuyo: no cuenta.
     for (const box of [
-      ...g.state.carried,
+      ...g.state.carried.filter((b) => !b.unpaid),
       ...g.state.pickup,
-      ...g.state.pendingPickup.flatMap((o) => o.items),
       ...g.state.deliveries.flatMap((d) => d.items),
     ])
       add(box.product, box.units);
@@ -601,7 +601,7 @@ export class Online {
     }
     for (const list of [g.state.pickup, g.state.carried]) {
       for (let i = list.length - 1; i >= 0 && n > 0; i--) {
-        if (list[i].product !== p) continue;
+        if (list[i].product !== p || list[i].unpaid) continue;
         const k = Math.min(n, list[i].units);
         list[i].units -= k;
         n -= k;

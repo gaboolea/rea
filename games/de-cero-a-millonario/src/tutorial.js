@@ -4,10 +4,10 @@
 const $ = (id) => document.getElementById(id);
 
 export const WHOLESALE_STEPS = [
-  "Sigue las flechas amarillas hasta la CAJA",
-  "Elige tus productos con + y −",
-  "Confirma el pedido con COMPRAR",
-  "Recoge tus cajas en la zona B (con un carro, todas a la vez)",
+  "Toma un carro a la izquierda de la entrada",
+  "Ve a una estantería del fondo y mete cajas con +",
+  "Lleva tu compra a la CAJA y paga",
+  "Sal por la puerta con tu compra",
   "Lleva la mercadería a tu tienda",
   "Coloca los productos en las estanterías",
 ];
@@ -44,11 +44,13 @@ export class Tutorial {
     const shop = g.businesses.tienda;
     switch (this.step) {
       case 0:
+        return { ...w.cartPoint, label: "Carros" };
       case 1:
+        return { ...w.warehouseSpots.racks[0], label: "Estantería" };
       case 2:
-        return { ...w.supplierCounter, label: "CAJA · comprar aquí" };
+        return { ...w.supplierCounter, label: "CAJA · pagar" };
       case 3:
-        return { ...w.pickupPoint, label: "Recoger pedido" };
+        return { ...w.warehouseExit, label: "Salida" };
       case 4:
         return {
           ...shop.building.doorPoint(1.2),
@@ -85,19 +87,13 @@ export class Tutorial {
     }
     this.base ??= { ...s.stats };
     const p = g.player.pos;
-    const near = (t, r) => Math.hypot(t.x - p.x, t.z - p.z) < r;
     const d = (k) => (s.stats[k] ?? 0) - (this.base[k] ?? 0);
+    const inWarehouse = g.world.buildings.mayorista.contains(p.x, p.z);
     const done = [
-      () => near(g.world.supplierCounter, 2.6),
-      () =>
-        Object.values(g.ui.order).some((n) => n > 0) ||
-        s.pendingPickup.length > 0 ||
-        s.pickup.length > 0,
-      () =>
-        s.pendingPickup.length > 0 ||
-        s.pickup.length > 0 ||
-        s.carried.length > 0,
-      () => s.carried.length > 0,
+      () => s.cart || s.carried.length > 0,
+      () => s.carried.some((b) => b.unpaid) || d("unitsBought") > 0,
+      () => d("unitsBought") > 0,
+      () => !inWarehouse,
       () => g.businesses.tienda.building.contains(p.x, p.z),
       () => d("unitsStocked") + d("unitsStored") > 0,
     ][this.step];

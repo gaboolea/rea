@@ -44,19 +44,22 @@ export const MISSIONS = [
   },
   {
     text: "Cruza la calle y compra 2 cajas en el Mayorista",
-    hint: "Mostrador PEDIDOS",
-    target: (g) => g.world.supplierCounter,
+    hint: "Toma un carro, elige en las estanterías y paga en la CAJA",
+    target: (g) =>
+      g.state.carried.some((b) => b.unpaid)
+        ? g.world.supplierCounter
+        : g.world.warehouseSpots.racks[0],
     progress: (g, b) => count(delta(g, b, "unitsBought") / 10, 2),
     done: (g, b) => delta(g, b, "unitsBought") >= 20,
     reward: 15,
   },
   {
     text: "Lleva tu mercadería a la tienda",
-    hint: "Recoge en RECOGIDA y reponla o guárdala",
+    hint: "Repón las estanterías o guárdala en el almacén",
     target: (g) =>
       g.state.carried.length
         ? g.world.buildings.tienda.doorPoint(0)
-        : g.world.pickupPoint,
+        : g.world.supplierCounter,
     progress: (g, b) =>
       count(
         Math.floor(

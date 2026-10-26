@@ -101,6 +101,12 @@ Límites conocidos:
 - La vista previa publicada en claude.ai no permite conexiones WebSocket:
   allí solo funciona el modo de un jugador.
 
+El juego se juega **en horizontal**. En el móvil, al primer toque intenta
+ponerse a pantalla completa y bloquear la orientación (solo si el
+navegador lo permite); si el teléfono está en vertical aparece un aviso
+para girarlo, con la opción de jugar en vertical igualmente. En
+horizontal el HUD se compacta para dejar libre el centro.
+
 ### Controles
 
 | Acción              | Ordenador               | Móvil                              |
@@ -127,17 +133,15 @@ cortas (entrar, cobrar, reponer desde el almacén, 5 ventas, comprar en el
 Mayorista, llevar la mercadería…) y después se alternan metas rápidas con
 objetivos de progreso.
 
-1. Compra en el **Mayorista**. Al entrar, flechas amarillas en el suelo y
-   un cartel llevan a la **CAJA**, un mostrador grande con el pórtico
-   «🛒 CAJA · COMPRA AQUÍ»: ahí se paga todo. Las estanterías del fondo
-   también abren el pedido de su categoría. La primera visita activa un
-   tutorial de 6 pasos (se puede repetir desde Ayuda). Zonas:
-   **A · CAJA** (categorías, stock disponible, cantidad, total y lo que te
-   falta), **B · RECOGER PEDIDO** (las cajas aparecen en el palé cuando el
-   pedido está listo) y **C · CARGA Y SALIDA**. Junto a la entrada hay
-   **carros**: con uno cargas hasta 10 cajas de una vez y en el almacén de
-   tu tienda las descargas todas juntas. También puedes pedir que el
-   **camión de reparto** las lleve a tu almacén.
+1. Compra en el **Mayorista**, que es de autoservicio: toma un **carro**
+   a la izquierda de la entrada (lleva hasta 10 cajas; sin carro solo
+   llevas una en la mano), ve a las **estanterías** por categoría (bebidas,
+   alimentos, limpieza, snacks, frescos y cafetería) y mete cajas con
+   **+**; luego paga en la **CAJA**. Las antenas de la puerta no te dejan
+   salir con cajas sin pagar. Al pagar puedes llevártelo tú o mandarlo con
+   el **camión de reparto** (o tu furgoneta) a uno de tus negocios. En tu
+   almacén descargas el carro entero de una vez. La primera visita activa
+   un tutorial de 6 pasos (se puede repetir desde Ayuda).
 2. Repón estanterías, cobra en la caja, ajusta precios y contrata personal.
 3. Mientras tanto surgen **eventos**: ofertas flash del Mayorista con reto
    de ventas, hora punta, clientes VIP que pagan el doble y monedas perdidas
@@ -168,7 +172,8 @@ Magnate ($8.000).
   prendas son geometría 3D montada en las articulaciones del personaje, así
   que se mueven con él. Hay un conjunto gratuito; el resto se compra o se
   gana jugando (encargos, etapa Magnate).
-- **Aspecto de ciudad costera**: cielo con degradado y nubes grandes,
+- **Aspecto de ciudad costera**, con colores vivos (mapeo de tonos
+  neutro y paleta saturada): cielo azul intenso con nubes grandes,
   montañas al fondo, mar con playa al final de la avenida, edificios de dos
   plantas con ventanas y jardineras, farolas negras clásicas con
   banderolas, árboles frondosos en alcorques, jardineras junto a las

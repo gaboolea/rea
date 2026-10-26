@@ -859,6 +859,11 @@ button:focus-visible {
   display: none;
 }
 
+#carry .unpaid {
+  font-style: normal;
+  color: #c0392b;
+}
+
 #carry span {
   border-left: 4px solid var(--c);
   padding-left: 4px;
@@ -1940,6 +1945,17 @@ table.report td {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
+.order-line .mini {
+  border: 0;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+  background: #ffe0dc;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .order-line img {
   width: 24px;
   height: 24px;
@@ -2200,4 +2216,283 @@ table.rank tr.me {
   padding: 8px 18px;
   margin: 4px;
   cursor: pointer;
+}
+
+/* ---------- Modo horizontal en móvil ----------
+   El juego se juega en horizontal. En pantallas bajas el HUD se compacta
+   para dejar libre el centro: datos pequeños arriba a la izquierda,
+   botones y minimapa arriba a la derecha y controles abajo. */
+@media (orientation: landscape) and (max-height: 520px) {
+  #hud {
+    top: calc(6px + var(--safe-top));
+    left: max(8px, var(--safe-left));
+    right: max(8px, var(--safe-right));
+  }
+  .hud-left {
+    gap: 4px;
+    max-width: 250px;
+  }
+  .hud-right {
+    gap: 4px;
+  }
+  .pill {
+    padding: 2px 10px 2px 4px;
+    gap: 6px;
+  }
+  #hud-money .coin {
+    width: 24px;
+    height: 24px;
+    font-size: 13px;
+  }
+  #money {
+    font-size: 17px;
+  }
+  #hud-money small {
+    font-size: 10px;
+  }
+  .objective {
+    font-size: 11.5px;
+    padding: 3px 8px;
+    border-left-width: 4px;
+    gap: 6px;
+  }
+  .obj-icon {
+    font-size: 14px;
+  }
+  #objective-hint {
+    display: none;
+  }
+  .obj-side em {
+    font-size: 11px;
+  }
+  .obj-side small {
+    font-size: 10px;
+  }
+  .chip {
+    font-size: 11px;
+    padding: 2px 8px 4px;
+    max-width: 250px;
+    white-space: nowrap;
+  }
+  .chip-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .clock-pill {
+    padding: 2px 10px;
+    font-size: 13px;
+  }
+  .hud-buttons {
+    flex-wrap: nowrap;
+    max-width: none;
+    gap: 4px;
+  }
+  .hud-buttons button {
+    width: 32px;
+    height: 32px;
+    font-size: 15px;
+    border-radius: 10px;
+  }
+  #minimap {
+    width: 84px;
+    height: 84px;
+  }
+  .home-btn {
+    font-size: 10.5px;
+    padding: 4px 8px;
+  }
+  .net-pill {
+    font-size: 10px;
+    padding: 2px 8px;
+  }
+  #toasts {
+    top: calc(6px + var(--safe-top));
+    bottom: auto;
+    width: min(320px, 36vw);
+  }
+  .toast {
+    font-size: 11.5px;
+    padding: 3px 10px;
+    border-radius: 12px;
+  }
+  #mission-done {
+    top: calc(60px + var(--safe-top));
+    bottom: auto;
+    padding: 4px 14px;
+  }
+  #mission-done b {
+    font-size: 14px;
+  }
+  #mission-done em {
+    font-size: 16px;
+  }
+  #prompt,
+  body.touch #prompt {
+    font-size: 12.5px;
+    padding: 5px 12px;
+    bottom: calc(10px + var(--safe-bottom));
+    max-width: 44vw;
+  }
+  #carry,
+  body.touch #carry {
+    top: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(44px + var(--safe-bottom));
+    font-size: 11px;
+    padding: 2px 8px;
+    max-width: 44vw;
+  }
+  #tutorial-card {
+    top: calc(118px + var(--safe-top));
+    width: 230px;
+    font-size: 11px;
+    padding: 4px 8px 5px;
+    border-width: 2px;
+  }
+  #tutorial-card li:not(.now) {
+    display: none;
+  }
+  #tutorial-card ol {
+    list-style: none;
+    padding-left: 0;
+  }
+  #joystick {
+    width: 96px;
+    height: 96px;
+    margin: -48px 0 0 -48px;
+    left: calc(70px + var(--safe-left));
+    top: calc(100% - 78px - var(--safe-bottom));
+  }
+  #joystick-knob {
+    width: 40px;
+    height: 40px;
+  }
+  #touch-buttons {
+    width: 132px;
+    height: 132px;
+    bottom: calc(10px + var(--safe-bottom));
+  }
+  #touch-buttons button {
+    width: 42px;
+    height: 42px;
+    font-size: 18px;
+  }
+  #btn-interact {
+    width: 60px !important;
+    height: 60px !important;
+    font-size: 26px !important;
+  }
+  #btn-run {
+    right: 70px;
+  }
+  #btn-jump {
+    right: 60px;
+    bottom: 54px;
+  }
+  #btn-ride {
+    right: 8px;
+    bottom: 72px;
+  }
+  body.touch #social {
+    top: auto;
+    bottom: calc(10px + var(--safe-bottom));
+    left: calc(150px + var(--safe-left));
+    flex-direction: row;
+  }
+  #social button {
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+  }
+  body.touch #chat {
+    bottom: calc(48px + var(--safe-bottom));
+    width: 40vw;
+  }
+  body.touch #chat-log {
+    max-height: 70px;
+  }
+  #panel {
+    padding: 6px;
+  }
+  #panel-card {
+    max-height: 96vh;
+    border-radius: 18px;
+    border-width: 3px;
+  }
+  #panel-card header {
+    padding: 4px 12px;
+  }
+  #panel-card h2 {
+    font-size: 17px;
+  }
+  #panel-close {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+  #panel-body {
+    padding: 8px 12px 10px;
+    font-size: 13px;
+  }
+}
+
+/* Aviso para girar el teléfono (el juego es horizontal). */
+#rotate {
+  display: none;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  body:not(.allow-portrait) #rotate {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 24px;
+    text-align: center;
+    background: linear-gradient(160deg, #3d8bff, #7b5cff);
+    color: #fff;
+  }
+}
+
+#rotate .phone {
+  font-size: 64px;
+  animation: rotate-hint 2s ease-in-out infinite;
+}
+
+#rotate b {
+  font-size: 24px;
+}
+
+#rotate p {
+  margin: 0;
+  max-width: 300px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+#rotate button {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+@keyframes rotate-hint {
+  0%,
+  30% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
 }

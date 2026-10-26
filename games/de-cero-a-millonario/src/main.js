@@ -94,11 +94,12 @@ function freshState() {
     pickup: [],
     deliveries: [],
     warehouse: {},
-    pendingPickup: [],
     tutorial: {},
     lastReport: null,
   };
 }
+
+const PORTRAIT_KEY = "de-cero-a-millonario-portrait";
 
 function storage(fn, fallback = null) {
   try {
@@ -118,8 +119,9 @@ class Game {
     });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    // Neutral conserva la saturación (ACES apagaba los colores vivos).
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 330);
     this.setupLights();
@@ -163,6 +165,7 @@ class Game {
     this.mode = "title";
     this._agents = [];
     window.addEventListener("resize", () => this.resize());
+    this.setupLandscape();
     this.applySettings();
     this.resize();
     this.bindTitle();
@@ -288,6 +291,7 @@ class Game {
       this.businesses[id] = b;
     }
     if (!cp.blob) this.businesses.tienda.seedStarterStock();
+    this.normalizeCarry();
     for (const m of res.members) this.online.addRemotePlot(m);
     this.online.reconcile(cp.ledger);
     this.restorePlayer(blob.player);
@@ -437,9 +441,9 @@ class Game {
   }
 
   setupLights() {
-    this.hemi = new THREE.HemisphereLight(0xcfeaff, 0xb9d98a, 1.3);
+    this.hemi = new THREE.HemisphereLight(0xcfeaff, 0xa8d878, 1.0);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
+    this.sun = new THREE.DirectionalLight(0xfff1d6, 3.0);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     const s = this.sun.shadow.camera;
@@ -464,6 +468,31 @@ class Game {
     this.camera.fov = w < h ? 70 : 55;
     this.camera.updateProjectionMatrix();
     this.wardrobe?.resize();
+  }
+
+  // El juego es horizontal: en móvil se intenta bloquear la orientación al
+  // primer toque (solo funciona a pantalla completa y si el navegador lo
+  // permite); si no, un aviso en vertical pide girar el teléfono.
+  setupLandscape() {
+    if (storage(() => localStorage.getItem(PORTRAIT_KEY)) === "1")
+      document.body.classList.add("allow-portrait");
+    document.getElementById("rotate-skip").onclick = () => {
+      document.body.classList.add("allow-portrait");
+      storage(() => localStorage.setItem(PORTRAIT_KEY, "1"));
+    };
+    if (!this.input.isTouch) return;
+    const lock = async () => {
+      try {
+        if (!document.fullscreenElement)
+          await document.documentElement.requestFullscreen?.({
+            navigationUI: "hide",
+          });
+        await screen.orientation?.lock?.("landscape");
+      } catch {
+        // Sin permiso (p. ej. dentro de otra app): queda el aviso de girar.
+      }
+    };
+    window.addEventListener("pointerdown", lock, { once: true });
   }
 
   // ---------- Ajustes ----------
@@ -712,8 +741,8 @@ class Game {
     return this.stageIndex() >= 3 ? 0.85 : 1;
   }
 
-  // Compra al proveedor. order: { producto: cajas }. deliverTo: id de un
-  // negocio para que lo lleve la furgoneta propia o el camión de reparto.
+  // Paga en la CAJA las cajas sin pagar del carro (order: producto → cajas).
+  // deliverTo: negocio al que las lleva el camión; si no, salen contigo.
   async buySupplies(order, deliverTo) {
     const stage = this.stageIndex();
     let cost = 0;
@@ -733,6 +762,9 @@ class Game {
       units += per * n;
     }
     if (!boxes) return false;
+    // Solo se paga lo que de verdad llevas sin pagar.
+    for (const [p, n] of Object.entries(order))
+      if (n > this.unpaid().filter((b) => b.product === p).length) return false;
     for (const [p, n] of Object.entries(order)) {
       if (n > this.warehouse.available(p)) {
         this.ui.toast(
@@ -755,18 +787,6 @@ class Game {
         this.audio.sfx("error");
         return false;
       }
-    } else if (
-      this.state.pickup.length +
-        this.state.pendingPickup.reduce((a, o) => a + o.items.length, 0) +
-        boxes >
-      18
-    ) {
-      this.ui.toast(
-        "La zona de recogida está llena: recoge tus cajas primero",
-        "bad",
-      );
-      this.audio.sfx("error");
-      return false;
     }
     cost = Math.round(cost * 100) / 100;
     if (this.online) {
@@ -781,14 +801,25 @@ class Game {
       cost = r.cost;
       this.audio.sfx("buy");
     } else if (!this.spend(cost)) return false;
+    // Las cajas pagadas dejan de estar «sin pagar»; si van en camión,
+    // salen del carro.
     const items = [];
     for (const [p, n] of Object.entries(order)) {
       if (!n) continue;
       const per = PRODUCTS[p].boxUnits ?? BOX_UNITS;
-      for (let i = 0; i < n; i++) items.push({ product: p, units: per });
+      let left = n;
+      for (const box of this.state.carried)
+        if (left > 0 && box.unpaid && box.product === p) {
+          delete box.unpaid;
+          items.push(box);
+          left--;
+        }
       this.state.stats.unitsBought += per * n;
       this.warehouse.take(p, n);
     }
+    if (target)
+      this.state.carried = this.state.carried.filter((b) => !items.includes(b));
+    this.onCarryChanged();
     this.state.stats.expenses += cost;
     this.ui.floatMoney(-cost);
     if (target && van) {
@@ -803,9 +834,8 @@ class Game {
       this.dispatchTruck(delivery);
       this.ui.toast(`🚚 El camión va camino de ${target.name}`, "event");
     } else {
-      this.warehouse.queueOrder(items);
       this.ui.toast(
-        `Pedido pagado (−$${cost.toFixed(2)}). Se está preparando en la zona B · RECOGER PEDIDO`,
+        `🧾 Pagado (−$${cost.toFixed(2)}). ¡Ya puedes salir con tu compra!`,
         "good",
       );
     }
@@ -941,6 +971,84 @@ class Game {
     this.audio.sfx(on ? "jump" : "land");
   }
 
+  // ---------- Autoservicio del Mayorista ----------
+
+  unpaid() {
+    return this.state.carried.filter((b) => b.unpaid);
+  }
+
+  // Cajas de un producto que aún quedan en la estantería (sin contar las
+  // que ya llevas en el carro sin pagar).
+  shelfStock(product) {
+    const taken = this.unpaid().filter((b) => b.product === product).length;
+    return Math.max(0, this.warehouse.available(product) - taken);
+  }
+
+  // Coge una caja de la estantería: va al carro (o a los brazos) sin pagar.
+  takeFromShelf(product) {
+    const p = PRODUCTS[product];
+    if ((p.stage ?? 0) > this.stageIndex()) return false;
+    if (this.shelfStock(product) <= 0) {
+      this.ui.toast(`No quedan cajas de ${p.name}`, "bad");
+      return false;
+    }
+    if (this.state.carried.length >= this.carryCapacity()) {
+      this.ui.toast(
+        this.state.cart
+          ? `El carro está lleno (${CART_CAPACITY} cajas): ve a pagar`
+          : "Manos llenas · toma un carro en la entrada para llevar más",
+        "bad",
+      );
+      this.audio.sfx("error");
+      return false;
+    }
+    this.state.carried.push({
+      product,
+      units: p.boxUnits ?? BOX_UNITS,
+      unpaid: true,
+    });
+    this.warehouse.restock(product);
+    this.player.char.playAction("pickup", 0.4);
+    this.audio.sfx("pickup");
+    this.onCarryChanged();
+    return true;
+  }
+
+  // Devuelve a la estantería una caja sin pagar de ese producto.
+  returnToShelf(product) {
+    const list = this.state.carried;
+    for (let i = list.length - 1; i >= 0; i--)
+      if (list[i].unpaid && list[i].product === product) {
+        list.splice(i, 1);
+        this.audio.sfx("place");
+        this.onCarryChanged();
+        return true;
+      }
+    return false;
+  }
+
+  // No se puede salir del Mayorista con cajas sin pagar: las antenas de
+  // la puerta suenan y el jugador vuelve hacia dentro.
+  checkExitGate() {
+    const b = this.world.buildings.mayorista;
+    const p = this.player.pos;
+    if (!b.contains(p.x, p.z) || !this.state.carried.some((x) => x.unpaid))
+      return;
+    const local = b.toLocal(p.x, p.z);
+    const limit = b.d / 2 - 1.4;
+    if (local.z <= limit) return;
+    const back = b.toWorld(local.x, limit);
+    p.x = back.x;
+    p.z = back.z;
+    this.player.vel.x = this.player.vel.z = 0;
+    this.world.alarm = 1.2;
+    if (this.elapsed - (this.alarmToastAt ?? -9) > 2.5) {
+      this.alarmToastAt = this.elapsed;
+      this.ui.toast("🛑 Paga en la CAJA antes de salir", "bad");
+      this.audio.sfx("error");
+    }
+  }
+
   toggleCart() {
     if (this.state.cart && this.state.carried.length) return;
     this.state.cart = !this.state.cart;
@@ -963,32 +1071,29 @@ class Game {
         x: w.supplierCounter.x,
         z: w.supplierCounter.z,
         radius: 2.6,
-        label: () => ({ text: "🛒 CAJA · COMPRAR MERCADERÍA", enabled: true }),
-        action: () => this.ui.openSupplier("todos"),
+        label: () => {
+          const n = this.unpaid().length;
+          return n
+            ? { text: `🧾 CAJA · Pagar ${n} caja/s`, enabled: true }
+            : {
+                text: "CAJA · Elige primero tus cajas en las estanterías",
+                enabled: true,
+              };
+        },
+        action: () => this.ui.openCheckout(),
       },
-      ...w.orderTerminals.map((t) => ({
-        x: t.x,
-        z: t.z,
-        radius: 1.3,
-        label: () => ({
-          text: "Terminal de pedidos · COMPRAR MERCADERÍA",
-          enabled: true,
-        }),
-        action: () => this.ui.openSupplier(),
-      })),
-      // Las estanterías del fondo enseñan el género: desde ellas se abre
-      // el pedido de esa categoría (se paga igual, como en la caja).
+      // Estanterías: aquí se eligen las cajas (se pagan después en la CAJA).
       ...w.warehouseSpots.racks.map((r, i) => {
         const cat = w.warehouseSpots.rackCats[i];
         return {
           x: r.x,
           z: r.z,
-          radius: 1.6,
+          radius: 1.7,
           label: () => ({
-            text: `🛒 Pedir ${CATEGORIES[cat].name} · se recoge en la zona B`,
+            text: `🛒 Estantería de ${CATEGORIES[cat].name} · elegir cajas`,
             enabled: true,
           }),
-          action: () => this.ui.openSupplier(cat),
+          action: () => this.ui.openShelf(cat),
         };
       }),
       {
@@ -1007,38 +1112,19 @@ class Game {
         },
         action: () => this.toggleCart(),
       },
+      // Palé con cajas tuyas ya pagadas que quedaron pendientes (partidas
+      // antiguas o género que no cupo en tu almacén en el modo online).
       {
         x: w.pickupPoint.x,
         z: w.pickupPoint.z,
         radius: 2.0,
         label: () => {
-          const next = this.state.pickup[0];
-          const wait = this.warehouse.pendingSeconds();
+          if (!this.state.pickup.length) return null;
           const room = this.carryCapacity() - this.state.carried.length;
-          if (!next && wait > 0)
-            return {
-              text: `Tu pedido se está preparando… (${Math.ceil(wait)} s)`,
-              enabled: false,
-            };
-          if (!next)
-            return {
-              text: "No tienes pedidos para recoger · compra en la CAJA",
-              enabled: false,
-            };
           if (room <= 0)
-            return {
-              text: this.state.cart
-                ? `Carro lleno (${CART_CAPACITY} cajas)`
-                : `Manos llenas (${this.carryCapacity()} caja/s máx.) · toma un carro en la entrada`,
-              enabled: false,
-            };
-          if (this.state.cart)
-            return {
-              text: `Cargar ${Math.min(room, this.state.pickup.length)} caja/s en el carro`,
-              enabled: true,
-            };
+            return { text: "Manos llenas · toma un carro", enabled: false };
           return {
-            text: `Recoger caja de ${PRODUCTS[next.product].name} (${this.state.pickup.length} en espera)`,
+            text: `Recoger tus cajas guardadas (${this.state.pickup.length})`,
             enabled: true,
           };
         },
@@ -1050,10 +1136,6 @@ class Game {
           this.player.char.playAction("pickup", 0.5);
           this.audio.sfx("pickup");
           this.onCarryChanged();
-          if (!this.state.cart && this.state.pickup.length)
-            this.ui.toast(
-              "💡 Con un carro de la entrada llevas hasta 10 cajas a la vez",
-            );
         },
       },
       {
@@ -1216,8 +1298,9 @@ class Game {
       }
     }
     this.wasInWarehouse = inWarehouse;
-    if (!this.state.carried.length) this.carryHintShown = false;
-    else if (inWarehouse && !this.carryHintShown) {
+    const paid = this.state.carried.filter((b) => !b.unpaid).length;
+    if (!paid) this.carryHintShown = false;
+    else if (inWarehouse && !this.carryHintShown && !this.unpaid().length) {
       this.carryHintShown = true;
       this.ui.toast(
         "📦 LLEVA LA MERCADERÍA A TU TIENDA · sigue la ruta",
@@ -1369,6 +1452,7 @@ class Game {
     const input = this.input;
     input.enabled = true;
     this.player.update(dt, input, this.cameraRig.yaw);
+    this.checkExitGate();
     const inside = Object.values(this.world.buildings).find((b) =>
       b.contains(this.player.pos.x, this.player.pos.z),
     );
@@ -1488,13 +1572,13 @@ class Game {
       focus.z + 18,
     );
     this.sun.target.position.set(focus.x, 0, focus.z);
-    this.sun.intensity = 2.6 * (1 - night * 0.65);
+    this.sun.intensity = 3.0 * (1 - night * 0.65);
     this.sun.color.setHSL(
       0.09 - dusk * 0.04,
       0.6 + dusk * 0.35,
       0.9 - night * 0.2,
     );
-    this.hemi.intensity = 1.3 - night * 0.45;
+    this.hemi.intensity = 1.0 - night * 0.3;
     const horizon = this.scenery.update(
       this.camera,
       dusk * 0.7,
@@ -1600,6 +1684,7 @@ class Game {
       stats: { ...fresh.stats, ...data.state.stats },
     };
     if (data.version === 1) this.migrateV1(data.state);
+    this.normalizeCarry();
     this.state.wardrobe = [
       ...new Set([...STARTER_ITEMS, ...(this.state.wardrobe ?? [])]),
     ];
@@ -1614,6 +1699,16 @@ class Game {
     this.player.char.setLook(this.state.look);
     this.onCarryChanged();
     return true;
+  }
+
+  // Al cargar: lo que no se pagó vuelve a las estanterías del Mayorista, y
+  // los pedidos del sistema anterior (preparándose en la zona B) pasan al
+  // palé para recogerlos.
+  normalizeCarry() {
+    const s = this.state;
+    s.carried = s.carried.filter((b) => !b.unpaid);
+    for (const o of s.pendingPickup ?? []) s.pickup.push(...o.items);
+    delete s.pendingPickup;
   }
 
   // Solo se restaura la posición si es un sitio válido (no dentro de un

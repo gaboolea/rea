@@ -67,7 +67,7 @@ export class World {
     const grass = mesh(
       box(gw, 0.2, gd),
       new THREE.MeshStandardMaterial({
-        map: surfaceTexture("grass", "#86d063", [gw / 6, gd / 6]),
+        map: surfaceTexture("grass", "#64cc3e", [gw / 6, gd / 6]),
         roughness: 1,
       }),
       0,
@@ -339,8 +339,9 @@ export class World {
     });
   }
 
-  // Mayorista con tres zonas señalizadas: A Pedidos, B Recogida y
-  // C Carga y salida, más pasillos de estanterías por categoría.
+  // Mayorista de autoservicio: carros en la entrada, estanterías por
+  // categoría donde se eligen las cajas, CAJA para pagar y salida con
+  // antenas antirrobo (no se sale sin pagar).
   buildWarehouse() {
     const b = this.buildings.mayorista;
     const add = (obj, lx, lz, rot = 0, y) =>
@@ -362,8 +363,9 @@ export class World {
     // Pasillo central con más estanterías y palés.
     add(decor.industrialRack([0xff4d4d, 0xffc22e, 0x3d8bff], 4, 2), -6.5, -2.6);
     b.addLocalCollider(-6.5, -2.6, 4.2, 1.2);
-    add(decor.industrialRack([0x5bd47a, 0xff8a3d, 0x7b6cff], 4, 2), -0.5, -2.6);
+    add(decor.industrialRack([0x8b5a3c, 0xffd1dc, 0xf2a531], 4, 2), -0.5, -2.6);
     b.addLocalCollider(-0.5, -2.6, 4.2, 1.2);
+    add(decor.hangingSign("CAFETERÍA", "#8b5a3c", 3.2), -0.5, -1.7, 0, 3.0);
     for (const [lx, lz] of [
       [5, -2.6],
       [7.6, -2.6],
@@ -377,11 +379,11 @@ export class World {
     }
     add(decor.forklift(), 10.3, 0.8, -Math.PI / 2);
     b.addLocalCollider(10.3, 0.8, 2.6, 1.4);
-    // Zona A: la CAJA. Grande, iluminada y de frente a la entrada, con un
-    // camino de flechas amarillas desde la puerta: aquí se compra todo.
+    // La CAJA: grande e iluminada junto a la salida. Aquí se paga lo que
+    // se ha cogido de las estanterías.
     add(decor.checkoutDesk(6.2), 6, 4.2);
     b.addLocalCollider(6, 4.2, 6.2, 1.1);
-    add(decor.archSign("🛒 CAJA · COMPRA AQUÍ", 0x3fbf5f, 7), 6, 4.2);
+    add(decor.archSign("🛒 CAJA · PAGA AQUÍ", 0x3fbf5f, 7), 6, 4.2);
     add(decor.terminal(), 4.2, 4.2, 0, FLOOR_Y + 1.08);
     add(decor.floorZone(7, 3.2, 0x3fbf5f), 6, 6.1);
     this.cajaRing = decor.pulseRing(0xffd23f, 1.2);
@@ -396,21 +398,20 @@ export class World {
       return npc;
     });
     this.supplierCounter = b.toWorld(6, 5.4);
-    add(decor.terminal(), 10.8, 6.4);
-    b.addLocalCollider(10.8, 6.4, 0.4, 0.4);
-    this.orderTerminals = [b.toWorld(10.8, 7.1)];
     const arrow = (color, lx, lz, tx, tz) =>
       add(decor.floorArrow(color), lx, lz, Math.atan2(-(tx - lx), -(tz - lz)));
+    // Flechas amarillas: de la puerta a las estanterías.
     for (const [lx, lz] of [
-      [1.0, 8.4],
-      [2.2, 7.6],
-      [3.5, 6.9],
+      [2.4, 7.6],
+      [2.4, 5.6],
+      [2.4, 1.0],
+      [2.4, -1.2],
     ])
-      arrow(0xffd23f, lx, lz, 6, 5.6);
+      arrow(0xffd23f, lx, lz, lx, lz - 1);
     // Cartel de bienvenida sobre la entrada (se ve nada más entrar).
     add(
       decor.infoBoard(
-        "1 · PIDE Y PAGA EN LA CAJA ➜\n2 · RECOGE TUS CAJAS EN LA ZONA B\n3 · LLÉVALAS A TU TIENDA (¡usa un carro!)",
+        "1 · TOMA UN CARRO (a la izquierda)\n2 · ELIGE TUS CAJAS EN LAS ESTANTERÍAS\n3 · PAGA EN LA CAJA Y SAL CON TU COMPRA",
         3.8,
         1.1,
       ),
@@ -419,22 +420,17 @@ export class World {
       Math.PI,
       2.95,
     );
-    // Zona B: Recogida (las cajas compradas aparecen en este palé).
+    // Zona de reposición: los operarios apilan aquí las cajas que traen
+    // del almacén. El palé también guarda cajas tuyas pendientes (de
+    // partidas antiguas o que no cupieron en tu almacén).
     add(decor.floorZone(5.6, 3.6, 0xff8a3d), -7, 5.2);
-    add(
-      decor.hangingSign("B · RECOGER PEDIDO", "#ff8a3d", 4.6),
-      -7,
-      4.2,
-      0,
-      3.05,
-    );
+    add(decor.hangingSign("REPOSICIÓN", "#ff8a3d", 3.6), -7, 4.2, 0, 3.05);
     this.pickupPile = new props.StoragePile(12);
     this.pickupPile.group.children.at(-1).visible = false;
     add(this.pickupPile.group, -7, 4.6);
     b.addLocalCollider(-7, 4.6, 2.0, 1.4);
     this.pickupPoint = b.toWorld(-7, 6.1);
     this.pickupPallet = b.toWorld(-7, 4.6);
-    for (const lx of [2.2, 0.2, -1.8, -3.8]) arrow(0xff8a3d, lx, 3.4, -7, 3.4);
     // Carros de carga junto a la entrada.
     add(decor.cartCorral(3), -5.0, 8.6, Math.PI / 2);
     b.addLocalCollider(-5.0, 7.65, 1.0, 2.9);
@@ -453,14 +449,42 @@ export class World {
     add(decor.handTruck(), 3.6, 8.6, Math.PI);
     b.addLocalCollider(3.6, 8.6, 0.7, 0.6);
     this.warehouseExit = b.doorPoint(-1.5);
+    // Antenas antirrobo a los lados de la puerta: se ponen rojas si
+    // intentas salir sin pagar.
+    this.alarmMat = new THREE.MeshStandardMaterial({
+      color: 0xe8edf2,
+      emissive: 0xff2d2d,
+      emissiveIntensity: 0,
+      roughness: 0.4,
+    });
+    for (const s of [-1, 1]) {
+      const gate = new THREE.Group();
+      gate.add(
+        mesh(roundedBox(0.16, 1.6, 0.6, 0.06), this.alarmMat, 0, 0.8, 0),
+      );
+      gate.add(mesh(cylinder(0.12, 0.12, 0.08, 12), mat(0x9aa7b0), 0, 0.04, 0));
+      add(gate, s * 2.15, 8.5);
+      b.addLocalCollider(s * 2.15, 8.5, 0.2, 0.6);
+    }
+    this.alarm = 0;
     // Iluminación de almacén.
     for (const lx of [-8, -2.5, 2.5, 8])
       for (const lz of [-5.2, 1.5])
         add(decor.pendantLamp(0x8aa0ad), lx, lz, 0, 3.4);
     // Puntos de trabajo para los operarios que mueven cajas.
     this.warehouseSpots = {
-      racks: cats.map((_, i) => b.toWorld(-9.6 + i * 4.8, -6.8)),
-      rackCats: ["bebidas", "alimentos", "limpieza", "snacks", "frescos"],
+      racks: [
+        ...cats.map((_, i) => b.toWorld(-9.6 + i * 4.8, -6.8)),
+        b.toWorld(-0.5, -1.5),
+      ],
+      rackCats: [
+        "bebidas",
+        "alimentos",
+        "limpieza",
+        "snacks",
+        "frescos",
+        "cafeteria",
+      ],
       pallet: b.toWorld(-7, 3.2),
       counter: b.toWorld(6, 2.9),
     };
@@ -1161,6 +1185,11 @@ export class World {
     this.traffic.update(dt, actors);
     this.animateAmbient(dt, performance.now() / 1000);
     for (const npc of this.warehouseClerks) npc.animate(dt, 0);
+    if (this.alarm > 0) {
+      this.alarm = Math.max(0, this.alarm - dt);
+      this.alarmMat.emissiveIntensity =
+        this.alarm > 0 ? 0.5 + Math.sin(this.alarm * 20) * 0.5 : 0;
+    }
     const pulse = (performance.now() / 900) % 1;
     this.cajaRing.scale.setScalar(0.8 + pulse * 0.5);
     this.cajaRing.userData.ring.material.opacity = 0.8 * (1 - pulse);
