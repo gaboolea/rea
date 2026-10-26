@@ -1,5 +1,6 @@
-// Personajes de juguete: cabeza grande sin rasgos, cuerpo redondeado y
-// extremidades cortas. La ropa y los accesorios son geometría 3D real que
+// Personajes de juguete tipo gominola: un cuerpo de una pieza en forma de
+// judía, cabeza redonda fundida con él y brazos y piernas cortos y gruesos
+// que salen del propio cuerpo. Rebotan como gelatina al moverse. La ropa y los accesorios son geometría 3D real que
 // se monta sobre las mismas articulaciones, así se mueve con el cuerpo.
 // Animación procedural de reposo, caminar, correr, cargar, saludar, etc.
 import * as THREE from "three";
@@ -28,7 +29,35 @@ const torus = (r, t) =>
 const cone = (r, h, seg = 12) =>
   geo(`cone${r}|${h}|${seg}`, () => new THREE.ConeGeometry(r, h, seg));
 
-const cloth = (c) => mat(c, { roughness: 0.6 });
+// Acabado brillante y suave, como de gelatina.
+// Silueta del cuerpo (gominola): cápsula algo más ancha abajo. Se tornea
+// por tramos, así camiseta y pantalón comparten superficie y la costura de
+// la cintura queda limpia.
+const BEAN_R = 0.33;
+const BEAN_L = 0.15;
+const WAIST = 0.02;
+function beanRadius(y) {
+  const a = Math.abs(y);
+  const r = a <= BEAN_L ? BEAN_R : Math.sqrt(BEAN_R ** 2 - (a - BEAN_L) ** 2);
+  return r * (1 - y * 0.08);
+}
+const bean = (from, to) =>
+  geo(`bean${from}|${to}`, () => {
+    const top = BEAN_L + BEAN_R;
+    const pts = [];
+    const n = 18;
+    for (let i = 0; i <= n; i++) {
+      const y = from + ((to - from) * i) / n;
+      // Polos cerrados: radio 0 en los extremos del cuerpo.
+      const r = Math.abs(Math.abs(y) - top) < 1e-6 ? 0 : beanRadius(y);
+      pts.push(new THREE.Vector2(r, y));
+    }
+    return new THREE.LatheGeometry(pts, 28);
+  });
+
+const cloth = (c) => mat(c, { roughness: 0.38 });
+// Tamaño general respecto al diseño original (un poco más pequeños).
+const BODY_SCALE = 0.9;
 const shiny = (c) => mat(c, { roughness: 0.25, metalness: 0.55 });
 const lighten = (c, amount) =>
   new THREE.Color(c).offsetHSL(0, 0, amount).getHex();
@@ -38,18 +67,20 @@ export class ToyCharacter {
     this.root = new THREE.Group();
     this.rig = new THREE.Group();
     this.root.add(this.rig);
-    this.rig.scale.setScalar(scale);
-    this.baseScale = scale;
+    this.baseScale = scale * BODY_SCALE;
+    this.rig.scale.setScalar(this.baseScale);
     this.phase = Math.random() * 10;
     this.speed = 0;
     this.action = null; // { kind, t, duration }
     this.apron = apron;
-    this.squash = 0;
+    // Muelle de gelatina: deformación actual y su velocidad.
+    this.jelly = 0;
+    this.jellyV = 0;
     this.buildSkeleton();
     this.setLook(look);
     this.bubble = new THREE.Sprite(bubbleMaterial("?"));
     this.bubble.scale.set(0.8, 0.8, 0.8);
-    this.bubble.position.set(0.35, 2.35, 0);
+    this.bubble.position.set(0.35, 2.0, 0);
     this.bubble.visible = false;
     this.bubble.renderOrder = 10;
     this.root.add(this.bubble);
@@ -59,22 +90,25 @@ export class ToyCharacter {
   // Articulaciones vacías; setLook() las rellena con cuerpo y ropa.
   buildSkeleton() {
     this.torso = new THREE.Group();
-    this.torso.position.set(0, 0.78, 0);
-    this.torso.scale.set(1, 1, 0.85);
+    this.torso.position.set(0, 0.74, 0);
+    this.torso.scale.set(1, 1, 0.88);
     this.rig.add(this.torso);
+    // Cabeza más pequeña (escala de todo lo que lleva: gorros, lentes) y
+    // hundida en el cuerpo, sin cuello: se ve de una sola pieza.
     this.headPivot = new THREE.Group();
-    this.headPivot.position.set(0, 1.18, 0);
+    this.headPivot.position.set(0, 1.16, 0);
+    this.headPivot.scale.setScalar(0.8);
     this.rig.add(this.headPivot);
     this.legs = [-1, 1].map((side) => {
       const pivot = new THREE.Group();
-      pivot.position.set(side * 0.15, 0.46, 0);
+      pivot.position.set(side * 0.14, 0.455, 0);
       pivot.userData.side = side;
       this.rig.add(pivot);
       return pivot;
     });
     this.arms = [-1, 1].map((side) => {
       const pivot = new THREE.Group();
-      pivot.position.set(side * 0.34, 0.98, 0);
+      pivot.position.set(side * 0.28, 0.94, 0);
       pivot.userData.side = side;
       this.rig.add(pivot);
       return pivot;
@@ -102,7 +136,7 @@ export class ToyCharacter {
       part.clear();
     const skin = mat(
       SKINS.find((s) => s.id === look.skin)?.color ?? SKINS[0].color,
-      { roughness: 0.35 },
+      { roughness: 0.25 },
     );
     this.skinMat = skin;
     const head = mesh(sphere(0.42, 24), skin, 0, 0.32, 0);
@@ -124,6 +158,18 @@ export class ToyCharacter {
           0.29,
         ),
       );
+    // Los detalles de delante y de la espalda (corbatas, solapas, mochilas)
+    // se apoyan sobre la curva del cuerpo a su altura, sin flotar ni hundirse.
+    for (const c of this.torso.children) {
+      const z = c.position.z;
+      if (Math.abs(z) < 0.15 || c.geometry?.type === "TorusGeometry") continue;
+      c.geometry.computeBoundingBox();
+      const half =
+        (c.geometry.boundingBox.max.z - c.geometry.boundingBox.min.z) / 2;
+      c.position.z =
+        Math.sign(z) *
+        (beanRadius(c.position.y) * 0.88 + half * (z < 0 ? 0.7 : 0.4));
+    }
     // Solo cabeza y tronco proyectan sombra: los detalles no se notan en
     // ella y así cada personaje cuesta muchas menos pasadas de dibujo.
     this.rig.traverse((o) => {
@@ -138,19 +184,22 @@ export class ToyCharacter {
     const gold = item.id === "traje_oro";
     const color = gold ? COLORS.oro : (COLORS[item.color] ?? COLORS.turquesa);
     const m = gold ? shiny(color) : cloth(color);
-    t.add(mesh(capsule(0.3, 0.32), m, 0, 0, 0));
+    // Cuerpo de una pieza en forma de judía.
+    t.add(mesh(bean(WAIST, BEAN_L + BEAN_R), m, 0, 0, 0));
+    // Brazos cortos y gruesos: nacen dentro del cuerpo (no quedan pegados
+    // por fuera) y acaban en una mano redonda.
     const longSleeves = item.id !== "camiseta";
     for (const arm of this.arms) {
       const side = arm.userData.side;
       if (longSleeves)
-        arm.add(mesh(capsule(0.095, 0.22), m, side * 0.04, -0.2, 0));
+        arm.add(mesh(capsule(0.11, 0.12), m, side * 0.05, -0.12, 0));
       else {
-        arm.add(mesh(capsule(0.085, 0.22), skin, side * 0.04, -0.2, 0));
-        arm.add(
-          mesh(cylinder(0.115, 0.11, 0.16, 12), m, side * 0.02, -0.06, 0),
-        );
+        arm.add(mesh(capsule(0.1, 0.12), skin, side * 0.05, -0.13, 0));
+        const sleeve = mesh(sphere(0.13, 14), m, side * 0.03, -0.04, 0);
+        sleeve.scale.y = 0.85;
+        arm.add(sleeve);
       }
-      arm.add(mesh(sphere(0.1, 12), skin, side * 0.05, -0.36, 0));
+      arm.add(mesh(sphere(0.115, 14), skin, side * 0.07, -0.25, 0));
     }
     const trim = cloth(lighten(color, 0.12));
     if (item.id === "camiseta") {
@@ -182,14 +231,20 @@ export class ToyCharacter {
         );
     } else if (item.id === "chaqueta") {
       t.add(
-        mesh(roundedBox(0.17, 0.48, 0.05, 0.02), cloth(0xf7f7f2), 0, 0.1, 0.27),
+        mesh(
+          roundedBox(0.17, 0.34, 0.04, 0.02),
+          cloth(0xf7f7f2),
+          0,
+          0.08,
+          0.27,
+        ),
       );
       for (const s of [-1, 1]) {
         const lapel = mesh(
           roundedBox(0.09, 0.22, 0.05, 0.02),
           trim,
           s * 0.1,
-          0.32,
+          0.24,
           0.25,
         );
         lapel.rotation.z = s * 0.45;
@@ -200,10 +255,10 @@ export class ToyCharacter {
     } else if (item.id === "traje" || gold) {
       t.add(
         mesh(
-          roundedBox(0.18, 0.44, 0.05, 0.02),
+          roundedBox(0.18, 0.32, 0.04, 0.02),
           cloth(0xffffff),
           0,
-          0.14,
+          0.12,
           0.27,
         ),
       );
@@ -228,26 +283,26 @@ export class ToyCharacter {
     const denim = item.id === "vaqueros";
     const color = denim ? 0x4a6fa5 : (COLORS[item.color] ?? COLORS.marino);
     const m = cloth(color);
-    const hips = mesh(sphere(0.3, 20), m, 0, -0.26, 0);
-    hips.scale.set(1.01, 0.6, 1.01);
-    this.torso.add(hips);
+    // Mitad baja del cuerpo con el color del pantalón.
+    this.torso.add(mesh(bean(-BEAN_L - BEAN_R, WAIST), m, 0, 0, 0));
     if (denim || item.id === "pantalon_traje") {
       const belt = mesh(
-        torus(0.29, 0.025),
+        torus(beanRadius(WAIST), 0.025),
         mat(denim ? 0x6b4226 : 0x222222),
         0,
-        -0.16,
+        WAIST,
         0,
       );
       belt.rotation.x = Math.PI / 2;
       this.torso.add(belt);
     }
     for (const leg of this.legs) {
+      // Piernas cortas y gruesas que salen de debajo del cuerpo.
       if (item.id === "shorts") {
-        leg.add(mesh(capsule(0.11, 0.18), skin, 0, -0.22, 0));
-        leg.add(mesh(cylinder(0.145, 0.14, 0.18, 12), m, 0, -0.06, 0));
+        leg.add(mesh(capsule(0.12, 0.12), skin, 0, -0.22, 0));
+        leg.add(mesh(sphere(0.15, 14), m, 0, -0.1, 0));
       } else {
-        leg.add(mesh(capsule(0.125, 0.18), m, 0, -0.22, 0));
+        leg.add(mesh(capsule(0.135, 0.12), m, 0, -0.21, 0));
       }
     }
   }
@@ -501,11 +556,11 @@ export class ToyCharacter {
     for (const s of [-1, 1])
       t.add(
         mesh(
-          roundedBox(0.07, 0.5, 0.04, 0.02),
+          roundedBox(0.07, 0.34, 0.04, 0.02),
           mat(0x3e4a59),
           s * 0.15,
-          0.08,
-          0.28,
+          0.16,
+          0.27,
         ),
       );
   }
@@ -558,7 +613,8 @@ export class ToyCharacter {
     this.carryGroup.clear();
     if (cart && !this.cart) {
       this.cart = cargoCart();
-      this.cart.position.set(0, 0, 0.98);
+      this.cart.position.set(0, 0, 0.9);
+      this.cart.scale.setScalar(0.85);
       this.cartBoxes = new THREE.Group();
       this.cart.add(this.cartBoxes);
       this.root.add(this.cart);
@@ -596,7 +652,7 @@ export class ToyCharacter {
   }
 
   land(strength = 1) {
-    this.squash = Math.min(1, strength);
+    this.jellyV -= Math.min(1, strength) * 2.4;
   }
 
   think(icon, color, seconds = 2.5) {
@@ -657,20 +713,27 @@ export class ToyCharacter {
         this.arms[1].rotation.z = 0.9;
       }
     }
-    // Aplastamiento al aterrizar.
-    if (this.squash > 0) {
-      this.squash = Math.max(0, this.squash - dt * 6);
-      const k = Math.sin(this.squash * Math.PI) * 0.12;
-      this.rig.scale.set(
-        this.baseScale * (1 + k),
-        this.baseScale * (1 - k),
-        this.baseScale * (1 + k),
-      );
-    }
+    // Gelatina: un muelle amortiguado en la escala. Los pasos, los cambios
+    // de velocidad y los aterrizajes le dan pequeños empujones.
+    if (this.stepped) this.jellyV -= 0.35 * Math.min(1, s / 4);
+    this.jellyV += (s - (this.prevSpeed ?? s)) * 0.12;
+    this.prevSpeed = s;
+    this.jellyV += (-this.jelly * 170 - this.jellyV * 8) * Math.min(dt, 0.05);
+    this.jelly = Math.max(
+      -0.2,
+      Math.min(0.2, this.jelly + this.jellyV * Math.min(dt, 0.05)),
+    );
+    const breathe = moving ? 0 : Math.sin(this.phase * 1.3) * 0.012;
+    const k = this.jelly + breathe;
+    this.rig.scale.set(
+      this.baseScale * (1 - k * 0.5),
+      this.baseScale * (1 + k),
+      this.baseScale * (1 - k * 0.5),
+    );
     this.applyAction(dt);
     if (this.bubbleTimer > 0) {
       this.bubbleTimer -= dt;
-      this.bubble.position.y = 2.35 + Math.sin(this.phase * 0.7) * 0.05;
+      this.bubble.position.y = 2.0 + Math.sin(this.phase * 0.7) * 0.05;
       if (this.bubbleTimer <= 0) this.bubble.visible = false;
     }
   }

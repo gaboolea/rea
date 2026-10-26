@@ -156,6 +156,11 @@ Magnate ($8.000).
 
 - **Pantalla de inicio** con logotipo animado, el personaje en primer plano
   y la ciudad viva detrás; transición con fundido al empezar.
+- **Personajes tipo gominola**: cuerpo de una sola pieza en forma de
+  judía, cabeza pequeña fundida con él, brazos y piernas cortos y gruesos
+  que salen del propio cuerpo, acabado brillante y rebote de gelatina al
+  andar, frenar y aterrizar. Igual para el jugador, clientes, empleados,
+  peatones y los demás jugadores.
 - **Personalización** en un estudio 3D giratorio: camisetas, sudaderas,
   chaquetas, trajes, pantalones, shorts, vaqueros, zapatillas, botas,
   zapatos, gorras, gorros, sombreros, chistera, corona, lentes de sol y de

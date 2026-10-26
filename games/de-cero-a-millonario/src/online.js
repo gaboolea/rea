@@ -76,7 +76,7 @@ class RemoteAvatar {
     this.buf = [];
     this.pos = { x: 0, y: 0, z: 0 };
     this.tag = labelSprite(info.name, "rgba(123,92,255,0.88)", 1.6);
-    this.tag.position.y = 2.75;
+    this.tag.position.y = 2.35;
     this.char.root.add(this.tag);
     this.scooter = toyScooter(0x7b5cff);
     this.scooter.visible = false;
@@ -110,7 +110,7 @@ class RemoteAvatar {
       2.6,
       "#1d2b44",
     );
-    this.bubble.position.y = 3.2;
+    this.bubble.position.y = 2.8;
     this.char.root.add(this.bubble);
     this.bubbleTime = 5;
   }

@@ -288,8 +288,8 @@ export class Wardrobe {
     // El panel tapa parte de la pantalla: se desplaza la vista para que el
     // personaje quede a la derecha (horizontal) o arriba (vertical).
     const wide = w > h * 1.1;
-    this.camera.position.set(0, 1.5, wide ? 6.4 : 11.5);
-    this.camera.lookAt(0, 1.05, 0);
+    this.camera.position.set(0, 1.3, wide ? 5.4 : 10.2);
+    this.camera.lookAt(0, wide ? 0.95 : 1.05, 0);
     if (wide) this.camera.setViewOffset(w, h, -w * 0.17, 0, w, h);
     else this.camera.setViewOffset(w, h, 0, h * 0.24, w, h);
     this.podium.position.x = 0;
