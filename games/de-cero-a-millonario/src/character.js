@@ -18,6 +18,8 @@ import {
 import { PRODUCTS } from "./config.js";
 import { cargoCart } from "./decor.js";
 import { COLORS, SKINS, defaultLook } from "./look.js";
+import { faceGeometry, faceMaterial } from "./face.js";
+import { hairGeometry } from "./hair.js";
 
 const dome = (r) =>
   geo(
@@ -76,6 +78,10 @@ export class ToyCharacter {
     // Muelle de gelatina: deformación actual y su velocidad.
     this.jelly = 0;
     this.jellyV = 0;
+    // Cara: parpadeo y expresiones pasajeras ({ state, t }).
+    this.blinkIn = 1 + Math.random() * 3;
+    this.blinkT = 0;
+    this.expression = null;
     this.buildSkeleton();
     this.setLook(look);
     this.bubble = new THREE.Sprite(bubbleMaterial("?"));
@@ -144,6 +150,8 @@ export class ToyCharacter {
     this.dressTop(look.top ?? { id: "camiseta", color: "turquesa" }, skin);
     this.dressBottom(look.bottom ?? { id: "pantalon", color: "marino" }, skin);
     this.dressShoes(look.shoes ?? { id: "zapatillas", color: "blanco" });
+    this.dressFace(look.face ?? { id: "feliz" });
+    this.dressHair(look.hair ?? { id: "corto" }, look.hat ?? { id: "none" });
     this.dressHat(look.hat ?? { id: "none" });
     this.dressGlasses(look.glasses ?? { id: "none" });
     this.dressBack(look.back ?? { id: "none" });
@@ -451,6 +459,58 @@ export class ToyCharacter {
     }
   }
 
+  // Cara dibujada sobre una máscara fina delante de la cabeza.
+  dressFace(item) {
+    this.faceMesh = null;
+    if (!item || item.id === "none") return;
+    this.faceStyle = item.id;
+    this.faceState = "normal";
+    this.faceMesh = new THREE.Mesh(
+      faceGeometry(),
+      faceMaterial(item.id, "normal"),
+    );
+    this.faceMesh.renderOrder = 1;
+    this.headPivot.add(this.faceMesh);
+  }
+
+  // Peinado (con sombrero solo se ve lo que asoma por detrás).
+  dressHair(item, hat) {
+    const g = hairGeometry(item?.id, hat.id !== "none");
+    if (!g) return;
+    const color = COLORS[item.color] ?? COLORS.castano;
+    this.headPivot.add(new THREE.Mesh(g, mat(color, { roughness: 0.45 })));
+  }
+
+  // Expresión pasajera: "joy" (alegría) o "wow" (sorpresa).
+  express(state, seconds = 1) {
+    this.expression = { state, t: seconds };
+  }
+
+  updateFace(dt) {
+    if (!this.faceMesh) return;
+    this.blinkIn -= dt;
+    if (this.blinkIn <= 0) {
+      this.blinkT = 0.13;
+      this.blinkIn = 2 + Math.random() * 3.5;
+    }
+    this.blinkT -= dt;
+    if (this.expression) {
+      this.expression.t -= dt;
+      if (this.expression.t <= 0) this.expression = null;
+    }
+    const kind = this.action?.kind;
+    const state = this.expression
+      ? this.expression.state
+      : kind === "cheer" || kind === "dance"
+        ? "joy"
+        : this.blinkT > 0
+          ? "blink"
+          : "normal";
+    if (state === this.faceState) return;
+    this.faceState = state;
+    this.faceMesh.material = faceMaterial(this.faceStyle, state);
+  }
+
   // Lentes sobre la cara (frente de la cabeza, +z).
   dressGlasses(item) {
     if (item.id === "none") return;
@@ -653,6 +713,7 @@ export class ToyCharacter {
 
   land(strength = 1) {
     this.jellyV -= Math.min(1, strength) * 3.8;
+    if (strength > 0.7) this.express("wow", 0.35);
   }
 
   think(icon, color, seconds = 2.5) {
@@ -731,6 +792,7 @@ export class ToyCharacter {
       this.baseScale * (1 - k * 0.5),
     );
     this.applyAction(dt);
+    this.updateFace(dt);
     if (this.bubbleTimer > 0) {
       this.bubbleTimer -= dt;
       this.bubble.position.y = 2.0 + Math.sin(this.phase * 0.7) * 0.05;

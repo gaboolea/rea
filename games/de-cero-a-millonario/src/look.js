@@ -16,7 +16,43 @@ export const COLORS = {
   rosa: 0xff7eb6,
   marron: 0x8b5a3c,
   oro: 0xf2c230,
+  // Tonos de pelo.
+  castano: 0x6b4226,
+  chocolate: 0x3d2618,
+  rubio: 0xf0cf6a,
+  pelirrojo: 0xd9622b,
+  canoso: 0xdcdce2,
 };
+
+// Colores para la ropa y para el pelo (el pelo admite también algunos
+// colores de fantasía).
+export const CLOTH_COLORS = [
+  "blanco",
+  "negro",
+  "gris",
+  "rojo",
+  "naranja",
+  "amarillo",
+  "menta",
+  "turquesa",
+  "azul",
+  "marino",
+  "morado",
+  "rosa",
+  "marron",
+];
+export const HAIR_COLORS = [
+  "negro",
+  "chocolate",
+  "castano",
+  "rubio",
+  "pelirrojo",
+  "canoso",
+  "azul",
+  "rosa",
+  "morado",
+  "menta",
+];
 
 export const SKINS = [
   { id: "crema", name: "Crema", color: 0xf7f3ee },
@@ -39,6 +75,62 @@ export const SKINS = [
 // Las prendas se compran en tiendas físicas: la Tienda de ropa (zona
 // comercial) o, si lux, la Galería de lujo (distrito financiero).
 export const ITEMS = {
+  // Pelo y cara: gratis, se eligen en el armario.
+  hair: [
+    {
+      id: "corto",
+      name: "Corto",
+      price: 0,
+      colors: true,
+      palette: HAIR_COLORS,
+    },
+    {
+      id: "flequillo",
+      name: "Flequillo",
+      price: 0,
+      colors: true,
+      palette: HAIR_COLORS,
+    },
+    {
+      id: "puntas",
+      name: "De punta",
+      price: 0,
+      colors: true,
+      palette: HAIR_COLORS,
+    },
+    {
+      id: "rizado",
+      name: "Rizado",
+      price: 0,
+      colors: true,
+      palette: HAIR_COLORS,
+    },
+    {
+      id: "coleta",
+      name: "Coleta",
+      price: 0,
+      colors: true,
+      palette: HAIR_COLORS,
+    },
+    {
+      id: "melena",
+      name: "Melena",
+      price: 0,
+      colors: true,
+      palette: HAIR_COLORS,
+    },
+    { id: "mono", name: "Moño", price: 0, colors: true, palette: HAIR_COLORS },
+    { id: "tupe", name: "Tupé", price: 0, colors: true, palette: HAIR_COLORS },
+    { id: "rapado", name: "Rapado", price: 0 },
+  ],
+  face: [
+    { id: "feliz", name: "Feliz", price: 0 },
+    { id: "risueno", name: "Risueño", price: 0 },
+    { id: "alegre", name: "Alegre", price: 0 },
+    { id: "tranquilo", name: "Tranquilo", price: 0 },
+    { id: "timido", name: "Tímido", price: 0 },
+    { id: "seguro", name: "Seguro", price: 0 },
+  ],
   top: [
     { id: "camiseta", name: "Camiseta", price: 0, colors: true },
     { id: "sudadera", name: "Sudadera con capucha", price: 45, colors: true },
@@ -138,6 +230,8 @@ export const ITEMS = {
 };
 
 export const SLOTS = [
+  { id: "face", name: "Cara", icon: "🙂" },
+  { id: "hair", name: "Pelo", icon: "💇" },
   { id: "top", name: "Arriba", icon: "👕" },
   { id: "bottom", name: "Abajo", icon: "👖" },
   { id: "shoes", name: "Calzado", icon: "👟" },
@@ -157,6 +251,8 @@ export const STARTER_ITEMS = Object.values(ITEMS)
 export function defaultLook() {
   return {
     skin: "crema",
+    face: { id: "feliz" },
+    hair: { id: "flequillo", color: "castano" },
     top: { id: "camiseta", color: "turquesa" },
     bottom: { id: "pantalon", color: "marino" },
     shoes: { id: "zapatillas", color: "blanco" },
@@ -206,6 +302,11 @@ export function randomLook(seed) {
   const calm = ["marino", "gris", "negro", "blanco", "marron", "azul"];
   return {
     skin: pick(SKINS.slice(0, 4)).id,
+    face: { id: pick(ITEMS.face).id },
+    hair: {
+      id: pick(ITEMS.hair.slice(0, 8)).id,
+      color: pick(r() < 0.85 ? HAIR_COLORS.slice(0, 6) : HAIR_COLORS.slice(6)),
+    },
     top: {
       id: pick(["camiseta", "camiseta", "sudadera", "chaqueta"]),
       color: pick(bright),

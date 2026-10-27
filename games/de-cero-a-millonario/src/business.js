@@ -873,6 +873,8 @@ export class Business {
       0,
     );
     this.game.earn(total, total - cost, c.basket, this, c.vip);
+    // El cliente se va contento con su compra.
+    c.char?.express("joy", 1.4);
     if (c.basket.some((i) => i.product === "cafe"))
       this.game.state.stats.coffeeSold += c.basket.filter(
         (i) => i.product === "cafe",

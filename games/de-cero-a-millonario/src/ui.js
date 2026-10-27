@@ -25,7 +25,7 @@ import { upgradeApplies } from "./business.js";
 import { currentMission, missionProgress } from "./missions.js";
 import { WORLD } from "./config.js";
 import { drawCity, drawIcon } from "./mapdraw.js";
-import { findItem, COLORS, SLOTS } from "./look.js";
+import { findItem, COLORS, SLOTS, CLOTH_COLORS } from "./look.js";
 import { WHOLESALE_STEPS } from "./tutorial.js";
 import {
   Net,
@@ -342,8 +342,7 @@ export class UI {
     const t = shop.trial;
     const st = shop.status(slot, id);
     const colors = item.colors
-      ? Object.keys(COLORS)
-          .filter((c) => c !== "oro")
+      ? (item.palette ?? CLOTH_COLORS)
           .map(
             (c) =>
               `<button class="swatch ${t.color === c ? "on" : ""}" data-color="${c}" title="${c}" style="background:${hex(COLORS[c])}"></button>`,

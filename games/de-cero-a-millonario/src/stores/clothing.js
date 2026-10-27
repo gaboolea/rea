@@ -20,6 +20,8 @@ import * as props from "../props.js";
 // Ropa base de los maniquíes (neutra) sobre la que se pone la prenda.
 const BASE = {
   skin: "crema",
+  face: { id: "none" },
+  hair: { id: "rapado" },
   top: { id: "camiseta", color: "blanco" },
   bottom: { id: "pantalon", color: "gris" },
   shoes: { id: "zapatillas", color: "blanco" },

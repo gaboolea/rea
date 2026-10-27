@@ -8,15 +8,16 @@ import {
   ITEMS,
   SKINS,
   COLORS,
+  CLOTH_COLORS,
   findItem,
   STARTER_ITEMS,
+  defaultLook,
 } from "./look.js";
 import { STAGES } from "./config.js";
 import { mat, mesh, cylinder } from "./gfx.js";
 
 const $ = (id) => document.getElementById(id);
 const hex = (c) => `#${c.toString(16).padStart(6, "0")}`;
-const COLOR_NAMES = Object.keys(COLORS);
 
 export class Wardrobe {
   constructor(game) {
@@ -99,7 +100,7 @@ export class Wardrobe {
     const g = this.game;
     this.from = from;
     this.open = true;
-    this.preview = structuredClone(g.state.look);
+    this.preview = { ...defaultLook(), ...structuredClone(g.state.look) };
     if (!this.char) {
       this.char = new ToyCharacter({ look: this.preview, scale: 1 });
       this.char.root.position.y = 0.33;
@@ -149,10 +150,16 @@ export class Wardrobe {
     else {
       const item = findItem(slot, id);
       const prev = this.preview[slot];
-      const keep = prev.color && item.colors ? prev.color : undefined;
+      const palette = item.palette ?? CLOTH_COLORS;
+      const fits = (c) => (palette.includes(c) ? c : undefined);
+      const keep = item.colors ? fits(prev?.color) : undefined;
       this.preview[slot] = {
         id,
-        color: color ?? keep ?? this.game.state.look[slot]?.color ?? "rojo",
+        color:
+          color ??
+          keep ??
+          fits(this.game.state.look[slot]?.color) ??
+          (palette.includes("rojo") ? "rojo" : palette[2]),
       };
     }
     this.char.setLook(this.preview);
@@ -260,7 +267,7 @@ export class Wardrobe {
     // Muestras de color (gratis) si la prenda lo admite.
     const colors = slot !== "skin" && item.colors;
     $("wd-colors").innerHTML = colors
-      ? COLOR_NAMES.filter((c) => c !== "oro")
+      ? (item.palette ?? CLOTH_COLORS)
           .map(
             (c) =>
               `<button data-color="${c}" title="${c}" class="${this.preview[slot].color === c ? "on" : ""}" style="background:${hex(COLORS[c])}"></button>`,
@@ -271,7 +278,9 @@ export class Wardrobe {
             (s) =>
               `<button data-skin="${s.id}" title="${s.name}" class="${this.preview.skin === s.id ? "on" : ""}" style="background:${hex(s.color)}"></button>`,
           ).join("")
-        : `<small>Esta prenda tiene un color único.</small>`;
+        : slot === "face"
+          ? `<small>Tu personaje parpadea y pone caras de alegría o sorpresa él solo.</small>`
+          : `<small>Esta prenda tiene un color único.</small>`;
     $("wd-colors")
       .querySelectorAll("[data-color]")
       .forEach(
