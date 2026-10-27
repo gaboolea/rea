@@ -19,6 +19,7 @@ import { Warehouse } from "./warehouse.js";
 import { Net, savedName } from "./net.js";
 import { Online } from "./online.js";
 import { Shopping } from "./shopping.js";
+import { FurnitureShop } from "./furnishop.js";
 import { Rides, isSmall } from "./rides.js";
 import { Home } from "./home.js";
 import { Decorator } from "./decorate.js";
@@ -161,6 +162,7 @@ class Game {
     this.tutorial = new Tutorial(this);
     this.ui = new UI(this);
     this.shopping = new Shopping(this);
+    this.furnishop = new FurnitureShop(this);
     this.rides = new Rides(this);
     this.home = new Home(this);
     this.decorator = new Decorator(this, this.home);
@@ -218,6 +220,7 @@ class Game {
       ...this.events.merchantInteractables(),
       ...this.shopping.interactables(),
       ...this.rides.interactables(),
+      ...this.furnishop.interactables(),
       ...this.home.interactables(),
       ...this.home.furnitureInteractables(),
       ...this.storeDoorHints(),
@@ -285,6 +288,11 @@ class Game {
       look: { ...defaultLook(), ...res.look },
       started: true,
       lastReport: cp.lastReport,
+      // Casa, muebles y desbloqueos los guarda y valida el servidor.
+      home: structuredClone(cp.home),
+      furniture: { ...cp.furniture },
+      unlocked: { ...cp.unlocked },
+      goals: [...cp.goals],
     });
     this.state.stats = {
       ...fresh.stats,
@@ -1762,7 +1770,18 @@ class Game {
     if (this.online) {
       // El servidor guarda dinero e inventario; aquí solo el reparto.
       const state = { ...this.state };
-      for (const k of ["money", "items", "wardrobe", "look", "mission", "day"])
+      for (const k of [
+        "money",
+        "items",
+        "wardrobe",
+        "look",
+        "mission",
+        "day",
+        "home",
+        "furniture",
+        "unlocked",
+        "goals",
+      ])
         delete state[k];
       this.net.send("save", {
         blob: {

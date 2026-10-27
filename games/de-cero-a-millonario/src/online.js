@@ -167,6 +167,7 @@ export class Online {
     this.code = join.city.code;
     this.me = join.you;
     this.members = new Map(join.members.map((m) => [m.id, m]));
+    this.homeAccepted = structuredClone(join.profile.home ?? null);
     this.avatars = new Map();
     this.proxies = new Map();
     this.remoteShops = new Map(); // "pid:biz" -> Business remoto
@@ -611,6 +612,25 @@ export class Online {
   }
 
   // ---------- Social ----------
+
+  // Distribución de la casa: el servidor la valida entera. Si la rechaza
+  // (no debería: el cliente aplica las mismas reglas), se avisa y se
+  // vuelve a la última que aceptó.
+  async sendHome() {
+    const g = this.game;
+    const home = g.state.home;
+    const sent = structuredClone(home);
+    const r = await g.serverAction("layout", {
+      layout: sent.layout,
+      open: sent.open,
+    });
+    if (r.ok) this.homeAccepted = sent;
+    else if (this.homeAccepted) {
+      g.state.home = structuredClone(this.homeAccepted);
+      g.home.refresh();
+      g.rebuildInteractables();
+    }
+  }
 
   emote(kind) {
     this.game.player.char.playAction(kind, kind === "dance" ? 2.4 : 1.2);

@@ -126,3 +126,71 @@ test("los gastos del día se cobran al cerrar el día", () => {
   assert.equal(cp.money, 150 - 37);
   assert.equal(cp.day, 2);
 });
+
+test("la casita se compra una vez y trae muebles básicos colocados", () => {
+  const cp = eco.newCityProfile();
+  cp.money = 300;
+  const r = eco.buyHome(cp);
+  assert.equal(r.ok, true);
+  assert.equal(cp.money, 50);
+  assert.equal(cp.home.owned, true);
+  assert.ok(cp.home.layout.length > 0);
+  assert.equal(eco.buyHome(cp).ok, false);
+});
+
+test("los muebles exigen casa, dinero, etapa y que quepan", () => {
+  const cp = eco.newCityProfile();
+  cp.money = 5000;
+  assert.equal(eco.buyFurniture(cp, { id: "sofa" }).ok, false);
+  eco.buyHome(cp);
+  assert.equal(eco.buyFurniture(cp, { id: "sofa" }).ok, true);
+  assert.equal(cp.furniture.sofa, 1);
+  assert.equal(eco.buyFurniture(cp, { id: "cama_doble" }).ok, false);
+  assert.equal(eco.buyFurniture(cp, { id: "__proto__" }).ok, false);
+  cp.money = 1;
+  assert.equal(eco.buyFurniture(cp, { id: "sofa" }).ok, false);
+});
+
+test("la distribución de la casa se valida entera en el servidor", () => {
+  const cp = eco.newCityProfile();
+  cp.money = 5000;
+  eco.buyHome(cp);
+  eco.buyFurniture(cp, { id: "sofa" });
+  const base = cp.home.layout;
+  const ok = [...base, { f: "sofa", x: 2.5, z: 3.4, r: 2 }];
+  assert.equal(eco.setHome(cp, { layout: ok, open: true }).ok, true);
+  assert.equal(cp.home.open, true);
+  // Tapar la puerta, muebles no comprados o fuera de la casa: no.
+  const door = [...base, { f: "sofa", x: 0, z: 3.4, r: 0 }];
+  assert.equal(eco.setHome(cp, { layout: door }).ok, false);
+  const extra = [...ok, { f: "sofa", x: -2.5, z: 3.4, r: 0 }];
+  assert.equal(eco.setHome(cp, { layout: extra }).ok, false);
+  const out = [...base, { f: "sofa", x: 40, z: 3, r: 0 }];
+  assert.equal(eco.setHome(cp, { layout: out }).ok, false);
+  assert.equal(cp.home.layout.length, ok.length);
+});
+
+test("vehículos: etapa, dinero, distrito financiero y grúa", () => {
+  const cp = eco.newCityProfile();
+  cp.money = 50;
+  assert.equal(eco.buyItem(cp, {}, "p1", { id: "bici" }).ok, false);
+  assert.equal(eco.buyItem(cp, {}, "p1", { id: "moto" }).ok, false);
+  assert.equal(eco.buyItem(cp, {}, "p1", { id: "skate" }).ok, true);
+  assert.equal(cp.items.skate, true);
+  cp.money = 99999;
+  cp.stats.revenue = 999999;
+  assert.equal(eco.buyItem(cp, {}, "p1", { id: "lujo" }).ok, false);
+  cp.unlocked.financiero = true;
+  assert.equal(eco.buyItem(cp, {}, "p1", { id: "lujo" }).ok, true);
+  assert.equal(eco.tow(cp, { id: "lujo" }).ok, true);
+  assert.equal(eco.tow(cp, { id: "moto" }).ok, false);
+});
+
+test("los perfiles anteriores a la expansión se completan al cargarse", () => {
+  const cp = eco.newCityProfile();
+  delete cp.home;
+  delete cp.furniture;
+  eco.upgradeProfile(cp);
+  assert.equal(cp.home.owned, false);
+  assert.deepEqual(cp.furniture, {});
+});

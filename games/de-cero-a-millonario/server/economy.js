@@ -12,7 +12,12 @@ import {
   BOX_UNITS,
   START_MONEY,
   DAY_SECONDS,
+  VEHICLES,
+  FURNITURE,
+  FURNITURE_MAX,
+  HOME,
 } from "../src/config.js";
+import { STARTER_LAYOUT, findSpot, layoutProblem } from "../src/homelayout.js";
 import { ITEMS, SKINS } from "../src/look.js";
 import { MISSIONS } from "../src/missions.js";
 
@@ -69,7 +74,24 @@ export function newCityProfile() {
     lastReport: null,
     blob: null,
     limits: {},
+    ...expansionFields(),
   };
+}
+
+// Datos de la gran expansión (casa, muebles, desbloqueos y objetivos).
+// Los perfiles guardados antes de ella los reciben al cargarse.
+function expansionFields() {
+  return {
+    home: { owned: false, layout: [], open: false },
+    furniture: {},
+    unlocked: {},
+    goals: [],
+  };
+}
+
+export function upgradeProfile(cp) {
+  for (const [k, v] of Object.entries(expansionFields())) cp[k] ??= v;
+  return cp;
 }
 
 export function newWarehouse() {
@@ -250,6 +272,7 @@ export function buyBusiness(cp, city, playerId, { biz }) {
 }
 
 export function buyItem(cp, city, playerId, { id }) {
+  if (Object.hasOwn(VEHICLES, id)) return buyVehicle(cp, id);
   const item = SHOP_ITEMS[id];
   if (!item) return fail("Artículo no válido");
   if (cp.items[id]) return fail("Ya lo tienes");
@@ -262,6 +285,81 @@ export function buyItem(cp, city, playerId, { id }) {
   cp.money = round2(cp.money - item.price);
   cp.items[id] = true;
   if (id === "casa") city.exclusive.casa = playerId;
+  return { ok: true };
+}
+
+function buyVehicle(cp, id) {
+  const def = VEHICLES[id];
+  if (cp.items[id]) return fail("Ya lo tienes");
+  if ((def.stage ?? 0) > stageIndex(cp))
+    return fail(`Requiere la etapa ${STAGES[def.stage].name}`);
+  if (def.zone === "financiero" && !cp.unlocked.financiero)
+    return fail("Desbloquea el distrito financiero");
+  if (cp.money < def.price)
+    return fail(`Te faltan $${round2(def.price - cp.money).toFixed(2)}`);
+  cp.money = round2(cp.money - def.price);
+  cp.items[id] = true;
+  return { ok: true };
+}
+
+// Grúa: trae un vehículo propio aparcado lejos.
+export function tow(cp, { id }) {
+  if (!cp.items[id] || !VEHICLES[id]) return fail("No es tuyo");
+  if (cp.money < TOW_PRICE) return fail("No tienes dinero para la grúa");
+  cp.money = round2(cp.money - TOW_PRICE);
+  return { ok: true };
+}
+export const TOW_PRICE = 15;
+
+// Casita: se compra una vez y trae muebles básicos colocados.
+export function buyHome(cp) {
+  if (cp.home.owned) return fail("Ya tienes casa");
+  if (cp.money < HOME.price)
+    return fail(`Te faltan $${round2(HOME.price - cp.money).toFixed(2)}`);
+  cp.money = round2(cp.money - HOME.price);
+  for (const f of HOME.starter) cp.furniture[f] = (cp.furniture[f] ?? 0) + 1;
+  cp.home = {
+    owned: true,
+    layout: STARTER_LAYOUT.map((it) => ({ ...it })),
+    open: false,
+  };
+  return { ok: true, home: cp.home, furniture: cp.furniture };
+}
+
+// Muebles: solo con casa y si caben en ella tal como está.
+export function buyFurniture(cp, { id }) {
+  const def = Object.hasOwn(FURNITURE, id) ? FURNITURE[id] : null;
+  if (!def) return fail("Mueble no válido");
+  if (!cp.home.owned) return fail("Necesitas casa");
+  if ((def.stage ?? 0) > stageIndex(cp))
+    return fail(`Requiere la etapa ${STAGES[def.stage].name}`);
+  const have = cp.furniture[id] ?? 0;
+  if (have >= FURNITURE_MAX) return fail(`Ya tienes ${FURNITURE_MAX}`);
+  if (!findSpot(cp.home.layout, id)) return fail("No cabe en tu casa");
+  if (cp.money < def.price)
+    return fail(`Te faltan $${round2(def.price - cp.money).toFixed(2)}`);
+  cp.money = round2(cp.money - def.price);
+  cp.furniture[id] = have + 1;
+  return { ok: true, furniture: cp.furniture };
+}
+
+// Nueva distribución de la casa: se valida entera (muebles comprados y
+// cada uno en un sitio válido) y se guarda limpia.
+export function setHome(cp, { layout, open }) {
+  if (!cp.home.owned) return fail("No tienes casa");
+  const clean = Array.isArray(layout)
+    ? layout.map((it) => ({
+        f: it?.f,
+        x: it?.x,
+        z: it?.z,
+        r: it?.r,
+        ...(it?.on ? { on: true } : {}),
+      }))
+    : null;
+  const problem = layoutProblem(clean, cp.furniture);
+  if (problem) return fail(problem);
+  cp.home.layout = clean;
+  cp.home.open = !!open;
   return { ok: true };
 }
 

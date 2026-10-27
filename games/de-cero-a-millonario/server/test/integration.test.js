@@ -97,11 +97,11 @@ function client(key, name) {
       }),
     req: (t, p = {}) => {
       const id = nextId++;
-      c.send(t, { id, ...p });
-      return c.wait((m) => m.t === "res" && m.id === id);
+      c.send(t, { ...p, rid: id });
+      return c.wait((m) => m.t === "res" && m.rid === id);
     },
     hello: () => {
-      c.send("hello", { v: 1, key, name });
+      c.send("hello", { v: 2, key, name });
       return c.wait((m) => m.t === "welcome");
     },
   };
@@ -163,6 +163,11 @@ test("dos jugadores se ven, chatean y no pueden hacer trampas", async () => {
   assert.equal(m1.ok, true);
   assert.equal(m2.ok, false);
   const money = m2.money;
+  // Peticiones con su propio campo «id» (artículo) reciben respuesta.
+  const moto = await b.req("item", { id: "moto" });
+  assert.match(moto.error, /etapa/);
+  const sofa = await b.req("furniture", { id: "sofa" });
+  assert.equal(sofa.error, "Necesitas casa");
   const r3 = await b.req("buy", { order: { agua: 1000 } });
   assert.equal(r3.ok, false);
   assert.equal(r3.money, money);

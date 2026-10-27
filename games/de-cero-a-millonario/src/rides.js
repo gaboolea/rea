@@ -192,7 +192,7 @@ export class Rides {
     if (Object.values(g.world.buildings).some((b) => b.contains(p.x, p.z)))
       return g.ui.toast("Sal a la calle para que la grúa te encuentre", "bad");
     if (g.online) {
-      if (!(await g.serverAction("tow", {})).ok) return;
+      if (!(await g.serverAction("tow", { id })).ok) return;
     } else if (!g.spend(TOW_PRICE)) return;
     const h = g.player.heading + Math.PI / 2;
     const spot = {

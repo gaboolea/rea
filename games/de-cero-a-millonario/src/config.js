@@ -446,6 +446,9 @@ export const VEHICLES = {
 };
 
 // Casita propia (zona residencial): pequeña y barata para empezar.
+// Cuántos muebles iguales se pueden tener.
+export const FURNITURE_MAX = 6;
+
 export const HOME = {
   price: 250,
   // Muebles que vienen con la casa.

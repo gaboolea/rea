@@ -13,6 +13,7 @@ import {
 } from "../gfx.js";
 import { gableRoof } from "../building.js";
 import { CityKit } from "./kit.js";
+import { CASITA } from "../homelayout.js";
 
 export const RESIDENTIAL = { minX: -66, maxX: 66, minZ: 52, maxZ: 168 };
 const CROSS_Z = 110;
@@ -264,34 +265,6 @@ export function buildResidential(world) {
 // cocina abierta delante; dormitorio y baño detrás, separados por tabiques
 // con puertas. Devuelve las habitaciones, las zonas de paso que deben
 // quedar libres y las paredes donde se pueden colgar cuadros.
-export const CASITA = {
-  // Interior útil: x ∈ [-4.7, 4.7], z ∈ [-4.2, 4.2].
-  rooms: [
-    { id: "dormitorio", name: "Dormitorio", rect: [-4.7, -4.2, 0.9, -0.9] },
-    { id: "bano", name: "Baño", rect: [1.1, -4.2, 4.7, -0.9] },
-    { id: "salon", name: "Salón y cocina", rect: [-4.7, -0.7, 4.7, 4.2] },
-  ],
-  // Puerta de entrada y puertas interiores (no se pueden tapar).
-  clear: [
-    [-1.3, 2.9, 1.3, 4.2],
-    [-2.75, -1.75, -1.25, 0.15],
-    [2.25, -1.75, 3.55, 0.15],
-  ],
-  // Paredes interiores donde colgar cosas: [x0, z0, x1, z1, nx, nz].
-  walls: [
-    [-4.7, -4.2, 0.9, -4.2, 0, 1],
-    [1.1, -4.2, 4.7, -4.2, 0, 1],
-    [-4.7, -4.2, -4.7, -1.0, 1, 0],
-    [-4.7, -0.6, -4.7, 2.7, 1, 0],
-    [4.7, -4.2, 4.7, -1.0, -1, 0],
-    [4.7, -0.6, 4.7, 4.0, -1, 0],
-    [-1.4, -0.6, 2.4, -0.6, 0, 1],
-    [-4.7, -1.0, -2.6, -1.0, 0, -1],
-    [0.9, -4.2, 0.9, -1.0, -1, 0],
-    [1.1, -4.2, 1.1, -1.0, 1, 0],
-  ],
-  door: [0, 3.9],
-};
 
 function buildCasitaInterior(b) {
   const wall = 0xfffaf0;

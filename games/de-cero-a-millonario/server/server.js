@@ -28,7 +28,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GAME_ROOT = path.resolve(HERE, "..");
 const PORT = Number(process.env.PORT ?? 8080);
 const store = new Store(process.env.DATA_DIR ?? path.join(HERE, "data"));
-const PROTOCOL = 1;
+const PROTOCOL = 2;
 const MAX_CITIES_PER_PLAYER = 5;
 const MAX_SPEED = 14; // m/s (scooter + margen)
 
@@ -115,7 +115,9 @@ const num = (v, min, max) =>
   typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
 
 function cityProfile(session) {
-  return store.data.profiles[session.pid].cities[session.city];
+  return eco.upgradeProfile(
+    store.data.profiles[session.pid].cities[session.city],
+  );
 }
 
 function broadcast(code, msg, except) {
@@ -202,6 +204,7 @@ function joinCity(s, code) {
     city.members[s.pid] = { plot, joinedAt: Date.now() };
   }
   profile.cities[code] ??= eco.newCityProfile();
+  eco.upgradeProfile(profile.cities[code]);
   s.city = code;
   s.state = null;
   if (!cityOnline.has(code)) cityOnline.set(code, new Set());
@@ -248,6 +251,10 @@ const ECONOMY = {
   fire: (s, cp, city, m) => eco.fire(cp, m),
   business: (s, cp, city, m) => eco.buyBusiness(cp, city, s.pid, m),
   item: (s, cp, city, m) => eco.buyItem(cp, city, s.pid, m),
+  tow: (s, cp, city, m) => eco.tow(cp, m),
+  home: (s, cp) => eco.buyHome(cp),
+  furniture: (s, cp, city, m) => eco.buyFurniture(cp, m),
+  layout: (s, cp, city, m) => eco.setHome(cp, m),
   clothing: (s, cp, city, m) =>
     eco.buyClothing(cp, store.data.profiles[s.pid], m),
   mission: (s, cp, city, m) => eco.claimMission(cp, m),
@@ -303,7 +310,7 @@ function handleEconomy(s, m) {
   }
   send(s.ws, {
     t: "res",
-    id: m.id,
+    rid: m.rid,
     ...r,
     money: cp.money,
     revenue: cp.stats.revenue,
@@ -445,7 +452,7 @@ function onMessage(s, raw) {
       if (created >= MAX_CITIES_PER_PLAYER)
         return send(s.ws, {
           t: "res",
-          id: m.id,
+          rid: m.rid,
           ok: false,
           error: `Ya creaste ${MAX_CITIES_PER_PLAYER} ciudades; únete a una existente`,
         });
@@ -461,12 +468,12 @@ function onMessage(s, raw) {
         shops: {},
         warehouse: eco.newWarehouse(),
       };
-      return send(s.ws, { t: "res", id: m.id, ...joinCity(s, code) });
+      return send(s.ws, { t: "res", rid: m.rid, ...joinCity(s, code) });
     }
     case "join":
       return send(s.ws, {
         t: "res",
-        id: m.id,
+        rid: m.rid,
         ...joinCity(s, cleanText(m.code, 8).toUpperCase()),
       });
     case "ping":

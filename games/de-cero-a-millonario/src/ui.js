@@ -441,6 +441,51 @@ export class UI {
     });
   }
 
+  // Ficha de un mueble o aparato expuesto en tienda.
+  openFurniture(shop, id) {
+    const g = this.game;
+    const def = FURNITURE[id];
+    const st = shop.status(id);
+    const use = {
+      sit: "Puedes sentarte en él.",
+      bed: g.online ? "Descansa en ella." : "Duerme hasta la mañana siguiente.",
+      lamp: "Se enciende y apaga e ilumina la habitación.",
+      tv: "Se enciende y pone dibujos animados.",
+      pc: "Gestiona tus negocios desde casa.",
+      music: "Pon música y baila.",
+    }[def.use];
+    const where = def.wall
+      ? "Se cuelga en una pared."
+      : def.flat
+        ? "Va en el suelo; se puede poner debajo de otros muebles."
+        : `Ocupa ${def.size[0]} × ${def.size[1]} m.`;
+    const buy = st.locked
+      ? `<button class="primary" disabled>🔒 ${st.locked}</button>`
+      : `<button class="primary" data-buy ${st.missing ? "disabled" : ""}>COMPRAR · ${money(def.price)}</button>`;
+    this.open(
+      "furniture",
+      def.name,
+      `<div class="garment">
+        <div class="garment-price">${money(def.price)}</div>
+        <div class="stats"><span>🏷️ ${FURNITURE_SECTIONS[def.section]}</span>${st.have ? `<span>📦 Tienes ${st.have}</span>` : ""}</div>
+        <p>${use ? `${use} ` : ""}${where}</p>
+        <p class="hint">Lo que compras va a tu inventario: colócalo en tu casa con 🛋️ Decorar.</p>
+        ${st.missing && !st.locked ? `<p class="bad missing">Te faltan ${money(Math.round(st.missing * 100) / 100)}</p>` : ""}
+        <div class="order-actions">
+          <button class="ghost" data-cancel>CANCELAR</button>
+          ${buy}
+        </div>
+        <p class="hint small">Tienes ${money(Math.floor(g.state.money))}.</p>
+      </div>`,
+      { side: true },
+    );
+    this.bind("[data-cancel]", () => this.close());
+    this.bind("[data-buy]", async () => {
+      await shop.buy(id);
+      this.openFurniture(shop, id);
+    });
+  }
+
   // Decorar la casa: muebles guardados (para colocar) y los que ya están
   // en casa (para moverlos o guardarlos), y permiso de visitas.
   openDecor() {

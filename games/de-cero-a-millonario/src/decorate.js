@@ -4,8 +4,13 @@
 import * as THREE from "three";
 import { FURNITURE } from "./config.js";
 import { furnitureModel } from "./furniture.js";
-import { CASITA } from "./city/residential.js";
-import { footprint, placementProblem } from "./home.js";
+import {
+  CASITA,
+  findSpot,
+  keepInside,
+  placementProblem,
+  wallSnap,
+} from "./homelayout.js";
 
 const $ = (id) => document.getElementById(id);
 const GRID = 0.25;
@@ -33,9 +38,16 @@ export class Decorator {
   start({ id, index }) {
     const layout = this.home.state.layout;
     const moving = index !== undefined;
-    const item = moving ? { ...layout[index] } : { f: id, x: 0, z: 1.6, r: 0 };
-    if (!moving && FURNITURE[id].wall)
-      Object.assign(item, { x: 0, z: -0.6, r: 0 });
+    // Un mueble nuevo empieza en el primer hueco libre cerca de la puerta.
+    const spot = moving ? null : findSpot(layout, id);
+    const item = moving
+      ? { ...layout[index] }
+      : (spot ?? { f: id, x: 0, z: 1.6, r: 0 });
+    if (!moving && !spot)
+      this.game.ui.toast(
+        "Ahora mismo no cabe: guarda o mueve otro mueble. Seguirá en tu inventario.",
+        "bad",
+      );
     if (moving) {
       // Mientras se mueve, el original desaparece de la casa.
       const it = this.home.items[index];
@@ -100,17 +112,12 @@ export class Decorator {
     if (input.consume("escape")) return this.cancel();
     const it = a.item;
     const def = FURNITURE[it.f];
-    if (def.wall) this.snapToWall(a);
+    if (def.wall) Object.assign(it, wallSnap(it.f, a.pos.x, a.pos.z));
     else {
       const snap = (v) => (this.grid ? Math.round(v / GRID) * GRID : v);
       it.x = snap(a.pos.x);
       it.z = snap(a.pos.z);
-      // Que no se salga del interior por la huella.
-      const fp = footprint(it);
-      if (fp[0] < -4.7) it.x += -4.7 - fp[0];
-      if (fp[2] > 4.7) it.x -= fp[2] - 4.7;
-      if (fp[1] < -4.2) it.z += -4.2 - fp[1];
-      if (fp[3] > 4.2) it.z -= fp[3] - 4.2;
+      keepInside(it);
     }
     this.b.place(a.ghost, it.x, it.z, (it.r * Math.PI) / 2, 0.12);
     const [w, d] = def.size;
@@ -123,27 +130,6 @@ export class Decorator {
       : `✔ ${def.name}: cabe aquí`;
     $("deco-status").className = problem ? "bad" : "good";
     this.camera();
-  }
-
-  // Cuadros, espejos y relojes: al punto más cercano de una pared.
-  snapToWall(a) {
-    const it = a.item;
-    const half = FURNITURE[it.f].size[0] / 2;
-    let best = null;
-    for (const w of CASITA.walls) {
-      const [x0, z0, x1, z1, nx, nz] = w;
-      const horiz = z0 === z1;
-      const lo = (horiz ? Math.min(x0, x1) : Math.min(z0, z1)) + half;
-      const hi = (horiz ? Math.max(x0, x1) : Math.max(z0, z1)) - half;
-      if (hi < lo) continue;
-      const along = Math.max(lo, Math.min(hi, horiz ? a.pos.x : a.pos.z));
-      const x = horiz ? along : x0 + nx * 0.06;
-      const z = horiz ? z0 + nz * 0.06 : along;
-      const dist = Math.hypot(x - a.pos.x, z - a.pos.z);
-      if (!best || dist < best.dist)
-        best = { x, z, dist, r: nz > 0 ? 0 : nz < 0 ? 2 : nx > 0 ? 1 : 3 };
-    }
-    if (best) Object.assign(it, { x: best.x, z: best.z, r: best.r });
   }
 
   rotate() {

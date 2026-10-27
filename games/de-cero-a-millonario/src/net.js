@@ -1,6 +1,6 @@
 // Conexión WebSocket con el servidor multijugador: peticiones con
 // respuesta (economía) y mensajes push (posiciones, chat...).
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 const KEY_STORE = "de-cero-a-millonario-player-key";
 const URL_STORE = "de-cero-a-millonario-server";
 const NAME_STORE = "de-cero-a-millonario-name";
@@ -122,9 +122,9 @@ export class Net {
     } catch {
       return;
     }
-    if (m.t === "res" && this.pending.has(m.id)) {
-      const resolve = this.pending.get(m.id);
-      this.pending.delete(m.id);
+    if (m.t === "res" && this.pending.has(m.rid)) {
+      const resolve = this.pending.get(m.rid);
+      this.pending.delete(m.rid);
       resolve(m);
       return;
     }
@@ -151,7 +151,9 @@ export class Net {
         clearTimeout(timer);
         resolve(m);
       });
-      this.ws.send(JSON.stringify({ t, id, ...payload }));
+      // «rid» numera la petición; va después del contenido para que un
+      // campo del mensaje (p. ej. el id de un artículo) no la pise.
+      this.ws.send(JSON.stringify({ ...payload, t, rid: id }));
     });
   }
 
