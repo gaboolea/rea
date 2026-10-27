@@ -62,6 +62,7 @@ export class World {
     this.visitShops = [];
     // Dependientes de las tiendas nuevas (solo se animan en reposo).
     this.storeClerks = [];
+    this.turntables = [];
     this.buildGround();
     this.buildBuildings();
     this.buildWarehouse();
@@ -1301,6 +1302,7 @@ export class World {
     this.animateAmbient(dt, performance.now() / 1000);
     this.expansion.financial.barrier.update(dt);
     for (const s of this.spinners ?? []) s.rotation.z += dt * 0.8;
+    for (const t of this.turntables) t.rotation.y += dt * 0.35;
     for (const npc of this.warehouseClerks) npc.animate(dt, 0);
     for (const npc of this.storeClerks)
       if (

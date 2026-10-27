@@ -10,6 +10,7 @@ import {
   DAY_SECONDS,
   CATEGORIES,
   CART_CAPACITY,
+  VEHICLES,
 } from "./config.js";
 import { productIcon } from "./icons.js";
 import { upgradeApplies } from "./business.js";
@@ -194,7 +195,13 @@ export class UI {
           ? `${st.name} · ${st.online}/4 · ${st.code}`
           : "Reconectando…";
     }
-    $("btn-ride").hidden = !s.items.scooter;
+    // Botones táctiles según el vehículo: V para el pequeño, sin salto en
+    // coche o en dos ruedas (el monopatín sí salta).
+    const ride = g.player.ride;
+    $("btn-ride").hidden =
+      !g.rides.selectedSmall() || (ride && ride.def.kind === "car");
+    $("btn-jump").hidden = !!ride && ride.def.kind !== "board";
+    $("btn-run").hidden = !!ride;
   }
 
   refreshChips() {
@@ -372,6 +379,61 @@ export class UI {
       shop.wear();
       this.onClose = null;
       this.close();
+    });
+  }
+
+  // Ficha de un vehículo del concesionario: datos, prueba en la pista y
+  // compra (con lo que falta si no alcanza el dinero).
+  openVehicle(rides, id, back) {
+    const g = this.game;
+    const def = VEHICLES[id];
+    const st = rides.status(id);
+    const kind = {
+      board: "Monopatín",
+      bike: "Bicicleta",
+      scooter: "Scooter",
+      moto: "Moto",
+      car: "Coche",
+    }[def.kind];
+    const kmh = Math.round(def.speed * 3.6);
+    let buy;
+    if (st.owned) buy = `<button class="primary" disabled>YA ES TUYO</button>`;
+    else if (st.locked)
+      buy = `<button class="primary" disabled>🔒 ${st.locked}</button>`;
+    else
+      buy = `<button class="primary" data-buy ${st.missing ? "disabled" : ""}>COMPRAR · ${money(def.price)}</button>`;
+    const how =
+      def.kind === "car"
+        ? "Se conduce con acelerador, freno y dirección. Queda aparcado donde lo dejes."
+        : def.kind === "moto"
+          ? "Se aparca donde la dejes; sube con E."
+          : `Se lleva encima: súbete con ${g.input.isTouch ? "🛴" : "V"} en cualquier calle.`;
+    this.open(
+      "vehicle",
+      def.name,
+      `<div class="garment">
+        <div class="garment-price">${st.owned ? `<span class="tag good">Ya es tuyo</span>` : money(def.price)}</div>
+        <p>${def.desc}</p>
+        <div class="stats"><span>🏷️ ${kind}</span><span>⚡ ${kmh} km/h</span><span>${"★".repeat(Math.max(1, Math.round(def.accel / 3)))} aceleración</span></div>
+        <p class="hint">${how}</p>
+        ${st.missing && !st.owned && !st.locked ? `<p class="bad missing">Te faltan ${money(Math.round(st.missing * 100) / 100)}</p>` : ""}
+        <div class="order-actions">
+          <button class="ghost" data-cancel>CANCELAR</button>
+          ${id === "lujo" ? "" : `<button data-try>PROBAR EN LA PISTA</button>`}
+          ${buy}
+        </div>
+        <p class="hint small">Tienes ${money(Math.floor(g.state.money))}.</p>
+      </div>`,
+      { side: true },
+    );
+    this.bind("[data-cancel]", () => this.close());
+    this.bind("[data-try]", () => {
+      this.close();
+      rides.startTest(id, { ...back, h: g.player.heading });
+    });
+    this.bind("[data-buy]", async () => {
+      if (await rides.buy(id)) this.close();
+      else this.openVehicle(rides, id, back);
     });
   }
 
@@ -683,7 +745,7 @@ export class UI {
     const stage = g.stageIndex();
     const rows = ["scooter", "furgoneta", "casa"]
       .map((id) => {
-        const it = SHOP_ITEMS[id];
+        const it = SHOP_ITEMS[id] ?? VEHICLES[id];
         let btn = `<button data-item="${id}">${money(it.price)}</button>`;
         if (g.state.items[id]) btn = `<span class="tag good">Tuyo</span>`;
         else if ((it.stage ?? 0) > stage)
@@ -694,10 +756,11 @@ export class UI {
     this.open(
       "dealer",
       "Concesionario e Inmobiliaria",
-      `<div class="list">${rows}</div><p class="hint">Gastos de la furgoneta: $10/día.</p>`,
+      `<div class="list">${rows}</div><p class="hint">Más vehículos (monopatín, bici, moto, coches) en la tienda VEHÍCULOS de la zona comercial.</p>`,
     );
     this.bind("[data-item]", async (d) => {
-      await g.buyItem(d.item);
+      if (VEHICLES[d.item]) await g.rides.buy(d.item);
+      else await g.buyItem(d.item);
       this.openDealer();
     });
   }

@@ -489,7 +489,7 @@ export class Online {
       h: Math.round(g.player.heading * 100) / 100,
       s: Math.round(g.player.speedNow * 10) / 10,
       c: g.state.carried.map((b) => b.product),
-      r: g.player.riding,
+      r: g.player.ride?.id ?? "",
       k: g.state.cart,
     };
     const key = JSON.stringify(st);

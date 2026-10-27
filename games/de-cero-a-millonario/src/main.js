@@ -19,6 +19,7 @@ import { Warehouse } from "./warehouse.js";
 import { Net, savedName } from "./net.js";
 import { Online } from "./online.js";
 import { Shopping } from "./shopping.js";
+import { Rides, isSmall } from "./rides.js";
 import { checkMissions, currentMission } from "./missions.js";
 import { defaultLook, STARTER_ITEMS, findItem } from "./look.js";
 import {
@@ -34,6 +35,7 @@ import {
   PLOTS,
   CART_CAPACITY,
   CATEGORIES,
+  VEHICLES,
 } from "./config.js";
 
 const SAVE_KEY = "de-cero-a-millonario-v1";
@@ -92,6 +94,14 @@ function freshState() {
     carried: [],
     // Carro de carga del Mayorista (lleva muchas cajas a la vez).
     cart: false,
+    // Vehículos: el pequeño elegido para V y dónde está aparcado cada coche.
+    ride: null,
+    parked: {},
+    // Zonas desbloqueadas, casa propia y muebles, objetivos cumplidos.
+    unlocked: {},
+    home: { owned: false, layout: [], open: false },
+    furniture: {},
+    goals: {},
     pickup: [],
     deliveries: [],
     warehouse: {},
@@ -149,6 +159,7 @@ class Game {
     this.tutorial = new Tutorial(this);
     this.ui = new UI(this);
     this.shopping = new Shopping(this);
+    this.rides = new Rides(this);
     this.examine = null;
     this.rebuildInteractables();
     this.world.traffic.onBusStop = () => this.crowd.onBusStop();
@@ -202,6 +213,7 @@ class Game {
       ...this.buildStaticInteractables(),
       ...this.events.merchantInteractables(),
       ...this.shopping.interactables(),
+      ...this.rides.interactables(),
       ...this.storeDoorHints(),
       ...(this.online?.interactables() ?? []),
     ];
@@ -297,6 +309,7 @@ class Game {
     }
     if (!cp.blob) this.businesses.tienda.seedStarterStock();
     this.normalizeCarry();
+    this.player.setRide(null);
     for (const m of res.members) this.online.addRemotePlot(m);
     this.online.reconcile(cp.ledger);
     this.restorePlayer(blob.player);
@@ -715,7 +728,8 @@ class Game {
     for (const b of Object.values(this.businesses))
       if (b.owned) worth += b.def.price * 0.8;
     for (const [id, owned] of Object.entries(this.state.items))
-      if (owned && SHOP_ITEMS[id]) worth += SHOP_ITEMS[id].price * 0.5;
+      if (owned && (SHOP_ITEMS[id] ?? VEHICLES[id]))
+        worth += (SHOP_ITEMS[id] ?? VEHICLES[id]).price * 0.5;
     return worth;
   }
 
@@ -729,8 +743,8 @@ class Game {
       this.state.carried.map((b) => b.product),
       this.state.cart,
     );
-    if ((this.state.carried.length || this.state.cart) && this.player.riding)
-      this.toggleRide(false);
+    if ((this.state.carried.length || this.state.cart) && this.player.ride)
+      this.rides.dismount();
     this.ui.refreshHud(true);
   }
 
@@ -916,6 +930,7 @@ class Game {
   }
 
   async buyItem(id) {
+    if (VEHICLES[id]) return this.rides.buy(id);
     const item = SHOP_ITEMS[id];
     if (this.state.items[id] || (item.stage ?? 0) > this.stageIndex()) return;
     if (this.online) {
@@ -930,11 +945,11 @@ class Game {
 
   applyItems() {
     const it = this.state.items;
-    this.world.ownVan.visible = !!it.furgoneta;
-    if (it.furgoneta && !this.vanCollider)
-      this.vanCollider = this.world.physics.addCentered(25, 13, 2.0, 4.6);
+    // La furgoneta propia es un vehículo conducible (lo gestiona Rides).
+    this.world.ownVan.visible = false;
     this.world.displayVan.visible = !it.furgoneta;
     this.world.displayScooter.visible = !it.scooter;
+    this.rides.restore();
     this.world.buildings.casagrande.setLocked(
       !it.casa,
       it.casa
@@ -956,24 +971,9 @@ class Game {
     }
   }
 
-  toggleRide(force) {
-    if (!this.state.items.scooter) return;
-    const on = force ?? !this.player.riding;
-    if (on && this.state.carried.length)
-      return this.ui.toast("No puedes ir en scooter cargando cajas", "bad");
-    if (on && this.state.cart) {
-      // El carro vacío vuelve solo al Mayorista.
-      this.state.cart = false;
-      this.onCarryChanged();
-      this.ui.toast("🛒 Carro devuelto al Mayorista");
-    }
-    const inside = Object.values(this.world.buildings).some((b) =>
-      b.contains(this.player.pos.x, this.player.pos.z),
-    );
-    if (on && inside)
-      return this.ui.toast("Sal a la calle para usar el scooter", "bad");
-    this.player.setRiding(on);
-    this.audio.sfx(on ? "jump" : "land");
+  // V: subir o bajar del vehículo pequeño (monopatín, bici o scooter).
+  toggleRide() {
+    this.rides.toggleSmall();
   }
 
   // ---------- Autoservicio del Mayorista ----------
@@ -1057,7 +1057,7 @@ class Game {
   toggleCart() {
     if (this.state.cart && this.state.carried.length) return;
     this.state.cart = !this.state.cart;
-    if (this.state.cart && this.player.riding) this.toggleRide(false);
+    if (this.state.cart && this.player.ride) this.rides.dismount();
     this.audio.sfx(this.state.cart ? "pickup" : "place");
     this.ui.toast(
       this.state.cart
@@ -1263,6 +1263,8 @@ class Game {
     let best = null;
     let bestScore = Infinity;
     const all = [...this.staticInteractables];
+    const ride = this.rides.dynamic();
+    if (ride) all.push(ride);
     for (const b of Object.values(this.businesses))
       if (b.owned) all.push(...b.interactables);
     for (const it of all) {
@@ -1420,8 +1422,11 @@ class Game {
     };
   }
 
+  // Examinar un objeto (vehículo, mueble): el personaje se aparta de la
+  // vista mientras dura.
   examineObject(target, eye) {
     this.examine = { eye, look: target };
+    this.player.char.root.visible = false;
   }
 
   stepExamine(dt) {
@@ -1534,6 +1539,7 @@ class Game {
   step(dt) {
     const input = this.input;
     input.enabled = true;
+    this.player.char.root.visible = true;
     this.player.update(dt, input, this.cameraRig.yaw);
     this.checkExitGate();
     const inside = Object.values(this.world.buildings).find((b) =>
@@ -1545,6 +1551,7 @@ class Game {
     this.warehouse.update(dt);
     this.tutorial.update();
     this.shopping.update();
+    this.rides.update(dt);
     this.carryHint();
     this.guide.update(dt, this.elapsed);
     this.online?.update(dt);
@@ -1714,6 +1721,14 @@ class Game {
   // ---------- Guardado ----------
 
   save() {
+    // El coche que se conduce se guarda donde está ahora.
+    const ride = this.player.ride;
+    if (ride && !isSmall(ride.id) && !this.rides.test)
+      this.state.parked[ride.id] = {
+        x: this.player.pos.x,
+        z: this.player.pos.z,
+        h: this.player.heading,
+      };
     if (this.online) {
       // El servidor guarda dinero e inventario; aquí solo el reparto.
       const state = { ...this.state };
@@ -1769,6 +1784,7 @@ class Game {
     };
     if (data.version === 1) this.migrateV1(data.state);
     this.normalizeCarry();
+    this.player.setRide(null);
     this.state.wardrobe = [
       ...new Set([...STARTER_ITEMS, ...(this.state.wardrobe ?? [])]),
     ];

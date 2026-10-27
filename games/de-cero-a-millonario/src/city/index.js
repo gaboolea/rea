@@ -6,6 +6,7 @@ import { buildCommercial } from "./commercial.js";
 import { buildResidential } from "./residential.js";
 import { buildFinancial, CROSS_X, BARRIER_X } from "./financial.js";
 import { buildClothingStore } from "../stores/clothing.js";
+import { buildDealership } from "../stores/vehicles.js";
 
 // Distancia a partir de la cual una zona no se dibuja (la niebla ya la
 // oculta): menos objetos que recorrer en cada fotograma.
@@ -19,6 +20,7 @@ export function buildExpansion(world) {
   // Interiores de las tiendas físicas.
   world.stores = {
     ropa: buildClothingStore(world, commercial.shops.ropa),
+    vehiculos: buildDealership(world, commercial.shops.vehiculos),
   };
 
   const t = world.traffic;

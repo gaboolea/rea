@@ -525,3 +525,169 @@ export class Traffic {
     }
   }
 }
+
+// ---------- Vehículos del jugador ----------
+// Todos miran hacia +z. userData.spin: piezas que giran al avanzar (ruedas
+// y pedales); userData.seat: altura del asiento para el personaje.
+
+function wheel(r, w, color = 0x2b2b33) {
+  const g = new THREE.Group();
+  const tire = mesh(cylinder(r, r, w, 18), mat(color), 0, 0, 0);
+  tire.rotation.z = Math.PI / 2;
+  g.add(tire);
+  const hub = mesh(
+    cylinder(r * 0.45, r * 0.45, w + 0.02, 10),
+    mat(0xdddddd),
+    0,
+    0,
+    0,
+  );
+  hub.rotation.z = Math.PI / 2;
+  g.add(hub);
+  // Radio visible para notar el giro.
+  g.add(mesh(box(w + 0.04, r * 1.6, 0.05), mat(0xbfc6cc), 0, 0, 0));
+  return g;
+}
+
+export function toySkate(color = 0xff7a45) {
+  const g = new THREE.Group();
+  g.add(mesh(roundedBox(0.42, 0.06, 1.05, 0.03), mat(color), 0, 0.16, 0));
+  g.add(mesh(roundedBox(0.36, 0.02, 0.95, 0.01), mat(0x2b2b33), 0, 0.2, 0));
+  const spin = [];
+  for (const z of [-0.36, 0.36]) {
+    g.add(mesh(box(0.3, 0.04, 0.08), mat(0x9aa7b0), 0, 0.11, z));
+    for (const x of [-0.16, 0.16]) {
+      const w = wheel(0.055, 0.06, 0xffd23f);
+      w.position.set(x, 0.06, z);
+      g.add(w);
+      spin.push(w);
+    }
+  }
+  g.userData = { spin, seat: 0.2, kind: "board" };
+  return g;
+}
+
+export function toyBike(color = 0x3fbf5f) {
+  const g = new THREE.Group();
+  const frame = mat(color, { roughness: 0.35 });
+  const spin = [];
+  for (const z of [-0.55, 0.55]) {
+    const w = wheel(0.34, 0.07);
+    w.position.set(0, 0.34, z);
+    g.add(w);
+    spin.push(w);
+  }
+  const bar = (x, y, z, len, rx) => {
+    const m = mesh(cylinder(0.035, 0.035, len, 8), frame, x, y, z);
+    m.rotation.x = rx;
+    g.add(m);
+  };
+  bar(0, 0.55, 0, 0.95, Math.PI / 2);
+  bar(0, 0.5, -0.3, 0.55, -0.5);
+  bar(0, 0.62, 0.42, 0.6, 0.35);
+  g.add(mesh(roundedBox(0.2, 0.06, 0.3, 0.03), mat(0x2b2b33), 0, 0.85, -0.3));
+  const handle = mesh(
+    cylinder(0.025, 0.025, 0.55, 8),
+    mat(0x2b2b33),
+    0,
+    0.95,
+    0.5,
+  );
+  handle.rotation.z = Math.PI / 2;
+  g.add(handle);
+  // Bielas y pedales (giran al pedalear).
+  const crank = new THREE.Group();
+  crank.position.set(0, 0.36, 0);
+  crank.add(mesh(box(0.06, 0.32, 0.04), mat(0x555555), 0.1, 0, 0));
+  crank.add(mesh(box(0.06, 0.32, 0.04), mat(0x555555), -0.1, 0, 0));
+  crank.children[1].rotation.x = Math.PI;
+  g.add(crank);
+  g.userData = { spin, crank, seat: 0.55, kind: "bike" };
+  return g;
+}
+
+export function toyMoto(color = 0xff5a4e) {
+  const g = new THREE.Group();
+  const paint = mat(color, { roughness: 0.3, metalness: 0.2 });
+  const spin = [];
+  for (const z of [-0.6, 0.62]) {
+    const w = wheel(0.32, 0.18);
+    w.position.set(0, 0.32, z);
+    g.add(w);
+    spin.push(w);
+  }
+  g.add(mesh(roundedBox(0.5, 0.42, 1.1, 0.16), paint, 0, 0.6, 0.05));
+  g.add(mesh(roundedBox(0.42, 0.14, 0.6, 0.06), mat(0x2b2b33), 0, 0.86, -0.18));
+  g.add(mesh(roundedBox(0.48, 0.3, 0.3, 0.1), paint, 0, 0.92, 0.48));
+  const handle = mesh(
+    cylinder(0.03, 0.03, 0.7, 8),
+    mat(0x2b2b33),
+    0,
+    1.08,
+    0.52,
+  );
+  handle.rotation.z = Math.PI / 2;
+  g.add(handle);
+  g.add(
+    mesh(
+      sphere(0.09, 10),
+      new THREE.MeshBasicMaterial({ color: 0xfff6c2 }),
+      0,
+      0.92,
+      0.66,
+      false,
+    ),
+  );
+  g.userData = { spin, seat: 0.62, kind: "moto" };
+  return g;
+}
+
+export function toyFamilyCar(color) {
+  const g = new THREE.Group();
+  const paint = mat(color, { roughness: 0.35 });
+  g.add(mesh(roundedBox(1.85, 0.75, 3.8, 0.3), paint, 0, 0.68, 0));
+  g.add(mesh(roundedBox(1.7, 0.75, 2.6, 0.3), paint, 0, 1.3, -0.35));
+  g.add(mesh(roundedBox(1.75, 0.5, 2.45, 0.22), glassMat(), 0, 1.33, -0.35));
+  g.add(mesh(box(1.5, 0.08, 2), mat(0x2f3542), 0, 1.72, -0.35));
+  wheels(g, [-0.88, 0.88], [-1.2, 1.2], 0.36);
+  return g;
+}
+
+export function toyLuxuryCar(color = 0x1d2b44) {
+  const g = toyModernCar(color);
+  g.scale.set(1.05, 1, 1.15);
+  const gold = mat(0xf2c230, { metalness: 0.6, roughness: 0.25 });
+  for (const s of [-1, 1])
+    g.add(mesh(box(0.04, 0.06, 3.4), gold, s * 0.91, 0.62, 0));
+  g.add(mesh(box(0.6, 0.12, 0.05), gold, 0, 0.7, 1.82));
+  return g;
+}
+
+// Modelo según el identificador del vehículo (config VEHICLES).
+export function rideModel(id, def) {
+  switch (def.kind) {
+    case "board":
+      return toySkate();
+    case "bike":
+      return toyBike();
+    case "scooter":
+      return toyScooter(0xff5a4e);
+    case "moto":
+      return toyMoto();
+    default:
+      if (id === "furgoneta") return toyVan(def.color);
+      if (id === "familiar") return toyFamilyCar(def.color);
+      if (id === "deportivo") return toyModernCar(def.color);
+      if (id === "lujo") return toyLuxuryCar(def.color);
+      return toyCar(def.color);
+  }
+}
+
+// Medidas para colisiones (medio largo y medio ancho, m).
+export function rideSize(def, id) {
+  if (def.kind !== "car") return { half: 0.5, width: 0.3 };
+  if (id === "furgoneta") return { half: 2.0, width: 0.95 };
+  if (id === "familiar") return { half: 1.9, width: 0.92 };
+  if (id === "lujo") return { half: 2.05, width: 0.95 };
+  return { half: 1.7, width: 0.9 };
+}
