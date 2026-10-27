@@ -15,6 +15,7 @@ import {
   geo,
   bubbleMaterial,
 } from "./gfx.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { PRODUCTS } from "./config.js";
 import { cargoCart } from "./decor.js";
 import { COLORS, SKINS, defaultLook } from "./look.js";
@@ -31,31 +32,119 @@ const torus = (r, t) =>
 const cone = (r, h, seg = 12) =>
   geo(`cone${r}|${h}|${seg}`, () => new THREE.ConeGeometry(r, h, seg));
 
-// Acabado brillante y suave, como de gelatina.
-// Silueta del cuerpo (gominola): cápsula algo más ancha abajo. Se tornea
-// por tramos, así camiseta y pantalón comparten superficie y la costura de
-// la cintura queda limpia.
-const BEAN_R = 0.33;
-const BEAN_L = 0.15;
-const WAIST = 0.02;
-function beanRadius(y) {
-  const a = Math.abs(y);
-  const r = a <= BEAN_L ? BEAN_R : Math.sqrt(BEAN_R ** 2 - (a - BEAN_L) ** 2);
-  return r * (1 - y * 0.08);
+// Silueta del cuerpo (coordenadas del torso): caderas redondeadas, torso
+// compacto algo ancho, hombros caídos y base del cuello. Pantalón y
+// camiseta se tornean con el mismo perfil; la camiseta un poco más ancha
+// y solapada sobre el pantalón, para que se vea puesta y no pintada.
+const PROFILE = [
+  [-0.3, 0],
+  [-0.29, 0.11],
+  [-0.26, 0.205],
+  [-0.21, 0.255],
+  [-0.13, 0.27],
+  [-0.05, 0.275],
+  [0.04, 0.285],
+  [0.13, 0.285],
+  [0.2, 0.27],
+  [0.25, 0.235],
+  [0.285, 0.175],
+  [0.305, 0.1],
+  [0.31, 0],
+];
+const WAIST = -0.08;
+function bodyRadius(y) {
+  if (y <= PROFILE[0][0]) return 0;
+  for (let i = 1; i < PROFILE.length; i++) {
+    const [y1, r1] = PROFILE[i];
+    if (y <= y1) {
+      const [y0, r0] = PROFILE[i - 1];
+      return r0 + ((r1 - r0) * (y - y0)) / (y1 - y0);
+    }
+  }
+  return 0;
 }
-const bean = (from, to) =>
-  geo(`bean${from}|${to}`, () => {
-    const top = BEAN_L + BEAN_R;
+const lathe = (from, to, inflate = 1) =>
+  geo(`body${from}|${to}|${inflate}`, () => {
     const pts = [];
-    const n = 18;
+    const n = 22;
     for (let i = 0; i <= n; i++) {
       const y = from + ((to - from) * i) / n;
-      // Polos cerrados: radio 0 en los extremos del cuerpo.
-      const r = Math.abs(Math.abs(y) - top) < 1e-6 ? 0 : beanRadius(y);
-      pts.push(new THREE.Vector2(r, y));
+      pts.push(new THREE.Vector2(bodyRadius(y) * inflate, y));
     }
     return new THREE.LatheGeometry(pts, 28);
   });
+
+// Varias piezas con el mismo material fundidas en una geometría (menos
+// llamadas de dibujo por personaje). parts: [geometría, x, y, z, escala].
+const merged = (key, parts) =>
+  geo(key, () =>
+    mergeGeometries(
+      parts.map(([g, x, y, z, sx = 1, sy = 1, sz = 1, rx = 0]) =>
+        (g.index ? g.toNonIndexed() : g.clone()).applyMatrix4(
+          new THREE.Matrix4().compose(
+            new THREE.Vector3(x, y, z),
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, 0, 0)),
+            new THREE.Vector3(sx, sy, sz),
+          ),
+        ),
+      ),
+    ),
+  );
+
+// Camiseta: torso con bajo, cuello acanalado y la manga corta abullonada.
+const shirtGeo = () =>
+  merged("shirt", [
+    [lathe(WAIST - 0.035, 0.31, 1.035), 0, 0, 0],
+    [
+      torus(bodyRadius(WAIST - 0.03) * 1.035, 0.02),
+      0,
+      WAIST - 0.03,
+      0,
+      1,
+      1,
+      1,
+      Math.PI / 2,
+    ],
+    [torus(0.105, 0.022), 0, 0.29, 0, 1, 1, 1, Math.PI / 2],
+  ]);
+const sleeveGeo = (long) =>
+  long
+    ? merged("sleeve-long", [
+        [sphere(0.13, 14), 0, -0.05, 0, 1, 1.1, 1],
+        [capsule(0.088, 0.26), 0, -0.2, 0],
+        [torus(0.086, 0.02), 0, -0.33, 0, 1, 1, 1, Math.PI / 2],
+      ])
+    : merged("sleeve", [
+        [sphere(0.135, 14), 0, -0.065, 0, 1, 1.15, 1],
+        [torus(0.108, 0.02), 0, -0.165, 0, 1, 1, 1, Math.PI / 2],
+      ]);
+// Brazo de piel con la mano redondeada (o solo la mano, con manga larga).
+const armGeo = (long) =>
+  long
+    ? merged("hand", [[sphere(0.095, 14), 0, -0.41, 0.01, 0.92, 1, 0.85]])
+    : merged("arm", [
+        [capsule(0.074, 0.2), 0, -0.22, 0],
+        [sphere(0.095, 14), 0, -0.41, 0.01, 0.92, 1, 0.85],
+      ]);
+// Pierna de pantalón: algo holgada, con pliegue, bajo y (cargo) bolsillo
+// lateral con solapa. side: -1 / 1.
+const legGeo = (kind, side) =>
+  merged(`leg|${kind}|${side}`, [
+    [cylinder(0.132, 0.125, 0.41, 16), 0, -0.185, 0],
+    [torus(0.127, 0.012), 0, -0.15, 0, 1, 1, 1, Math.PI / 2],
+    [cylinder(0.133, 0.135, 0.04, 16), 0, -0.37, 0],
+    ...(kind === "cargo"
+      ? [
+          [roundedBox(0.05, 0.13, 0.12, 0.02), side * 0.125, -0.1, 0],
+          [roundedBox(0.056, 0.035, 0.128, 0.015), side * 0.131, -0.025, 0],
+        ]
+      : []),
+  ]);
+const shortsGeo = () =>
+  merged("shorts", [
+    [cylinder(0.135, 0.138, 0.17, 16), 0, -0.06, 0],
+    [torus(0.136, 0.012), 0, -0.14, 0, 1, 1, 1, Math.PI / 2],
+  ]);
 
 const cloth = (c) => mat(c, { roughness: 0.38 });
 // Tamaño general respecto al diseño original (un poco más pequeños).
@@ -96,31 +185,31 @@ export class ToyCharacter {
   // Articulaciones vacías; setLook() las rellena con cuerpo y ropa.
   buildSkeleton() {
     this.torso = new THREE.Group();
-    this.torso.position.set(0, 0.74, 0);
-    this.torso.scale.set(1, 1, 0.88);
+    this.torso.position.set(0, 0.785, 0);
+    this.torso.scale.set(1, 1, 0.86);
     this.rig.add(this.torso);
     // Cabeza más pequeña (escala de todo lo que lleva: gorros, lentes) y
     // hundida en el cuerpo, sin cuello: se ve de una sola pieza.
     this.headPivot = new THREE.Group();
-    this.headPivot.position.set(0, 1.16, 0);
-    this.headPivot.scale.setScalar(0.8);
+    this.headPivot.position.set(0, 1.205, 0);
+    this.headPivot.scale.setScalar(0.85);
     this.rig.add(this.headPivot);
     this.legs = [-1, 1].map((side) => {
       const pivot = new THREE.Group();
-      pivot.position.set(side * 0.14, 0.455, 0);
+      pivot.position.set(side * 0.145, 0.5, 0);
       pivot.userData.side = side;
       this.rig.add(pivot);
       return pivot;
     });
     this.arms = [-1, 1].map((side) => {
       const pivot = new THREE.Group();
-      pivot.position.set(side * 0.28, 0.94, 0);
+      pivot.position.set(side * 0.305, 0.975, 0);
       pivot.userData.side = side;
       this.rig.add(pivot);
       return pivot;
     });
     this.carryGroup = new THREE.Group();
-    this.carryGroup.position.set(0, 0.85, 0.42);
+    this.carryGroup.position.set(0, 0.9, 0.42);
     this.rig.add(this.carryGroup);
     const shadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.42, 20),
@@ -147,6 +236,8 @@ export class ToyCharacter {
     this.skinMat = skin;
     const head = mesh(sphere(0.42, 24), skin, 0, 0.32, 0);
     this.headPivot.add(head);
+    // Cuello corto entre el torso y la cabeza.
+    this.torso.add(mesh(cylinder(0.1, 0.11, 0.14, 14), skin, 0, 0.33, 0));
     this.dressTop(look.top ?? { id: "camiseta", color: "turquesa" }, skin);
     this.dressBottom(look.bottom ?? { id: "pantalon", color: "marino" }, skin);
     this.dressShoes(look.shoes ?? { id: "zapatillas", color: "blanco" });
@@ -176,7 +267,7 @@ export class ToyCharacter {
         (c.geometry.boundingBox.max.z - c.geometry.boundingBox.min.z) / 2;
       c.position.z =
         Math.sign(z) *
-        (beanRadius(c.position.y) * 0.88 + half * (z < 0 ? 0.7 : 0.4));
+        (bodyRadius(c.position.y) * 1.035 + half * (z < 0 ? 0.75 : 0.25));
     }
     // Solo cabeza y tronco proyectan sombra: los detalles no se notan en
     // ella y así cada personaje cuesta muchas menos pasadas de dibujo.
@@ -184,7 +275,8 @@ export class ToyCharacter {
       if (o.isMesh) o.castShadow = false;
     });
     head.castShadow = true;
-    this.torso.children[0].castShadow = true;
+    for (const c of this.torso.children)
+      if (c.userData.body) c.castShadow = true;
   }
 
   dressTop(item, skin) {
@@ -192,93 +284,71 @@ export class ToyCharacter {
     const gold = item.id === "traje_oro";
     const color = gold ? COLORS.oro : (COLORS[item.color] ?? COLORS.turquesa);
     const m = gold ? shiny(color) : cloth(color);
-    // Cuerpo de una pieza en forma de judía.
-    t.add(mesh(bean(WAIST, BEAN_L + BEAN_R), m, 0, 0, 0));
-    // Brazos cortos y gruesos: nacen dentro del cuerpo (no quedan pegados
-    // por fuera) y acaban en una mano redonda.
+    // Camiseta torneada sobre el torso, con bajo y cuello.
+    const shirt = mesh(shirtGeo(), m);
+    shirt.userData.body = true;
+    t.add(shirt);
+    // Manga (corta y abullonada, o larga) y brazo de piel con la mano.
     const longSleeves = item.id !== "camiseta";
     for (const arm of this.arms) {
       const side = arm.userData.side;
-      if (longSleeves)
-        arm.add(mesh(capsule(0.11, 0.12), m, side * 0.05, -0.12, 0));
-      else {
-        arm.add(mesh(capsule(0.1, 0.12), skin, side * 0.05, -0.13, 0));
-        const sleeve = mesh(sphere(0.13, 14), m, side * 0.03, -0.04, 0);
-        sleeve.scale.y = 0.85;
-        arm.add(sleeve);
-      }
-      arm.add(mesh(sphere(0.115, 14), skin, side * 0.07, -0.25, 0));
+      arm.add(mesh(sleeveGeo(longSleeves), m, side * 0.02, 0, 0));
+      arm.add(mesh(armGeo(longSleeves), skin, side * 0.03, 0, 0));
     }
     const trim = cloth(lighten(color, 0.12));
-    if (item.id === "camiseta") {
-      const collar = mesh(torus(0.14, 0.03), trim, 0, 0.42, 0.04);
-      collar.rotation.x = Math.PI / 2;
-      t.add(collar);
-    } else if (item.id === "sudadera") {
-      const hood = mesh(torus(0.2, 0.1), m, 0, 0.4, -0.14);
+    if (item.id === "sudadera") {
+      const hood = mesh(torus(0.19, 0.085), m, 0, 0.26, -0.12);
       hood.rotation.x = Math.PI / 2 - 0.5;
       t.add(hood);
       t.add(
         mesh(
-          roundedBox(0.36, 0.15, 0.06, 0.03),
+          roundedBox(0.34, 0.13, 0.06, 0.03),
           cloth(lighten(color, -0.08)),
           0,
-          -0.14,
+          -0.02,
           0.28,
         ),
       );
       for (const s of [-1, 1])
         t.add(
           mesh(
-            cylinder(0.013, 0.013, 0.2, 6),
+            cylinder(0.013, 0.013, 0.18, 6),
             mat(0xffffff),
-            s * 0.07,
-            0.24,
+            s * 0.06,
+            0.16,
             0.29,
           ),
         );
     } else if (item.id === "chaqueta") {
       t.add(
-        mesh(
-          roundedBox(0.17, 0.34, 0.04, 0.02),
-          cloth(0xf7f7f2),
-          0,
-          0.08,
-          0.27,
-        ),
+        mesh(roundedBox(0.16, 0.3, 0.04, 0.02), cloth(0xf7f7f2), 0, 0.08, 0.27),
       );
       for (const s of [-1, 1]) {
         const lapel = mesh(
-          roundedBox(0.09, 0.22, 0.05, 0.02),
+          roundedBox(0.08, 0.2, 0.05, 0.02),
           trim,
           s * 0.1,
-          0.24,
+          0.18,
           0.25,
         );
         lapel.rotation.z = s * 0.45;
         t.add(lapel);
       }
-      for (const y of [0.05, -0.12])
+      for (const y of [0.06, -0.06])
         t.add(mesh(sphere(0.025, 8), mat(0x333333), 0.11, y, 0.3));
     } else if (item.id === "traje" || gold) {
       t.add(
-        mesh(
-          roundedBox(0.18, 0.32, 0.04, 0.02),
-          cloth(0xffffff),
-          0,
-          0.12,
-          0.27,
-        ),
+        mesh(roundedBox(0.17, 0.3, 0.04, 0.02), cloth(0xffffff), 0, 0.1, 0.27),
       );
       const tie = gold ? mat(0x2f3542) : mat(0xe23b3b);
-      t.add(mesh(roundedBox(0.075, 0.3, 0.03, 0.015), tie, 0, 0.1, 0.31));
-      t.add(mesh(sphere(0.04, 8), tie, 0, 0.29, 0.31));
+      t.add(mesh(roundedBox(0.07, 0.27, 0.03, 0.015), tie, 0, 0.08, 0.31));
+      t.add(mesh(sphere(0.038, 8), tie, 0, 0.24, 0.31));
       for (const s of [-1, 1]) {
         const lapel = mesh(
-          roundedBox(0.08, 0.3, 0.04, 0.02),
+          roundedBox(0.08, 0.28, 0.04, 0.02),
           gold ? shiny(lighten(color, -0.1)) : cloth(lighten(color, -0.08)),
           s * 0.12,
-          0.2,
+          0.15,
           0.27,
         );
         lapel.rotation.z = s * 0.35;
@@ -291,26 +361,18 @@ export class ToyCharacter {
     const denim = item.id === "vaqueros";
     const color = denim ? 0x4a6fa5 : (COLORS[item.color] ?? COLORS.marino);
     const m = cloth(color);
-    // Mitad baja del cuerpo con el color del pantalón.
-    this.torso.add(mesh(bean(-BEAN_L - BEAN_R, WAIST), m, 0, 0, 0));
-    if (denim || item.id === "pantalon_traje") {
-      const belt = mesh(
-        torus(beanRadius(WAIST), 0.025),
-        mat(denim ? 0x6b4226 : 0x222222),
-        0,
-        WAIST,
-        0,
-      );
-      belt.rotation.x = Math.PI / 2;
-      this.torso.add(belt);
-    }
+    // Caderas del pantalón (la camiseta se solapa por encima).
+    const hips = mesh(lathe(-0.3, WAIST + 0.01), m);
+    hips.userData.body = true;
+    this.torso.add(hips);
     for (const leg of this.legs) {
-      // Piernas cortas y gruesas que salen de debajo del cuerpo.
+      const side = leg.userData.side;
       if (item.id === "shorts") {
-        leg.add(mesh(capsule(0.12, 0.12), skin, 0, -0.22, 0));
-        leg.add(mesh(sphere(0.15, 14), m, 0, -0.1, 0));
+        leg.add(mesh(shortsGeo(), m));
+        leg.add(mesh(capsule(0.075, 0.18), skin, 0, -0.27, 0));
       } else {
-        leg.add(mesh(capsule(0.135, 0.12), m, 0, -0.21, 0));
+        const kind = item.id === "pantalon" ? "cargo" : "plain";
+        leg.add(mesh(legGeo(kind, side), m));
       }
     }
   }
@@ -318,8 +380,12 @@ export class ToyCharacter {
   dressShoes(item) {
     const color = COLORS[item.color] ?? COLORS.blanco;
     for (const leg of this.legs) {
+      // Los zapatos apoyan en el suelo: la cadera está 0,5 sobre él.
+      const foot = new THREE.Group();
+      foot.position.y = -0.045;
+      leg.add(foot);
       if (item.id === "altas") {
-        leg.add(
+        foot.add(
           mesh(
             roundedBox(0.23, 0.22, 0.32, 0.07),
             cloth(color),
@@ -328,7 +394,7 @@ export class ToyCharacter {
             0.05,
           ),
         );
-        leg.add(
+        foot.add(
           mesh(
             roundedBox(0.2, 0.08, 0.1, 0.03),
             cloth(0xffffff),
@@ -337,9 +403,9 @@ export class ToyCharacter {
             0.19,
           ),
         );
-        leg.add(mesh(box(0.24, 0.045, 0.33), mat(0xffffff), 0, -0.455, 0.05));
+        foot.add(mesh(box(0.24, 0.045, 0.33), mat(0xffffff), 0, -0.455, 0.05));
       } else if (item.id === "botas") {
-        leg.add(
+        foot.add(
           mesh(
             roundedBox(0.23, 0.24, 0.31, 0.07),
             cloth(0x7a4a2a),
@@ -348,9 +414,9 @@ export class ToyCharacter {
             0.04,
           ),
         );
-        leg.add(mesh(box(0.24, 0.05, 0.32), mat(0x3b2716), 0, -0.455, 0.04));
+        foot.add(mesh(box(0.24, 0.05, 0.32), mat(0x3b2716), 0, -0.455, 0.04));
       } else if (item.id === "zapatos") {
-        leg.add(
+        foot.add(
           mesh(
             roundedBox(0.21, 0.11, 0.33, 0.05),
             mat(0x1f1f24, { roughness: 0.2 }),
@@ -361,7 +427,7 @@ export class ToyCharacter {
         );
       } else {
         const golden = item.id === "doradas";
-        leg.add(
+        foot.add(
           mesh(
             roundedBox(0.22, 0.13, 0.32, 0.06),
             golden ? shiny(COLORS.oro) : cloth(color),
@@ -370,8 +436,16 @@ export class ToyCharacter {
             0.05,
           ),
         );
-        leg.add(mesh(box(0.23, 0.045, 0.33), mat(0xffffff), 0, -0.455, 0.05));
-        leg.add(
+        foot.add(
+          mesh(
+            roundedBox(0.235, 0.05, 0.335, 0.02),
+            mat(0xe4e8ee),
+            0,
+            -0.455,
+            0.05,
+          ),
+        );
+        foot.add(
           mesh(
             box(0.1, 0.02, 0.08),
             mat(
@@ -573,16 +647,16 @@ export class ToyCharacter {
             cylinder(0.1, 0.1, 0.46, 14),
             shiny(0xc9d3dd),
             s * 0.13,
-            0.02,
+            0.04,
             -0.38,
           ),
         );
-        t.add(mesh(cone(0.1, 0.16, 14), mat(0xff5a4e), s * 0.13, 0.33, -0.38));
+        t.add(mesh(cone(0.1, 0.16, 14), mat(0xff5a4e), s * 0.13, 0.3, -0.38));
         const flame = mesh(
           cone(0.07, 0.18, 10),
           new THREE.MeshBasicMaterial({ color: 0xffb347 }),
           s * 0.13,
-          -0.3,
+          -0.26,
           -0.38,
           false,
         );
@@ -592,14 +666,14 @@ export class ToyCharacter {
     } else {
       const color = COLORS[item.color] ?? COLORS.naranja;
       t.add(
-        mesh(roundedBox(0.46, 0.5, 0.22, 0.08), cloth(color), 0, 0.02, -0.38),
+        mesh(roundedBox(0.44, 0.44, 0.22, 0.08), cloth(color), 0, 0.04, -0.38),
       );
       t.add(
         mesh(
           roundedBox(0.47, 0.17, 0.24, 0.06),
           cloth(lighten(color, 0.12)),
           0,
-          0.2,
+          0.18,
           -0.39,
         ),
       );
@@ -608,7 +682,7 @@ export class ToyCharacter {
           roundedBox(0.28, 0.16, 0.05, 0.03),
           cloth(lighten(color, -0.1)),
           0,
-          -0.1,
+          -0.06,
           -0.5,
         ),
       );
@@ -616,10 +690,10 @@ export class ToyCharacter {
     for (const s of [-1, 1])
       t.add(
         mesh(
-          roundedBox(0.07, 0.34, 0.04, 0.02),
+          roundedBox(0.07, 0.3, 0.04, 0.02),
           mat(0x3e4a59),
-          s * 0.15,
-          0.16,
+          s * 0.14,
+          0.12,
           0.27,
         ),
       );
@@ -634,32 +708,26 @@ export class ToyCharacter {
           cone(0.07, 0.13, 4),
           cloth(color),
           s * 0.07,
-          0.38,
+          0.27,
           0.28,
         );
         wing.rotation.z = (s * Math.PI) / 2;
         t.add(wing);
       }
-      t.add(mesh(sphere(0.035, 8), cloth(color), 0, 0.38, 0.3));
+      t.add(mesh(sphere(0.035, 8), cloth(color), 0, 0.27, 0.3));
     } else if (item.id === "bufanda") {
-      const sc = mesh(torus(0.23, 0.085), cloth(color), 0, 0.42, 0.02);
+      const sc = mesh(torus(0.15, 0.07), cloth(color), 0, 0.29, 0.01);
       sc.rotation.x = Math.PI / 2;
       t.add(sc);
       t.add(
-        mesh(
-          roundedBox(0.12, 0.28, 0.06, 0.03),
-          cloth(color),
-          0.12,
-          0.22,
-          0.27,
-        ),
+        mesh(roundedBox(0.12, 0.28, 0.06, 0.03), cloth(color), 0.1, 0.12, 0.27),
       );
     } else if (item.id === "cadena" || item.id === "cadena_oro") {
       const metal = shiny(item.id === "cadena" ? 0xdfe6ea : 0xf7c531);
-      const chain = mesh(torus(0.2, 0.022), metal, 0, 0.3, 0.17);
+      const chain = mesh(torus(0.17, 0.02), metal, 0, 0.2, 0.12);
       chain.rotation.x = Math.PI / 2 - 0.55;
       t.add(chain);
-      t.add(mesh(cylinder(0.06, 0.06, 0.025, 12), metal, 0, 0.13, 0.29));
+      t.add(mesh(cylinder(0.06, 0.06, 0.025, 12), metal, 0, 0.05, 0.29));
       t.children.at(-1).rotation.x = Math.PI / 2;
     }
   }

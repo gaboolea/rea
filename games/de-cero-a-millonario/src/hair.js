@@ -34,9 +34,9 @@ function part(g, pos, { quat, rotX = 0, scale = [1, 1, 1], top = true } = {}) {
 const sphere = (r, w = 16, h = 12) => new THREE.SphereGeometry(r, w, h);
 
 // Casquete que cubre la parte de arriba y de atrás sin tapar la cara.
-const cap = (r = 0.445, length = 1.25) =>
+const cap = (r = 0.455, length = 1.25) =>
   part(new THREE.SphereGeometry(r, 26, 12, 0, Math.PI * 2, 0, length), C, {
-    rotX: -0.45,
+    rotX: -0.4,
   });
 
 // Mechón sobre la superficie de la cabeza.
@@ -48,7 +48,13 @@ const tuft = (r, p, a, scale, dist = 0.43, top = true) =>
   });
 
 const STYLES = {
-  corto: () => [cap()],
+  // Corto con un mechón peinado de lado sobre la frente.
+  corto: () => [
+    cap(),
+    tuft(0.15, 0.62, -0.35, [1.5, 0.45, 1.2]),
+    tuft(0.13, 0.7, 0.25, [1.4, 0.4, 1.1]),
+    tuft(0.12, 0.8, -0.75, [1.2, 0.4, 1]),
+  ],
   flequillo: () => [
     cap(),
     ...[-0.62, -0.31, 0, 0.31, 0.62].map((a) =>
