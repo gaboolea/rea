@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { ToyCharacter } from "./character.js";
 import { turnTowards } from "./npc.js";
+import { GYM } from "./config.js";
 
 const WALK = 3.6;
 const RUN = 6.4;
@@ -76,7 +77,7 @@ export class Player {
     let speed = run ? RUN : WALK;
     const st = this.game.state;
     if (st.carried.length && !st.cart) speed *= 0.88;
-    if (this.game.buff?.until > this.game.elapsed) speed *= 1.12;
+    if (this.game.buff?.until > this.game.elapsed) speed *= GYM.boost;
     // Dirección deseada relativa a la cámara, con aceleración suave.
     const sin = Math.sin(cameraYaw);
     const cos = Math.cos(cameraYaw);

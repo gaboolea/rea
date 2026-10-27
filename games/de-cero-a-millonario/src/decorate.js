@@ -210,7 +210,7 @@ export class Decorator {
       const door = this.b.toWorld(CASITA.door[0], CASITA.door[1] - 0.6);
       g.player.teleport(door.x, door.z);
     }
-    g.checkGoals?.();
+    g.goals.check();
     g.save();
     g.online?.sendHome?.();
   }

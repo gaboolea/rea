@@ -31,7 +31,8 @@ export class Home {
     this.lot = lots[lotIndex];
     for (const lot of lots) {
       if (lot === this.lot) continue;
-      lot.building.setLocked(true, this.game.online ? "LIBRE" : "OCUPADA");
+      const m = this.game.online?.memberOnLot(lot.index);
+      this.showRemote(lot.index, m?.home ?? null, m?.name);
     }
     this.refresh();
   }
@@ -67,11 +68,35 @@ export class Home {
     );
     g.audio.sfx("mission");
     g.player.char.playAction("cheer", 1.2);
-    g.checkGoals?.();
+    g.goals.check();
     g.save();
   }
 
   // ---------- Muebles en la casa ----------
+
+  // Casa de otro jugador (online): sus muebles, sin usarlos, y la puerta
+  // abierta solo si deja visitas. Sin dueño: cerrada.
+  showRemote(lotIndex, home, name) {
+    const lot = this.game.world.homeLots[lotIndex];
+    if (!lot || lot === this.lot) return;
+    this.remote ??= new Map();
+    for (const it of this.remote.get(lotIndex) ?? []) {
+      lot.building.interior.remove(it.model);
+      if (it.collider) this.game.world.physics.remove(it.collider);
+    }
+    const items = home?.owned
+      ? home.layout
+          .filter((it) => FURNITURE[it.f])
+          .map((it) => this.mount(lot.building, it, false))
+      : [];
+    this.remote.set(lotIndex, items);
+    const label = home?.owned
+      ? `CASA DE\n${name.toUpperCase()}`
+      : this.game.online
+        ? "LIBRE"
+        : "OCUPADA";
+    lot.building.setLocked(!(home?.owned && home.open), label);
+  }
 
   // Vuelve a montar los muebles según el estado guardado.
   refresh() {
@@ -89,7 +114,7 @@ export class Home {
     this.syncLamps();
   }
 
-  mount(b, item) {
+  mount(b, item, own = true) {
     const def = FURNITURE[item.f];
     const model = furnitureModel(item.f);
     b.place(model, item.x, item.z, (item.r * Math.PI) / 2, 0.12);
@@ -105,7 +130,7 @@ export class Home {
         "mueble",
       );
     }
-    if (def.use === "tv") this.tvs.push({ item, model });
+    if (own && def.use === "tv") this.tvs.push({ item, model });
     return { item, model, collider };
   }
 
@@ -131,11 +156,13 @@ export class Home {
         radius: 1.8,
         label: () => {
           if (lot !== this.lot) {
-            const owner = g.online?.homeOwner?.(lot.index);
+            const owner = g.online?.memberOnLot(lot.index);
+            if (!owner?.home)
+              return { text: "🏡 Casita de un vecino", enabled: false };
             return {
-              text: owner
-                ? `🏡 Casa de ${owner.name}`
-                : "🏡 Casita de un vecino",
+              text: owner.home.open
+                ? `🏡 Casa de ${owner.name} · puedes visitarla`
+                : `🏡 Casa de ${owner.name} · cerrada a visitas`,
               enabled: false,
             };
           }

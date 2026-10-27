@@ -13,19 +13,12 @@ import {
 } from "../gfx.js";
 import { gableRoof } from "../building.js";
 import { CityKit } from "./kit.js";
-import { CASITA } from "../homelayout.js";
+import { CASITA, HOME_LOTS } from "../homelayout.js";
 
 export const RESIDENTIAL = { minX: -66, maxX: 66, minZ: 52, maxZ: 168 };
 const CROSS_Z = 110;
 
 // Parcelas de las casitas: centro de la casa, giro (puerta hacia la avenida).
-export const HOME_LOTS = [
-  { x: -17, z: 68, rot: Math.PI / 2, number: 1 },
-  { x: 17, z: 68, rot: -Math.PI / 2, number: 2 },
-  { x: -17, z: 90, rot: Math.PI / 2, number: 3 },
-  { x: 17, z: 90, rot: -Math.PI / 2, number: 4 },
-];
-
 export function buildResidential(world) {
   const kit = new CityKit(world, {
     id: "residencial",

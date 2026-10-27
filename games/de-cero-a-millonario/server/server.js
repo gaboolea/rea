@@ -27,6 +27,7 @@ import {
   TEST_TRACK,
 } from "../src/config.js";
 import { ITEMS, SKINS, STARTER_ITEMS, defaultLook } from "../src/look.js";
+import { insideHomeLot } from "../src/homelayout.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GAME_ROOT = path.resolve(HERE, "..");
@@ -160,6 +161,13 @@ function validLook(look, wardrobe) {
   return out;
 }
 
+// Lo que los demás ven de la casa de un jugador (muebles y si se puede
+// entrar); nada de su dinero ni de sus muebles guardados.
+function homeView(cp) {
+  const h = cp ? eco.upgradeProfile(cp).home : null;
+  return h?.owned ? { owned: true, layout: h.layout, open: h.open } : null;
+}
+
 function memberView(city, pid) {
   const p = store.data.profiles[pid];
   const online = [...(cityOnline.get(city.code) ?? [])].find(
@@ -173,6 +181,7 @@ function memberView(city, pid) {
     online: !!online,
     shops: city.shops[pid] ?? {},
     state: online?.state ?? null,
+    home: homeView(p.cities[city.code]),
   };
 }
 
@@ -261,6 +270,8 @@ const ECONOMY = {
   furniture: (s, cp, city, m) => eco.buyFurniture(cp, m),
   layout: (s, cp, city, m) => eco.setHome(cp, m),
   unlock: (s, cp, city, m) => eco.unlock(cp, m),
+  goal: (s, cp, city, m) => eco.claimGoal(cp, m),
+  gym: (s, cp) => eco.gym(cp),
   clothing: (s, cp, city, m) =>
     eco.buyClothing(cp, store.data.profiles[s.pid], m),
   mission: (s, cp, city, m) => eco.claimMission(cp, m),
@@ -305,6 +316,8 @@ function handleEconomy(s, m) {
     store.save();
     if (m.t === "buy")
       broadcast(s.city, { t: "warehouse", stock: city.warehouse });
+    if (m.t === "home" || m.t === "layout")
+      broadcast(s.city, { t: "home", id: s.pid, home: homeView(cp) }, s);
     if (m.t === "business" || (m.t === "item" && m.id === "casa")) {
       const biz = m.t === "business" ? m.biz : "casa";
       broadcast(
@@ -351,6 +364,17 @@ function rideOf(s, cp, m) {
   return "";
 }
 
+function intoClosedHome(s, x, z) {
+  const city = store.data.cities[s.city];
+  for (const [pid, member] of Object.entries(city.members)) {
+    if (pid === s.pid) continue;
+    if (!insideHomeLot(PLOTS.indexOf(member.plot), x, z)) continue;
+    const home = homeView(store.data.profiles[pid]?.cities[s.city]);
+    return !home?.open;
+  }
+  return false;
+}
+
 function handleState(s, m) {
   if (
     !num(m.x, WORLD.minX - 5, WORLD.maxX + 5) ||
@@ -368,6 +392,8 @@ function handleState(s, m) {
   // Sin desbloquear, nadie pasa las obras del distrito financiero.
   if (!cp.unlocked.financiero && m.x < DISTRICT.barrierX - 1.5)
     return correct();
+  // En casa ajena solo se entra si su dueño deja visitas.
+  if (intoClosedHome(s, m.x, m.z)) return correct();
   if (prev) {
     const dt = Math.max(0.05, (now - prev.at) / 1000);
     const dist = Math.hypot(m.x - prev.x, m.z - prev.z);

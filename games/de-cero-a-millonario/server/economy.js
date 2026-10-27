@@ -18,6 +18,9 @@ import {
   HOME,
   DISTRICT,
   TOW_PRICE,
+  GYM,
+  GOALS,
+  goalProgress,
 } from "../src/config.js";
 import { STARTER_LAYOUT, findSpot, layoutProblem } from "../src/homelayout.js";
 import { ITEMS, SKINS } from "../src/look.js";
@@ -372,6 +375,27 @@ export function unlock(cp, { zone }) {
   if (cp.stats.revenue < DISTRICT.revenue)
     return fail(`Necesitas $${DISTRICT.revenue} en ventas`);
   cp.unlocked.financiero = true;
+  return { ok: true };
+}
+
+// Objetivo opcional: se paga una vez y solo si se cumple con los datos
+// que guarda el servidor.
+export function claimGoal(cp, { id }) {
+  const goal = GOALS.find((x) => x.id === id);
+  if (!goal) return fail("Objetivo no válido");
+  if (cp.goals.includes(id)) return fail("Ya cobrado");
+  if (!goalProgress(id, cp).done) return fail("Aún no lo has cumplido");
+  cp.goals.push(id);
+  cp.money = round2(cp.money + goal.reward);
+  return { ok: true, reward: goal.reward };
+}
+
+// Gimnasio: se cobra el entrenamiento (como mucho uno cada 2 minutos).
+export function gym(cp, now = Date.now()) {
+  if (!allow(cp, "gym", 1 / 120, 1, now))
+    return fail("Ya has entrenado hace poco");
+  if (cp.money < GYM.price) return fail("No tienes suficiente dinero");
+  cp.money = round2(cp.money - GYM.price);
   return { ok: true };
 }
 

@@ -99,7 +99,7 @@ export class FurnitureShop {
       "good",
     );
     g.audio.sfx("buy");
-    g.checkGoals?.();
+    g.goals.check();
     g.save();
     return true;
   }

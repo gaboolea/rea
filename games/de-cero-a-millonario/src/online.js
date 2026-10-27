@@ -248,11 +248,19 @@ export class Online {
         av.push({ x, y, z, h, s, c, r, k }, t);
       }
     });
+    n.on("home", (m) => {
+      const member = this.members.get(m.id);
+      if (!member) return;
+      member.home = m.home;
+      this.showRemoteHome(member);
+      this.game.rebuildInteractables();
+    });
     n.on("playerJoined", (m) => {
       const p = m.player;
       const known = this.members.has(p.id);
       this.members.set(p.id, { ...p, online: true });
       if (!known) this.addRemotePlot(p);
+      else this.showRemoteHome(this.members.get(p.id));
       this.game.ui.chatLine(`${p.name} entró en la ciudad`, true);
       this.game.setupGuides();
       this.game.ui.refreshHud(true);
@@ -307,7 +315,20 @@ export class Online {
 
   // ---------- Tiendas de otros jugadores ----------
 
+  // Casa de otro jugador: en la parcela que corresponde a su local.
+  memberOnLot(lotIndex) {
+    for (const m of this.members.values())
+      if (PLOTS.indexOf(m.plot) === lotIndex) return m;
+    return null;
+  }
+
+  showRemoteHome(member) {
+    const lot = PLOTS.indexOf(member.plot);
+    if (lot >= 0) this.game.home.showRemote(lot, member.home, member.name);
+  }
+
   addRemotePlot(member) {
+    this.showRemoteHome(member);
     const key = `${member.id}:tienda`;
     if (this.remoteShops.has(key)) return;
     const b = this.game.world.buildings[member.plot];

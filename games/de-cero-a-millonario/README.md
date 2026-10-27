@@ -70,13 +70,26 @@ Qué hace el servidor:
   servidor. La cafetería, el minimercado, el supermercado y Villa Bonita
   son únicos por ciudad: si dos jugadores los compran a la vez, solo uno lo
   consigue.
+- **Expansión validada en el servidor**: vehículos (etapa, distrito),
+  grúa, la casita, cada mueble (hace falta casa, etapa, tope por mueble y
+  que quepa), cada distribución de la casa completa (muebles comprados,
+  dentro de una habitación, sin tapar puertas ni dejar habitaciones sin
+  paso), el desbloqueo del distrito financiero, los objetivos (se pagan una
+  vez y solo si se cumplen con los datos del servidor) y el gimnasio.
+- **Casas y visitas**: cada jugador ve los muebles de las casas de los
+  demás en su parcela. Solo se entra en una casa ajena si su dueño deja
+  visitas (Decorar o Inventario → Casa); el servidor devuelve a la puerta a
+  quien intente entrar en una casa cerrada.
 - **Compras entre jugadores**: entra en la tienda de otro jugador y compra
   de sus estanterías; el cobro y el traspaso de unidades son atómicos.
   Cada jugador decide en Gestión si vende a otros.
 - **Sincronización**: posiciones a 10 Hz con interpolación, ropa, gestos
   (saludar, aplaudir, bailar), el estado de cada tienda y sus clientes, y el
-  stock compartido del Mayorista. Si alguien se mueve más rápido de lo
-  posible, el servidor lo devuelve a su sitio.
+  stock compartido del Mayorista, y el vehículo en el que va cada uno
+  (bici, monopatín, moto o coche, con su animación). Si alguien se mueve
+  más rápido de lo que permite el vehículo que lleva (que debe ser suyo, o
+  el de la prueba en la pista), sale del mapa o cruza las obras del
+  distrito sin haberlo desbloqueado, el servidor lo devuelve a su sitio.
 - **Chat** de ciudad con límite de mensajes, mensajes repetidos filtrados,
   texto limpiado en el servidor y silenciado por jugador (clic en el nombre
   o desde la clasificación).
@@ -109,17 +122,21 @@ horizontal el HUD se compacta para dejar libre el centro.
 
 ### Controles
 
-| Acción              | Ordenador               | Móvil                              |
-| ------------------- | ----------------------- | ---------------------------------- |
-| Moverse             | WASD / flechas          | Toca la mitad izquierda (joystick) |
-| Correr              | Shift                   | Botón 🏃 (alterna)                 |
-| Saltar              | Espacio                 | Botón ⤒                            |
-| Interactuar         | E                       | Botón ✋ (se ilumina si puedes)    |
-| Girar cámara / zoom | Arrastrar ratón / rueda | Arrastrar en la mitad derecha      |
-| Gestión / mapa      | G / M                   | Botones de arriba a la derecha     |
-| Inventario          | I                       | Botón 🎒                           |
-| Scooter             | V                       | Botón 🛴                           |
-| Pausa               | Esc / P                 | Botón ⏸                            |
+| Acción                                           | Ordenador                            | Móvil                              |
+| ------------------------------------------------ | ------------------------------------ | ---------------------------------- |
+| Moverse                                          | WASD / flechas                       | Toca la mitad izquierda (joystick) |
+| Correr                                           | Shift                                | Botón 🏃 (alterna)                 |
+| Saltar                                           | Espacio                              | Botón ⤒                            |
+| Interactuar                                      | E                                    | Botón ✋ (se ilumina si puedes)    |
+| Girar cámara / zoom                              | Arrastrar ratón / rueda              | Arrastrar en la mitad derecha      |
+| Gestión / mapa                                   | G / M                                | Botones de arriba a la derecha     |
+| Inventario                                       | I                                    | Botón 🎒                           |
+| Bici / skate / scooter                           | V                                    | Botón 🛴                           |
+| Subir/bajar del coche o moto                     | E                                    | Botón ✋                           |
+| Coche: acelerar, frenar, girar                   | W / S / A D, Espacio = freno de mano | Joystick                           |
+| Decorar la casa                                  | B (dentro de tu casa)                | Botón 🛋️ Decorar                   |
+| Decoración: girar, cuadrícula, colocar, cancelar | R, T, E, Esc                         | Botones de la barra                |
+| Pausa                                            | Esc / P                              | Botón ⏸                            |
 
 ### Bucle de juego
 
@@ -157,6 +174,64 @@ Etapas: Principiante → Comerciante ($300 en ventas) → Empresario ($1.500) �
 Magnate ($8.000).
 
 ## Qué incluye
+
+### La gran expansión
+
+El barrio inicial no cambia; la ciudad crece a su alrededor y se recorre
+andando o en vehículo, sin teletransportes:
+
+- **Zona comercial** (al norte, por la avenida): tiendas físicas con
+  fachada, escaparates e interior.
+  - **Tienda de ropa**: maniquíes, percheros, zapatero, probadores,
+    espejos y caja. «VER PRENDA» enseña el precio y te la pone para
+    verla en tu personaje; puedes elegir color, probártela por la tienda
+    (si sales sin pagar te la quitas), comprarla o cancelar.
+  - **Concesionario VEHÍCULOS**: monopatín, bici, scooter, moto, coche
+    compacto, familiar y deportivo (en plataforma giratoria). «EXAMINAR
+    VEHÍCULO» con precio y datos; **prueba gratis en la pista** de al lado.
+  - **Muebles y Decoración**: salas de salón, dormitorio, cocina, baño,
+    iluminación y un muro de decoración. «COMPRAR MUEBLE»: lo comprado va
+    al inventario y nunca se coloca solo.
+  - **Tecnología**: televisor, ordenador, altavoz y lavadora, que se usan
+    en casa.
+  - **Gimnasio**: un entrenamiento ($25) te hace correr un 12 % más rápido
+    durante 3 minutos.
+- **Vehículos de verdad**: los pequeños se llevan encima y se usan con V
+  (pedaleo, impulso del monopatín, inclinación en las curvas); la moto y
+  los coches se aparcan donde los dejas y se sube con E. Los coches
+  aceleran, frenan, dan marcha atrás, giran según la velocidad, chocan con
+  todo su chasis y no entran en los edificios. Servicio de grúa ($15) desde
+  el inventario.
+- **Zona residencial** (al sur): la **casita** ($250, con muebles básicos)
+  tiene salón con cocina, dormitorio y baño, jardín, buzón con número y
+  farola. Con **🛋️ Decorar** se colocan, mueven, giran (cuadrícula
+  opcional), guardan o recolocan muebles con vista desde arriba: verde si
+  cabe, rojo con el motivo si no (dentro de una habitación, sin tapar
+  puertas, sin chocar con otros muebles y dejando paso a todas las
+  habitaciones). Los cuadros, espejos y relojes se cuelgan en las paredes.
+  Se puede encender la tele (dibujos animados), las lámparas, sentarse,
+  dormir hasta la mañana, usar el ordenador (gestión) y poner música.
+- **Distrito financiero** (lejos, al oeste, al final de una avenida):
+  rascacielos, plazas, fuente con una moneda gigante, tráfico propio y la
+  **Galería de lujo** (traje de millonario, cadena de oro y un gran turismo).
+  Las obras con el cartel «DISTRITO FINANCIERO — ACCESO BLOQUEADO» cortan
+  la avenida hasta que acumulas **$1.500 en ventas** (etapa Empresario); el
+  cartel muestra tu progreso y al cumplirlo se abre para siempre con un
+  aviso y confeti.
+- **Inventario** por pestañas: cajas y almacenes, ropa (ponértela),
+  vehículos (elegir el de V, ir a donde está aparcado, grúa), muebles
+  (colocados y guardados), casa (ir, permitir visitas) y objetivos.
+- **Objetivos opcionales** con recompensa única: primer vehículo, casa,
+  10 muebles colocados, un coche, el distrito y 4 vehículos.
+- **Mapa** con iconos de cada zona y tienda y lista de destinos; el
+  elegido se marca con la flecha en el borde de la pantalla y la distancia.
+  Avisos «ENTRAR A LA TIENDA», «EXAMINAR VEHÍCULO», «COMPRAR MUEBLE» y
+  «ENTRAR A CASA».
+- **Rendimiento**: las zonas lejanas no se dibujan, el tráfico y los
+  peatones lejanos se retiran, los maniquíes y piezas estáticas se funden
+  en pocas mallas y las colisiones usan un índice espacial.
+
+### Todo lo demás
 
 - **Pantalla de inicio** con logotipo animado, el personaje en primer plano
   y la ciudad viva detrás; transición con fundido al empezar.
@@ -250,6 +325,18 @@ Magnate ($8.000).
 | `src/icons.js`       | Iconos de productos dibujados en canvas                        |
 | `src/net.js`         | Conexión WebSocket (peticiones y mensajes)                     |
 | `src/online.js`      | Modo online: avatares remotos, tiendas ajenas, chat, ranking   |
+| `src/city/`          | Zonas nuevas: comercial, residencial, distrito financiero      |
+| `src/stores/`        | Interiores: ropa, vehículos, muebles, tecnología, lujo, gym    |
+| `src/shopping.js`    | Ver, probar y comprar ropa en las tiendas                      |
+| `src/rides.js`       | Vehículos: comprar, probar, subir/bajar, aparcar, grúa         |
+| `src/furnishop.js`   | Comprar muebles y aparatos en las tiendas                      |
+| `src/furniture.js`   | Modelos 3D de los muebles                                      |
+| `src/homelayout.js`  | Reglas de la casa (cliente y servidor): huecos, puertas, paso  |
+| `src/home.js`        | Casita propia y casas ajenas, usos de los muebles              |
+| `src/decorate.js`    | Modo decoración                                                |
+| `src/district.js`    | Barrera y desbloqueo del distrito financiero                   |
+| `src/goals.js`       | Gimnasio y objetivos opcionales                                |
+| `src/mapdraw.js`     | Dibujo de la ciudad en el mapa y el minimapa                   |
 | `server/server.js`   | Servidor HTTP + WebSocket: ciudades, sincronización, chat      |
 | `server/economy.js`  | Reglas de economía validadas en el servidor                    |
 | `server/store.js`    | Persistencia en JSON                                           |

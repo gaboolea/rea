@@ -146,7 +146,7 @@ export class Shopping {
     g.net?.send("look", { look: g.state.look });
     g.player.char.playAction("cheer", 0.9);
     g.audio.sfx("sparkle");
-    g.checkGoals?.();
+    g.goals.check();
     g.save();
   }
 

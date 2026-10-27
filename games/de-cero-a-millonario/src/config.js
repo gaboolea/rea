@@ -467,6 +467,71 @@ export const VEHICLES = {
 };
 
 // Casita propia (zona residencial): pequeña y barata para empezar.
+// Gimnasio: un entrenamiento te hace más rápido a pie un rato.
+export const GYM = { price: 25, seconds: 180, boost: 1.12 };
+
+// Objetivos opcionales de la expansión: recompensa única (el servidor
+// comprueba la condición con sus propios datos antes de pagarla).
+export const GOALS = [
+  {
+    id: "primer_vehiculo",
+    name: "Sobre ruedas",
+    desc: "Compra tu primer vehículo",
+    reward: 30,
+  },
+  {
+    id: "casa_propia",
+    name: "Hogar, dulce hogar",
+    desc: "Compra tu casita",
+    reward: 50,
+  },
+  {
+    id: "decorador",
+    name: "Decorador",
+    desc: "Ten 10 muebles colocados en casa",
+    reward: 80,
+    target: 10,
+  },
+  { id: "conductor", name: "Al volante", desc: "Compra un coche", reward: 150 },
+  {
+    id: "distrito",
+    name: "Ciudad de rascacielos",
+    desc: "Desbloquea el distrito financiero",
+    reward: 200,
+  },
+  {
+    id: "garaje",
+    name: "Garaje completo",
+    desc: "Ten 4 vehículos",
+    reward: 300,
+    target: 4,
+  },
+];
+
+// Progreso de un objetivo con los datos del jugador ({ items, home,
+// unlocked }): { done, count }.
+export function goalProgress(id, p) {
+  const vehicles = Object.keys(VEHICLES).filter((v) => p.items?.[v]);
+  switch (id) {
+    case "primer_vehiculo":
+      return { done: vehicles.length > 0 };
+    case "casa_propia":
+      return { done: !!p.home?.owned };
+    case "decorador": {
+      const count = p.home?.owned ? p.home.layout.length : 0;
+      return { done: count >= 10, count };
+    }
+    case "conductor":
+      return { done: vehicles.some((v) => VEHICLES[v].kind === "car") };
+    case "distrito":
+      return { done: !!p.unlocked?.financiero };
+    case "garaje":
+      return { done: vehicles.length >= 4, count: vehicles.length };
+    default:
+      return { done: false };
+  }
+}
+
 // Cuántos muebles iguales se pueden tener.
 export const FURNITURE_MAX = 6;
 

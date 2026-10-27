@@ -21,6 +21,7 @@ import { Online } from "./online.js";
 import { Shopping } from "./shopping.js";
 import { FurnitureShop } from "./furnishop.js";
 import { District } from "./district.js";
+import { Gym, Goals } from "./goals.js";
 import { Rides, isSmall } from "./rides.js";
 import { Home } from "./home.js";
 import { Decorator } from "./decorate.js";
@@ -105,7 +106,7 @@ function freshState() {
     unlocked: {},
     home: { owned: false, layout: [], open: false },
     furniture: {},
-    goals: {},
+    goals: [],
     pickup: [],
     deliveries: [],
     warehouse: {},
@@ -165,6 +166,8 @@ class Game {
     this.shopping = new Shopping(this);
     this.furnishop = new FurnitureShop(this);
     this.district = new District(this);
+    this.gym = new Gym(this);
+    this.goals = new Goals(this);
     this.rides = new Rides(this);
     this.home = new Home(this);
     this.decorator = new Decorator(this, this.home);
@@ -224,6 +227,7 @@ class Game {
       ...this.rides.interactables(),
       ...this.furnishop.interactables(),
       ...this.district.interactables(),
+      ...this.gym.interactables(),
       ...this.home.interactables(),
       ...this.home.furnitureInteractables(),
       ...this.storeDoorHints(),
@@ -468,6 +472,7 @@ class Game {
       this.online ? Math.max(0, PLOTS.indexOf(this.online.me.plot)) : 0,
     );
     this.district.apply();
+    this.goals.check();
     this.rebuildInteractables();
     this.tutorial.render();
   }

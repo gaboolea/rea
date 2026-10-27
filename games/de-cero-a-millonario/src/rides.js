@@ -249,7 +249,7 @@ export class Rides {
     }
     g.audio.sfx("sparkle");
     g.applyItems();
-    g.checkGoals?.();
+    g.goals.check();
     g.save();
     return true;
   }

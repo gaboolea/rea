@@ -13,7 +13,13 @@ import {
   VEHICLES,
   FURNITURE,
   FURNITURE_SECTIONS,
+  GYM,
+  GOALS,
+  goalProgress,
+  TOW_PRICE,
+  HOME,
 } from "./config.js";
+import { isSmall } from "./rides.js";
 import { productIcon } from "./icons.js";
 import { upgradeApplies } from "./business.js";
 import { currentMission, missionProgress } from "./missions.js";
@@ -220,6 +226,15 @@ export class UI {
       chip.querySelector(".chip-text").textContent =
         `${text} · ${clock(Math.max(0, a.time))}`;
       chip.querySelector("i").style.width = `${(a.time / a.total) * 100}%`;
+    }
+    const g = this.game;
+    const left = (g.buff?.until ?? 0) - g.elapsed;
+    $("buff-chip").hidden = left <= 0;
+    if (left > 0) {
+      $("buff-chip").querySelector(".chip-text").textContent =
+        `En forma: +${Math.round((GYM.boost - 1) * 100)}% velocidad · ${clock(left)}`;
+      $("buff-chip").querySelector("i").style.width =
+        `${(left / GYM.seconds) * 100}%`;
     }
     const enc = ev.hudEncargo();
     const e = $("encargo-chip");
@@ -1329,48 +1344,192 @@ export class UI {
     this.bind("[data-act]", () => this.close());
   }
 
-  openInventory() {
+  // Inventario por pestañas: cajas y almacenes, ropa, vehículos, muebles,
+  // casa y objetivos, con acciones útiles en cada una.
+  openInventory(tab = this.invTab ?? "cajas") {
     const g = this.game;
     const s = g.state;
-    const carried = s.carried.length
-      ? s.carried
-          .map(
-            (b) =>
-              `<div class="row"><span class="chip" style="background:${hex(PRODUCTS[b.product].color)}"></span><div class="grow"><b>Caja de ${PRODUCTS[b.product].name}</b><small>${b.units} unidades</small></div></div>`,
-          )
-          .join("")
-      : `<p class="hint">No llevas nada. Recoge cajas en el Mayorista o en tus almacenes.</p>`;
-    const stores = Object.values(g.businesses)
-      .filter((b) => b.owned)
-      .map((b) => {
-        const list =
-          Object.entries(b.storage)
-            .filter(([, n]) => n > 0)
-            .map(([p, n]) => `${PRODUCTS[p].name} ${n}`)
-            .join(" · ") || "vacío";
-        return `<div class="row"><div class="grow"><b>${b.name}</b><small>Almacén ${b.storageUnits()}/${b.storageCap()}: ${list}</small></div></div>`;
-      })
-      .join("");
-    const items = Object.entries(s.items)
-      .filter(([, v]) => v)
-      .map(([id]) => SHOP_ITEMS[id]?.name)
-      .filter(Boolean);
-    const clothes = s.wardrobe
-      .map((id) =>
-        ["top", "bottom", "shoes", "hat", "glasses", "back", "neck", "skin"]
-          .map((slot) => findItem(slot, id))
-          .find(Boolean),
-      )
-      .filter((i) => i && i.id !== "none");
+    this.invTab = tab;
+    const row = (icon, name, sub, btn = "") =>
+      `<div class="row"><span class="chip-icon">${icon}</span><div class="grow"><b>${name}</b><small>${sub}</small></div>${btn}</div>`;
+    const tabs = [
+      ["cajas", "📦 Cajas"],
+      ["ropa", "👕 Ropa"],
+      ["vehiculos", "🚲 Vehículos"],
+      ["muebles", "🛋️ Muebles"],
+      ["casa", "🏡 Casa"],
+      ["objetivos", "🏆 Objetivos"],
+    ];
+    let body = "";
+    if (tab === "cajas") {
+      const carried = s.carried.length
+        ? s.carried
+            .map(
+              (b) =>
+                `<div class="row"><span class="chip" style="background:${hex(PRODUCTS[b.product].color)}"></span><div class="grow"><b>Caja de ${PRODUCTS[b.product].name}</b><small>${b.units} unidades${b.unpaid ? " · sin pagar" : ""}</small></div></div>`,
+            )
+            .join("")
+        : `<p class="hint">No llevas nada. Recoge cajas en el Mayorista o en tus almacenes.</p>`;
+      const stores = Object.values(g.businesses)
+        .filter((b) => b.owned)
+        .map((b) => {
+          const list =
+            Object.entries(b.storage)
+              .filter(([, n]) => n > 0)
+              .map(([p, n]) => `${PRODUCTS[p].name} ${n}`)
+              .join(" · ") || "vacío";
+          return `<div class="row"><div class="grow"><b>${b.name}</b><small>Almacén ${b.storageUnits()}/${b.storageCap()}: ${list}</small></div></div>`;
+        })
+        .join("");
+      const extras = Object.keys(SHOP_ITEMS)
+        .filter((id) => s.items[id])
+        .map((id) => SHOP_ITEMS[id].name);
+      body = `<h3>En tus manos (${s.carried.length}/${g.carryCapacity()})</h3><div class="list">${carried}</div>
+        <h3>Almacenes</h3><div class="list">${stores}</div>
+        ${extras.length ? `<h3>Otras pertenencias</h3><p>${extras.join(" · ")}</p>` : ""}`;
+    } else if (tab === "ropa") {
+      const clothes = SLOTS.filter((sl) => sl.id !== "skin").flatMap((sl) =>
+        s.wardrobe
+          .map((id) => findItem(sl.id, id))
+          .filter((i) => i && i.id !== "none")
+          .map((i) => ({ slot: sl.id, icon: sl.icon, item: i })),
+      );
+      body = `<div class="list">${clothes
+        .map(({ slot, icon, item }) => {
+          const worn = s.look[slot]?.id === item.id;
+          return row(
+            icon,
+            item.name,
+            SLOT_NAMES[slot] ?? slot,
+            worn
+              ? `<span class="tag good">Puesta</span>`
+              : `<button data-wear="${slot}:${item.id}">Ponérmela</button>`,
+          );
+        })
+        .join("")}</div>
+        <p class="hint">Más ropa en la <b>Tienda de ropa</b> (zona comercial) y en la <b>Galería de lujo</b>.</p>
+        <button data-act="wardrobe">👕 Abrir el armario</button>`;
+    } else if (tab === "vehiculos") {
+      const rides = g.rides;
+      const owned = rides.owned();
+      body = owned.length
+        ? `<div class="list">${owned
+            .map((id) => {
+              const def = VEHICLES[id];
+              if (isSmall(id)) {
+                const sel = rides.selectedSmall() === id;
+                return row(
+                  "🛹",
+                  def.name,
+                  `Se lleva encima · súbete con ${g.input.isTouch ? "🛴" : "V"}`,
+                  sel
+                    ? `<span class="tag good">Elegido</span>`
+                    : `<button data-small="${id}">Elegir</button>`,
+                );
+              }
+              const p = s.parked[id];
+              const where =
+                g.player.ride?.id === id
+                  ? "Lo estás usando"
+                  : p
+                    ? "Aparcado"
+                    : "En el concesionario";
+              return row(
+                "🚗",
+                def.name,
+                where,
+                g.player.ride?.id === id
+                  ? ""
+                  : `<button data-find="${id}">📍 Ir</button><button data-tow="${id}">🚚 Grúa $${TOW_PRICE}</button>`,
+              );
+            })
+            .join("")}</div>`
+        : `<p class="hint">Aún no tienes vehículos. Mira el concesionario <b>VEHÍCULOS</b> de la zona comercial: puedes probarlos gratis en su pista.</p>`;
+    } else if (tab === "muebles") {
+      const ids = Object.keys(FURNITURE).filter((id) => s.furniture[id]);
+      body = ids.length
+        ? `<div class="list">${ids
+            .map((id) => {
+              const placed = s.home.layout.filter((it) => it.f === id).length;
+              const stored = g.home.stored(id);
+              return row(
+                "🛋️",
+                FURNITURE[id].name,
+                `${FURNITURE_SECTIONS[FURNITURE[id].section]} · ${placed} en casa${stored ? ` · ${stored} guardado/s` : ""}`,
+              );
+            })
+            .join("")}</div>
+            ${g.atHome() ? `<button class="primary" data-act="decor">🛋️ Decorar ahora</button>` : `<p class="hint">Para colocar lo guardado, entra en tu casa y pulsa 🛋️ Decorar.</p>`}`
+        : `<p class="hint">No tienes muebles. Compra la casita (zona residencial) y visita <b>Muebles y Decoración</b> y <b>Tecnología</b>.</p>`;
+    } else if (tab === "casa") {
+      const h = s.home;
+      body = h.owned
+        ? `${row("🏡", `Casita nº ${g.home.lot.number}`, `${h.layout.length} muebles colocados · ${h.open ? "abierta a visitas" : "cerrada a visitas"}`, `<button data-act="gohome">📍 Ir</button>`)}
+          <label class="field"><input type="checkbox" id="inv-open" ${h.open ? "checked" : ""}> Dejar que otros jugadores entren en mi casa (modo online)</label>`
+        : `<p class="hint">Aún no tienes casa. La casita nº ${g.home.lot.number} de la zona residencial se vende por <b>${money(HOME.price)}</b>, con muebles básicos.</p><button data-act="gohome">📍 Llévame</button>`;
+    } else {
+      body = `<div class="list">${GOALS.map((goal) => {
+        const p = g.goals.progress(goal);
+        const claimed = g.goals.claimed(goal);
+        const count = goal.target
+          ? ` (${Math.min(p.count ?? 0, goal.target)}/${goal.target})`
+          : "";
+        return `<div class="row ${claimed ? "done" : ""}"><span class="chip-icon">${claimed ? "✅" : "🏆"}</span><div class="grow"><b>${goal.name}</b><small>${goal.desc}${count}</small></div><span class="tag ${claimed ? "good" : ""}">${claimed ? "Cobrado" : `+${money(goal.reward)}`}</span></div>`;
+      }).join("")}</div>
+      <p class="hint">Objetivos opcionales: la recompensa se cobra sola una vez al cumplirlos.</p>
+      <p>Encargos completados: <b>${s.stats.encargos ?? 0}</b> · Monedas encontradas: <b>${s.stats.coins ?? 0}</b> · Lugares descubiertos: <b>${s.discovered.length}</b></p>`;
+    }
     this.open(
       "bag",
       "Inventario",
-      `<h3>En tus manos (${s.carried.length}/${g.carryCapacity()})</h3><div class="list">${carried}</div>
-      <h3>Almacenes</h3><div class="list">${stores}</div>
-      <h3>Pertenencias</h3><p>${items.length ? items.join(" · ") : "Aún nada: ¡ahorra para tu primer vehículo!"}</p>
-      <h3>Armario (${clothes.length})</h3><p>${clothes.map((c) => c.name).join(" · ")}</p>
-      <h3>Logros</h3><p>Encargos completados: <b>${s.stats.encargos ?? 0}</b> · Monedas encontradas: <b>${s.stats.coins ?? 0}</b> · Lugares descubiertos: <b>${s.discovered.length}</b></p>`,
+      `<div class="tabs small">${tabs.map(([id, t]) => `<button data-inv="${id}" class="${tab === id ? "on" : ""}">${t}</button>`).join("")}</div>${body}`,
     );
+    this.bind("[data-inv]", (d) => this.openInventory(d.inv));
+    this.bind("[data-wear]", (d) => {
+      const [slot, id] = d.wear.split(":");
+      const color =
+        s.look[slot]?.id === id
+          ? s.look[slot].color
+          : findItem(slot, id).colors
+            ? "turquesa"
+            : undefined;
+      s.look = { ...s.look, [slot]: { id, color } };
+      g.player.char.setLook(s.look);
+      g.net?.send("look", { look: s.look });
+      g.save();
+      this.openInventory("ropa");
+    });
+    this.bind("[data-small]", (d) => {
+      s.ride = d.small;
+      g.save();
+      this.openInventory("vehiculos");
+    });
+    this.bind("[data-find]", (d) => {
+      const p = s.parked[d.find] ?? g.rides.deliverySpot(d.find);
+      g.guide.setDestination({ ...p, label: VEHICLES[d.find].name });
+      this.close();
+    });
+    this.bind("[data-tow]", async (d) => {
+      await g.rides.tow(d.tow);
+      this.openInventory("vehiculos");
+    });
+    this.bind("[data-act]", (d) => {
+      if (d.act === "wardrobe") {
+        this.close();
+        g.openWardrobe("game");
+      } else if (d.act === "decor") this.openDecor();
+      else if (d.act === "gohome") {
+        g.guide.setDestination({ ...g.home.lot.door, label: "Mi casa" });
+        this.close();
+      }
+    });
+    const open = $("inv-open");
+    if (open)
+      open.onchange = (e) => {
+        s.home.open = e.target.checked;
+        g.save();
+        g.online?.sendHome?.();
+      };
   }
 
   // Informe del día: tarjeta breve que no detiene el juego.

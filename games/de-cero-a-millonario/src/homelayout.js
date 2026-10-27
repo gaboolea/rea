@@ -3,6 +3,21 @@
 // paso a todas las habitaciones y dónde cabe un mueble nuevo.
 import { FURNITURE } from "./config.js";
 
+// Parcelas de las casitas (zona residencial): una por local del modo
+// online, en el mismo orden que PLOTS. Casitas de 10 × 9 m giradas 90°.
+export const HOME_LOTS = [
+  { x: -17, z: 68, rot: Math.PI / 2, number: 1 },
+  { x: 17, z: 68, rot: -Math.PI / 2, number: 2 },
+  { x: -17, z: 90, rot: Math.PI / 2, number: 3 },
+  { x: 17, z: 90, rot: -Math.PI / 2, number: 4 },
+];
+
+// ¿Está el punto (mundo) dentro de la casita de esa parcela?
+export function insideHomeLot(index, x, z) {
+  const lot = HOME_LOTS[index];
+  return !!lot && Math.abs(x - lot.x) < 4.5 && Math.abs(z - lot.z) < 5;
+}
+
 export const CASITA = {
   // Interior útil: x ∈ [-4.7, 4.7], z ∈ [-4.2, 4.2].
   rooms: [

@@ -88,7 +88,7 @@ export class District {
     this.refreshSign();
     this.announce();
     g.guide.setDestination({ x: -251, z: 8, label: "Distrito financiero" });
-    g.checkGoals?.();
+    g.goals.check();
     g.save();
   }
 
