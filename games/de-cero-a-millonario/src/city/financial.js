@@ -187,6 +187,7 @@ export function buildFinancial(world) {
 function buildBarrier(kit, world) {
   const x = DISTRICT.barrierX;
   const g = new THREE.Group();
+  g.userData.dynamic = true; // se anima al abrirse: no se funde
   const arms = [];
   const stripe = new THREE.MeshStandardMaterial({
     map: stripes(),

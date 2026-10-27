@@ -3,7 +3,14 @@
 // líneas de carril) y registrar lo que necesitan el mapa, los peatones, la
 // navegación y el tráfico.
 import * as THREE from "three";
-import { mat, box, mesh, surfaceTexture, sidewalkMat } from "../gfx.js";
+import {
+  mat,
+  box,
+  mesh,
+  surfaceTexture,
+  sidewalkMat,
+  bakeGroup,
+} from "../gfx.js";
 
 export const SIDEWALK = 0.12;
 
@@ -191,6 +198,34 @@ export class CityKit {
   }
 
   // Edificio recorrible (clase Building) dentro del grupo de la zona.
+  // Funde en pocas mallas la decoración estática de la zona (todo lo que
+  // no es un edificio ni se anima). Se llama al terminar de construirla.
+  bake() {
+    const w = this.world;
+    // Los árboles de las zonas nuevas no se mecen: así se funden también.
+    const inZone = (o) => {
+      for (let p = o; p; p = p.parent) if (p === this.group) return true;
+      return false;
+    };
+    w.treeTops = w.treeTops.filter((t) => !inZone(t));
+    const animated = new Set([
+      ...w.fountainJets.map((j) => j.mesh),
+      ...w.butterflies.map((b) => b.g),
+      ...(w.spinners ?? []),
+      ...w.turntables,
+    ]);
+    const buildings = new Set(Object.values(w.buildings).map((b) => b.group));
+    const moves = (c) => {
+      let found = !!c.userData.dynamic;
+      c.traverse((o) => (found ||= animated.has(o)));
+      return found;
+    };
+    const holder = new THREE.Group();
+    for (const c of [...this.group.children])
+      if (!buildings.has(c) && !moves(c)) holder.add(c);
+    this.group.add(bakeGroup(holder, { shadows: true }));
+  }
+
   building(id, opts) {
     return this.inside(() => this.world.building(id, opts));
   }

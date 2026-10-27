@@ -338,10 +338,11 @@ export function sidewalkMat(base, w, d) {
 // Funde un grupo estático (p. ej. maniquíes con ropa) en una malla por
 // material: mismo aspecto, muchas menos llamadas de dibujo. Las mallas con
 // textura se dejan tal cual.
-export function bakeGroup(group) {
+export function bakeGroup(group, { shadows = false } = {}) {
   group.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
   const byMat = new Map();
+  const casts = new Set();
   const keep = [];
   group.traverse((o) => {
     if (!o.isMesh || !o.visible || !visibleChain(o, group)) return;
@@ -352,15 +353,23 @@ export function bakeGroup(group) {
     const g = (
       o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()
     ).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    // Solo se conservan posición, normal y (si el material lo usa) color.
+    const keepColor = o.material.vertexColors;
     for (const name of Object.keys(g.attributes))
-      if (name !== "position" && name !== "normal") g.deleteAttribute(name);
+      if (
+        name !== "position" &&
+        name !== "normal" &&
+        !(keepColor && name === "color")
+      )
+        g.deleteAttribute(name);
     if (!byMat.has(o.material)) byMat.set(o.material, []);
     byMat.get(o.material).push(g);
+    if (shadows && o.castShadow) casts.add(o.material);
   });
   const out = new THREE.Group();
   for (const [material, geos] of byMat) {
     const m = new THREE.Mesh(mergeGeometries(geos), material);
-    m.castShadow = false;
+    m.castShadow = casts.has(material);
     m.receiveShadow = true;
     out.add(m);
   }

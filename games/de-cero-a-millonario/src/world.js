@@ -34,6 +34,10 @@ const LAMP_IRON = new THREE.MeshStandardMaterial({
   metalness: 0.3,
 });
 
+// Distancia (al borde del edificio) a la que se dejan de dibujar los
+// interiores.
+const INTERIOR_DRAW = 60;
+
 export class World {
   constructor(scene) {
     this.scene = scene;
@@ -1285,6 +1289,10 @@ export class World {
   update(dt, actors, player) {
     cullZones(this, player);
     for (const b of Object.values(this.buildings)) {
+      // Interiores lejanos: no se distinguen por las ventanas; no se dibujan.
+      const edge =
+        Math.hypot(b.x - player.x, b.z - player.z) - Math.max(b.w, b.d) / 2;
+      b.interior.visible = edge < INTERIOR_DRAW;
       // Edificios lejanos: nada que animar.
       if (Math.abs(b.x - player.x) + Math.abs(b.z - player.z) > 140) continue;
       let near = false;

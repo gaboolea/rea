@@ -31,6 +31,9 @@ export function buildExpansion(world) {
     gimnasio: buildGym(world, commercial.shops.gimnasio),
   };
 
+  // Decoración estática de cada zona: pocas mallas en vez de cientos.
+  for (const zone of [commercial, residential, financial]) zone.kit.bake();
+
   const t = world.traffic;
   // La avenida norte-sur ahora atraviesa las tres zonas.
   t.setRange("z0", -158, 165);
