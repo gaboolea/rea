@@ -36,6 +36,8 @@ export const SKINS = [
 
 // price 0 = gratis desde el inicio. stage = etapa mínima. reward = solo se
 // consigue jugando (encargos/misiones). colors = admite cambiar el color.
+// Las prendas se compran en tiendas físicas: la Tienda de ropa (zona
+// comercial) o, si lux, la Galería de lujo (distrito financiero).
 export const ITEMS = {
   top: [
     { id: "camiseta", name: "Camiseta", price: 0, colors: true },
@@ -48,6 +50,7 @@ export const ITEMS = {
       price: 6000,
       stage: 3,
       colors: false,
+      lux: true,
     },
   ],
   bottom: [
@@ -129,6 +132,7 @@ export const ITEMS = {
       price: 2500,
       stage: 3,
       colors: false,
+      lux: true,
     },
   ],
 };

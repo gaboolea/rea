@@ -167,6 +167,14 @@ export class Wardrobe {
     const owned = g.state.wardrobe.includes(id);
     if (owned) return { owned: true, label: "Tuyo" };
     if (item.reward) return { locked: true, label: `🔒 ${item.reward}` };
+    // La ropa se compra en las tiendas físicas; aquí solo los tonos de piel.
+    if (slot !== "skin")
+      return {
+        locked: true,
+        label: item.lux
+          ? "💎 En la Galería de lujo"
+          : "🛍️ En la Tienda de ropa",
+      };
     if ((item.stage ?? 0) > g.stageIndex())
       return { locked: true, label: `🔒 Etapa ${STAGES[item.stage].name}` };
     return {
@@ -247,7 +255,7 @@ export class Wardrobe {
       : st.owned
         ? "EQUIPAR"
         : st.locked
-          ? "BLOQUEADO"
+          ? st.label.replace("🔒 ", "")
           : `COMPRAR Y EQUIPAR · ${st.label}`;
     // Muestras de color (gratis) si la prenda lo admite.
     const colors = slot !== "skin" && item.colors;

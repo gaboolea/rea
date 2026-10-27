@@ -18,6 +18,7 @@ import { Tutorial } from "./tutorial.js";
 import { Warehouse } from "./warehouse.js";
 import { Net, savedName } from "./net.js";
 import { Online } from "./online.js";
+import { Shopping } from "./shopping.js";
 import { checkMissions, currentMission } from "./missions.js";
 import { defaultLook, STARTER_ITEMS, findItem } from "./look.js";
 import {
@@ -147,6 +148,8 @@ class Game {
     this.guide = new Guide(this);
     this.tutorial = new Tutorial(this);
     this.ui = new UI(this);
+    this.shopping = new Shopping(this);
+    this.examine = null;
     this.rebuildInteractables();
     this.world.traffic.onBusStop = () => this.crowd.onBusStop();
     this.world.traffic.onHorn = (v) => {
@@ -198,6 +201,8 @@ class Game {
     this.staticInteractables = [
       ...this.buildStaticInteractables(),
       ...this.events.merchantInteractables(),
+      ...this.shopping.interactables(),
+      ...this.storeDoorHints(),
       ...(this.online?.interactables() ?? []),
     ];
   }
@@ -1162,7 +1167,10 @@ class Game {
         x: w.boutiqueCounter.x,
         z: w.boutiqueCounter.z,
         radius: 1.8,
-        label: () => ({ text: "Probar ropa y accesorios", enabled: true }),
+        label: () => ({
+          text: "Probador · cambiarte con tu ropa (se compra en la Tienda de ropa)",
+          enabled: true,
+        }),
         action: () => this.openWardrobe("game"),
       },
       {
@@ -1370,9 +1378,84 @@ class Game {
     }
     if (this.mode === "title") this.stepTitle(dt);
     else if (!this.ui.panelOpen) this.step(dt);
+    else if (this.examine) this.stepExamine(dt);
     this.updateOcclusion();
     this.renderer.render(this.scene, this.camera);
     this.input.endFrame();
+  }
+
+  // Cámara de vista previa: mira al personaje de frente (para ver la ropa
+  // puesta) o a un objeto que se examina, dejando sitio al panel lateral.
+  examinePlayer() {
+    const p = this.player.pos;
+    // Dentro de un local, la cámara se pone hacia el centro (lejos de las
+    // paredes) y el personaje se gira para mirarla.
+    const b = Object.values(this.world.buildings).find((x) =>
+      x.contains(p.x, p.z),
+    );
+    let fx = Math.sin(this.player.heading);
+    let fz = Math.cos(this.player.heading);
+    if (b) {
+      const dx = b.x - p.x;
+      const dz = b.z - p.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 0.5) {
+        fx = dx / d;
+        fz = dz / d;
+      }
+    }
+    this.player.heading = Math.atan2(fx, fz);
+    this.player.char.root.rotation.y = this.player.heading;
+    const wide = window.innerWidth > window.innerHeight;
+    // Vector derecho de la cámara que mira hacia el personaje.
+    const rx = fz;
+    const rz = -fx;
+    this.examine = {
+      eye: { x: p.x + fx * 2.9, y: p.y + 1.3, z: p.z + fz * 2.9 },
+      look: {
+        x: p.x + (wide ? rx * 0.9 : 0),
+        y: p.y + (wide ? 0.8 : 0.3),
+        z: p.z + (wide ? rz * 0.9 : 0),
+      },
+    };
+  }
+
+  examineObject(target, eye) {
+    this.examine = { eye, look: target };
+  }
+
+  stepExamine(dt) {
+    const e = this.examine;
+    const k = Math.min(1, dt * 6);
+    this.camera.position.x += (e.eye.x - this.camera.position.x) * k;
+    this.camera.position.y += (e.eye.y - this.camera.position.y) * k;
+    this.camera.position.z += (e.eye.z - this.camera.position.z) * k;
+    this.camera.lookAt(e.look.x, e.look.y, e.look.z);
+    this.player.char.animate(dt, 0);
+  }
+
+  // Avisos en la puerta de las tiendas nuevas («ENTRAR A LA TIENDA»).
+  storeDoorHints() {
+    const list = [];
+    for (const poi of this.world.pois) {
+      const b = this.world.buildings[poi.id];
+      if (!b || !poi.zone) continue;
+      const door = b.doorPoint(1.4);
+      list.push({
+        x: door.x,
+        z: door.z,
+        radius: 1.6,
+        label: () => {
+          if (b.shutter) return null;
+          return {
+            text: `${poi.icon} ENTRAR A LA TIENDA · ${poi.name}`,
+            enabled: false,
+          };
+        },
+        action: () => {},
+      });
+    }
+    return list;
   }
 
   // Vida de la ciudad (peatones, tráfico, ambiente). En la pantalla de
@@ -1461,6 +1544,7 @@ class Game {
     this.events.update(dt, this.elapsed);
     this.warehouse.update(dt);
     this.tutorial.update();
+    this.shopping.update();
     this.carryHint();
     this.guide.update(dt, this.elapsed);
     this.online?.update(dt);

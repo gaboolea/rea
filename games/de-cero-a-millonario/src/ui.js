@@ -16,7 +16,7 @@ import { upgradeApplies } from "./business.js";
 import { currentMission, missionProgress } from "./missions.js";
 import { WORLD } from "./physics.js";
 import { drawCity, drawIcon } from "./mapdraw.js";
-import { findItem } from "./look.js";
+import { findItem, COLORS, SLOTS } from "./look.js";
 import { WHOLESALE_STEPS } from "./tutorial.js";
 import {
   Net,
@@ -45,6 +45,9 @@ const money = (n) => {
   return n < 0 ? `−$${abs}` : `$${abs}`;
 };
 const hex = (c) => `#${c.toString(16).padStart(6, "0")}`;
+const SLOT_NAMES = Object.fromEntries(
+  SLOTS.map((s) => [s.id, `${s.icon} ${s.name}`]),
+);
 const clock = (sec) =>
   `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 
@@ -266,7 +269,10 @@ export class UI {
 
   // ---------- Paneles ----------
 
-  open(name, title, html) {
+  // opts.side: panel estrecho a un lado (para ver el mundo detrás, p. ej.
+  // la prenda puesta en el personaje o el vehículo que se examina).
+  open(name, title, html, opts = {}) {
+    $("panel").classList.toggle("side", !!opts.side);
     const body = $("panel-body");
     const keepScroll = this.panel === name ? body.scrollTop : 0;
     this.panel = name;
@@ -282,6 +288,7 @@ export class UI {
     const was = this.panel;
     this.panel = null;
     $("panel").hidden = true;
+    this.game.examine = null;
     if (was && this.onClose) {
       const fn = this.onClose;
       this.onClose = null;
@@ -299,6 +306,73 @@ export class UI {
             fn(el.dataset, el);
           }),
       );
+  }
+
+  // Ficha de una prenda en la tienda de ropa. La prenda ya se ve puesta en
+  // el personaje (vista previa); aquí se elige color, se prueba o se compra.
+  openGarment(shop, slot, id) {
+    const g = this.game;
+    const item = findItem(slot, id);
+    const t = shop.trial;
+    const st = shop.status(slot, id);
+    const colors = item.colors
+      ? Object.keys(COLORS)
+          .filter((c) => c !== "oro")
+          .map(
+            (c) =>
+              `<button class="swatch ${t.color === c ? "on" : ""}" data-color="${c}" title="${c}" style="background:${hex(COLORS[c])}"></button>`,
+          )
+          .join("")
+      : "";
+    const price = item.price ? money(item.price) : "Gratis";
+    let buy;
+    if (st.owned) buy = `<button class="primary" data-wear>PONÉRMELA</button>`;
+    else if (st.locked)
+      buy = `<button class="primary" disabled>🔒 ${st.locked}</button>`;
+    else
+      buy = `<button class="primary" data-buy ${st.missing ? "disabled" : ""}>COMPRAR · ${price}</button>`;
+    this.open(
+      "garment",
+      item.name,
+      `<div class="garment">
+        <div class="garment-price">${st.owned ? `<span class="tag good">Ya es tuya</span>` : price}</div>
+        <p class="hint">${SLOT_NAMES[slot] ?? ""} · ${item.colors ? "elige el color (sin coste)" : "modelo único"}</p>
+        ${colors ? `<div class="swatches">${colors}</div>` : ""}
+        ${st.missing && !st.owned && !st.locked ? `<p class="bad missing">Te faltan ${money(Math.round(st.missing * 100) / 100)}</p>` : ""}
+        <div class="order-actions">
+          <button class="ghost" data-cancel>CANCELAR</button>
+          <button data-try>PROBAR</button>
+          ${buy}
+        </div>
+        <p class="hint small">Tienes ${money(Math.floor(g.state.money))}. Al probarla puedes pasear por la tienda con ella puesta.</p>
+      </div>`,
+      { side: true },
+    );
+    // Cerrar con la X equivale a cancelar.
+    this.onClose = () => shop.revert();
+    this.bind("[data-color]", (d) => {
+      shop.setColor(d.color);
+      this.openGarment(shop, slot, id);
+    });
+    this.bind("[data-cancel]", () => this.close());
+    this.bind("[data-try]", () => {
+      this.onClose = null;
+      this.close();
+      this.toast(
+        "👕 Pruébatela por la tienda: si sales sin comprarla, te la quitas",
+      );
+    });
+    this.bind("[data-buy]", async () => {
+      if (await shop.buy()) {
+        this.onClose = null;
+        this.close();
+      } else this.openGarment(shop, slot, id);
+    });
+    this.bind("[data-wear]", () => {
+      shop.wear();
+      this.onClose = null;
+      this.close();
+    });
   }
 
   // Precio de una caja en el Mayorista (descuentos y ofertas incluidos).

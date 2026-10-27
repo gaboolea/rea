@@ -2537,3 +2537,78 @@ table.rank tr.me {
     padding: 3px 6px;
   }
 }
+
+/* ---------- Panel lateral (examinar en el mundo) ---------- */
+#panel.side {
+  background: transparent;
+  place-items: center end;
+  pointer-events: none;
+}
+
+#panel.side #panel-card {
+  width: min(360px, 46vw);
+  pointer-events: auto;
+}
+
+.garment-price {
+  font-size: 26px;
+  font-weight: 800;
+  color: #1e9e4a;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+
+#panel-body .swatch {
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+#panel-body .swatch.on {
+  border-color: var(--ink);
+}
+
+.hint.small {
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  #panel.side {
+    place-items: end center;
+  }
+  #panel.side #panel-card {
+    width: 100%;
+    max-height: 52vh;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  #panel.side #panel-card {
+    width: min(330px, 42vw);
+    max-height: 94vh;
+  }
+  #panel-body .swatch {
+    width: 24px;
+    height: 24px;
+  }
+  .garment-price {
+    font-size: 20px;
+  }
+}
+
+.garment .order-actions {
+  flex-wrap: wrap;
+}
+
+.garment .order-actions button {
+  flex: 1 1 auto;
+}

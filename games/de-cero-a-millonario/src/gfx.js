@@ -334,3 +334,46 @@ export function sidewalkMat(base, w, d) {
   map.needsUpdate = true;
   return new THREE.MeshStandardMaterial({ map, roughness: 0.85 });
 }
+
+// Funde un grupo estático (p. ej. maniquíes con ropa) en una malla por
+// material: mismo aspecto, muchas menos llamadas de dibujo. Las mallas con
+// textura se dejan tal cual.
+export function bakeGroup(group) {
+  group.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const byMat = new Map();
+  const keep = [];
+  group.traverse((o) => {
+    if (!o.isMesh || !o.visible || !visibleChain(o, group)) return;
+    if (o.material.map || o.material.transparent) {
+      keep.push(o);
+      return;
+    }
+    const g = (
+      o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()
+    ).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    for (const name of Object.keys(g.attributes))
+      if (name !== "position" && name !== "normal") g.deleteAttribute(name);
+    if (!byMat.has(o.material)) byMat.set(o.material, []);
+    byMat.get(o.material).push(g);
+  });
+  const out = new THREE.Group();
+  for (const [material, geos] of byMat) {
+    const m = new THREE.Mesh(mergeGeometries(geos), material);
+    m.castShadow = false;
+    m.receiveShadow = true;
+    out.add(m);
+  }
+  for (const o of keep) {
+    const c = o.clone();
+    c.matrixAutoUpdate = false;
+    c.matrix.multiplyMatrices(inv, o.matrixWorld);
+    out.add(c);
+  }
+  return out;
+}
+
+function visibleChain(o, root) {
+  for (let p = o; p && p !== root; p = p.parent) if (!p.visible) return false;
+  return true;
+}

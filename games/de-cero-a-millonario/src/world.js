@@ -60,6 +60,8 @@ export class World {
       { x: 5.5, z: 51, zone: "barrio" },
     ];
     this.visitShops = [];
+    // Dependientes de las tiendas nuevas (solo se animan en reposo).
+    this.storeClerks = [];
     this.buildGround();
     this.buildBuildings();
     this.buildWarehouse();
@@ -1300,6 +1302,13 @@ export class World {
     this.expansion.financial.barrier.update(dt);
     for (const s of this.spinners ?? []) s.rotation.z += dt * 0.8;
     for (const npc of this.warehouseClerks) npc.animate(dt, 0);
+    for (const npc of this.storeClerks)
+      if (
+        Math.abs(npc.root.position.x - player.x) +
+          Math.abs(npc.root.position.z - player.z) <
+        40
+      )
+        npc.animate(dt, 0);
     if (this.alarm > 0) {
       this.alarm = Math.max(0, this.alarm - dt);
       this.alarmMat.emissiveIntensity =
