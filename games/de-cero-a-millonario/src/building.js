@@ -21,6 +21,27 @@ const UPPER_H = 2.7;
 const T = 0.3;
 const FLOOR_Y = 0.12;
 
+// Tejado a dos aguas (prisma triangular) con la cumbrera a lo largo de x.
+export function gableRoof(w, d, h, color) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-d / 2, 0);
+  shape.lineTo(d / 2, 0);
+  shape.lineTo(0, h);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: w,
+    bevelEnabled: false,
+  });
+  geo.translate(0, 0, -w / 2);
+  geo.rotateY(Math.PI / 2);
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(geo, mat(color).clone());
+  m.castShadow = true;
+  m.receiveShadow = true;
+  g.add(m);
+  return g;
+}
+
 export class Building {
   constructor(world, opts) {
     this.world = world;
@@ -339,6 +360,19 @@ export class Building {
     this.world.occluders.push(ac);
     this.place(ac, -w / 4, -d / 4, 0, top + 0.7);
     this.roof.add(ac);
+    if (this.opts.gable) {
+      // Casa: tejado a dos aguas en lugar del aire acondicionado.
+      ac.visible = false;
+      const roof = gableRoof(
+        w + 0.8,
+        d + 0.8,
+        Math.min(w, d) * 0.32,
+        roofColor,
+      );
+      this.place(roof, 0, 0, 0, top + 0.34);
+      this.roof.add(roof);
+      this.world.occluders.push(...roof.children);
+    }
     this.group.add(this.roof);
   }
 

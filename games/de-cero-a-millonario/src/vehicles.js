@@ -71,6 +71,39 @@ export function toyCar(color) {
   return g;
 }
 
+// Coche moderno de líneas bajas (distrito financiero y deportivos).
+export function toyModernCar(color) {
+  const g = new THREE.Group();
+  const paint = mat(color, { roughness: 0.25, metalness: 0.3 });
+  g.add(mesh(roundedBox(1.8, 0.55, 3.6, 0.25), paint, 0, 0.55, 0));
+  g.add(mesh(roundedBox(1.5, 0.5, 1.9, 0.24), paint, 0, 1.0, -0.25));
+  g.add(mesh(roundedBox(1.55, 0.36, 1.75, 0.18), glassMat(), 0, 1.02, -0.25));
+  for (const s of [-1, 1]) {
+    g.add(
+      mesh(
+        box(0.5, 0.1, 0.06),
+        new THREE.MeshBasicMaterial({ color: 0xffffff }),
+        s * 0.55,
+        0.62,
+        1.79,
+        false,
+      ),
+    );
+    g.add(
+      mesh(
+        box(0.55, 0.1, 0.06),
+        new THREE.MeshBasicMaterial({ color: 0xff3b30 }),
+        s * 0.55,
+        0.65,
+        -1.79,
+        false,
+      ),
+    );
+  }
+  wheels(g, [-0.85, 0.85], [-1.15, 1.15], 0.33);
+  return g;
+}
+
 export function toyVan(color = 0xffffff) {
   const g = new THREE.Group();
   g.add(
@@ -137,10 +170,11 @@ export function toyBus() {
   return g;
 }
 
-// Semáforo de la intersección central: verde, ámbar y rojo por eje.
+// Semáforo de un cruce: verde, ámbar y rojo por eje. (cx, cz) es el
+// centro del cruce; offset desfasa el ciclo entre cruces.
 class TrafficLights {
-  constructor(scene) {
-    this.t = 0;
+  constructor(scene, cx = 0, cz = 0, offset = 0) {
+    this.t = offset;
     this.lamps = { x: this.makeLamps(), z: this.makeLamps() };
     // [x, z, eje que controla, orientación de la cara]
     const poles = [
@@ -159,7 +193,7 @@ class TrafficLights {
           mesh(sphere(0.12, 12), lamps[c], 0, 3.66 - i * 0.36, 0.15, false),
         );
       });
-      g.position.set(x, 0.12, z);
+      g.position.set(cx + x, 0.12, cz + z);
       g.rotation.y = rot;
       scene.add(g);
     }
@@ -199,25 +233,34 @@ class TrafficLights {
 }
 
 // Vehículos por carriles con conducción por la derecha: frenan ante
-// peatones, respetan el semáforo y mantienen la distancia.
+// peatones, respetan los semáforos y mantienen la distancia. Cada vehículo
+// circula por un tramo de calle (road) y reaparece en el otro extremo.
+// road: { id, axis: "x"|"z", c: coordenada del eje de la calle,
+//         from, to: tramo recorrido, stops: [{ at, lights }] }
 export class Traffic {
   constructor(scene) {
     this.scene = scene;
     this.vehicles = [];
+    this.roads = {};
     this.lights = new TrafficLights(scene);
+    this.allLights = [this.lights];
+    this.addRoad({ id: "x0", axis: "x", c: 0, from: -80, to: 80 });
+    this.addRoad({ id: "z0", axis: "z", c: 0, from: -54, to: 58 });
+    this.addStop("x0", 0, this.lights);
+    this.addStop("z0", 0, this.lights);
     const colors = [
       0xff6b6b, 0x4dabf7, 0xffd43b, 0x69db7c, 0xb197fc, 0xff922b, 0x63e6be,
       0xf783ac, 0xffa94d,
     ];
     for (let i = 0; i < 6; i++)
-      this.add(toyCar(colors[i]), "x", i % 2 ? -1 : 1, -66 + i * 24, {
+      this.add(toyCar(colors[i]), "x0", i % 2 ? -1 : 1, -66 + i * 24, {
         speed: 6 + (i % 3),
       });
     for (let i = 0; i < 3; i++)
-      this.add(toyCar(colors[6 + i]), "z", i % 2 ? -1 : 1, -40 + i * 30, {
+      this.add(toyCar(colors[6 + i]), "z0", i % 2 ? -1 : 1, -40 + i * 30, {
         speed: 5.5 + i,
       });
-    this.bus = this.add(toyBus(), "x", -1, 60, {
+    this.bus = this.add(toyBus(), "x0", -1, 60, {
       speed: 5.5,
       len: 3.7,
       width: 1.15,
@@ -226,13 +269,36 @@ export class Traffic {
     this.busStopX = 33;
   }
 
-  // Carril por la derecha según eje y sentido.
-  laneFor(axis, dir) {
-    return axis === "x" ? dir * 2 : -dir * 2;
+  addRoad(road) {
+    this.roads[road.id] = { stops: [], ...road };
+    return this.roads[road.id];
   }
 
-  add(meshObj, axis, dir, along, opts = {}) {
-    const lane = this.laneFor(axis, dir);
+  addStop(roadId, at, lights) {
+    this.roads[roadId].stops.push({ at, lights });
+  }
+
+  // Semáforo nuevo en el cruce (cx, cz).
+  addLights(cx, cz) {
+    const l = new TrafficLights(this.scene, cx, cz, this.allLights.length * 7);
+    this.allLights.push(l);
+    return l;
+  }
+
+  // Cambia el tramo recorrido (p. ej. al abrir la avenida del distrito).
+  setRange(roadId, from, to) {
+    Object.assign(this.roads[roadId], { from, to });
+  }
+
+  // Carril por la derecha según la calle y el sentido.
+  laneFor(road, dir) {
+    return road.axis === "x" ? road.c + dir * 2 : road.c - dir * 2;
+  }
+
+  add(meshObj, roadId, dir, along, opts = {}) {
+    const road = this.roads[roadId];
+    const lane = this.laneFor(road, dir);
+    const axis = road.axis;
     if (axis === "x") meshObj.position.set(along, 0, lane);
     else meshObj.position.set(lane, 0, along);
     meshObj.rotation.y =
@@ -240,6 +306,7 @@ export class Traffic {
     this.scene.add(meshObj);
     const v = {
       mesh: meshObj,
+      road,
       axis,
       dir,
       lane,
@@ -258,7 +325,7 @@ export class Traffic {
   // Camión de reparto que se detiene frente a una puerta del lado norte.
   spawnTruck(stopX, onArrive) {
     const truck = toyVan(0xffd166);
-    const v = this.add(truck, "x", -1, 80, {
+    const v = this.add(truck, "x0", -1, 80, {
       speed: 8,
       len: 2.3,
       width: 1.0,
@@ -274,9 +341,17 @@ export class Traffic {
     return v.axis === "x" ? v.mesh.position.x : v.mesh.position.z;
   }
 
-  update(dt, obstacles) {
-    this.lights.update(dt);
-    for (const v of this.vehicles) this.drive(v, dt, obstacles);
+  // focus: posición del jugador. Los coches lejanos no se dibujan.
+  update(dt, obstacles, focus) {
+    for (const l of this.allLights) l.update(dt);
+    for (const v of this.vehicles) {
+      this.drive(v, dt, obstacles);
+      if (focus)
+        v.mesh.visible =
+          Math.abs(v.mesh.position.x - focus.x) +
+            Math.abs(v.mesh.position.z - focus.z) <
+          220;
+    }
     this.vehicles = this.vehicles.filter((v) => {
       if (!v.dead) return true;
       this.scene.remove(v.mesh);
@@ -315,30 +390,32 @@ export class Traffic {
     if (v.creep > 0) limit = Math.min(limit, 1.5);
     // Vehículo delante en el mismo carril.
     for (const o of this.vehicles) {
-      if (o === v || o.axis !== v.axis || o.dir !== v.dir) continue;
+      if (o === v || o.road !== v.road || o.dir !== v.dir) continue;
       const gap = (this.along(o) - a) * v.dir - o.len - v.len;
       if (gap > -1 && gap < 6)
         limit = Math.min(limit, Math.max(0, (gap - 1.2) * 1.5));
     }
-    // Semáforo: línea de detención a 6 m del centro del cruce.
+    // Semáforos: línea de detención a 6 m del centro de cada cruce.
     const front = a + v.dir * v.len;
-    const toLine = (-6 * v.dir - front) * v.dir;
-    const light = this.lights.state(v.axis);
-    if (
-      toLine > -0.2 &&
-      toLine < 14 &&
-      (light === "red" || (light === "yellow" && toLine > 3))
-    ) {
-      limit = Math.min(limit, Math.max(0, toLine * 1.1));
+    for (const stop of v.road.stops) {
+      const toLine = (stop.at - 6 * v.dir - front) * v.dir;
+      const light = stop.lights.state(v.axis);
+      if (
+        toLine > -0.2 &&
+        toLine < 14 &&
+        (light === "red" || (light === "yellow" && toLine > 3))
+      ) {
+        limit = Math.min(limit, Math.max(0, toLine * 1.1));
+      }
     }
     // No quedarse parado encima de un paso de cebra: si al otro lado no hay
     // sitio (cola del semáforo), espera antes de pisarlo.
-    for (const [c0, c1] of this.crosswalkSpans?.[v.axis] ?? []) {
+    for (const [c0, c1] of v.road.crossings ?? []) {
       const start = v.dir > 0 ? c0 : c1;
       const end = v.dir > 0 ? c1 : c0;
       const toStart = (start - front) * v.dir;
       if (toStart < -0.1 || toStart > 8) continue;
-      if (this.roomAfter(v, end, light) < v.len * 2 + 1.5)
+      if (this.roomAfter(v, end) < v.len * 2 + 1.5)
         limit = Math.min(limit, Math.max(0, (toStart - 0.4) * 1.5));
     }
     // Paradas programadas (autobús y reparto).
@@ -358,27 +435,38 @@ export class Traffic {
     this.wrap(v);
   }
 
-  // crosswalks: rectángulos [x0, z0, x1, z1] de los pasos de cebra.
+  // crosswalks: rectángulos [x0, z0, x1, z1] de los pasos de cebra. Cada
+  // calle se queda con los que la cruzan (tramo a lo largo de su eje).
   setCrosswalks(crosswalks) {
-    this.crosswalkSpans = { x: [], z: [] };
-    for (const [x0, z0, x1, z1] of crosswalks) {
-      if (x1 - x0 < z1 - z0) this.crosswalkSpans.x.push([x0, x1]);
-      else this.crosswalkSpans.z.push([z0, z1]);
+    for (const road of Object.values(this.roads)) {
+      road.crossings = [];
+      for (const [x0, z0, x1, z1] of crosswalks) {
+        const across = road.axis === "x" ? [z0, z1] : [x0, x1];
+        const along = road.axis === "x" ? [x0, x1] : [z0, z1];
+        // Cruza esta calle si es estrecho en su eje y cubre su centro.
+        if (
+          along[1] - along[0] < across[1] - across[0] &&
+          across[0] <= road.c &&
+          across[1] >= road.c
+        )
+          road.crossings.push(along);
+      }
     }
   }
 
   // Espacio libre en el carril más allá de `end`: hasta la trasera del
-  // vehículo lento más próximo o hasta la línea del semáforo en rojo.
-  roomAfter(v, end, light) {
+  // vehículo lento más próximo o hasta la línea de un semáforo no verde.
+  roomAfter(v, end) {
     let room = Infinity;
     for (const o of this.vehicles) {
-      if (o === v || o.axis !== v.axis || o.dir !== v.dir || o.current > 1)
+      if (o === v || o.road !== v.road || o.dir !== v.dir || o.current > 1)
         continue;
       const rear = (this.along(o) - end) * v.dir - o.len;
       if (rear > -o.len * 2) room = Math.min(room, rear);
     }
-    if (light !== "green") {
-      const line = (-6 * v.dir - end) * v.dir;
+    for (const stop of v.road.stops) {
+      if (stop.lights.state(v.axis) === "green") continue;
+      const line = (stop.at - 6 * v.dir - end) * v.dir;
       if (line > 0) room = Math.min(room, line);
     }
     return room;
@@ -398,14 +486,16 @@ export class Traffic {
     this.onHorn?.(v);
   }
 
+  // Al salir del tramo, reaparece por el otro extremo.
   wrap(v) {
     const p = v.mesh.position;
-    if (v.axis === "x" && Math.abs(p.x) > 80) {
+    const key = v.axis === "x" ? "x" : "z";
+    const { from, to } = v.road;
+    if (p[key] > to || p[key] < from) {
       if (v.remove) v.dead = true;
-      p.x = -Math.sign(p.x) * 80;
+      p[key] = p[key] > to ? from : to;
       v.served = false;
     }
-    if (v.axis === "z" && (p.z < -54 || p.z > 58)) p.z = p.z < 0 ? 58 : -54;
   }
 
   nearestDistance(pos) {

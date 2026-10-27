@@ -15,6 +15,7 @@ import { productIcon } from "./icons.js";
 import { upgradeApplies } from "./business.js";
 import { currentMission, missionProgress } from "./missions.js";
 import { WORLD } from "./physics.js";
+import { drawCity, drawIcon } from "./mapdraw.js";
 import { findItem } from "./look.js";
 import { WHOLESALE_STEPS } from "./tutorial.js";
 import {
@@ -627,82 +628,117 @@ export class UI {
     });
   }
 
+  // Mapa de toda la ciudad con sus zonas y una lista de destinos: al
+  // elegir uno se marca la ruta por las calles.
   openMap() {
+    const g = this.game;
+    const pois = g.world.pois.filter((p) => !p.hidden);
+    const dests = [];
+    const shop = g.guide.ownShop();
+    if (shop) dests.push({ id: "_shop", name: "Mi tienda", icon: "🏪" });
+    if (g.state.home?.owned)
+      dests.push({ id: "_home", name: "Mi casa", icon: "🏡" });
+    for (const p of pois) dests.push(p);
     this.open(
       "map",
       "Mapa de la ciudad",
-      `<canvas id="map-canvas" width="740" height="500"></canvas><p class="hint">● Tú · ★ Objetivo actual</p>`,
+      `<div class="map-wrap"><canvas id="map-canvas" width="760" height="620"></canvas>
+        <div class="map-dests"><b>Ir a…</b>${dests
+          .map(
+            (d) =>
+              `<button data-dest="${d.id}">${d.icon} ${d.name}${d.locked && !g.state.unlocked?.financiero ? " 🔒" : ""}</button>`,
+          )
+          .join("")}</div></div>
+      <p class="hint">● Tú · ★ Destino · Verde: tuyo · Amarillo: en venta · Rosa: tiendas</p>`,
     );
     this.drawMap($("map-canvas"));
+    this.bind("[data-dest]", (d) => {
+      let at;
+      let label;
+      let building = null;
+      if (d.dest === "_shop") {
+        at = shop.doorPoint(1.2);
+        label = "Mi tienda";
+        building = shop;
+      } else if (d.dest === "_home") {
+        at = g.home.lot.door;
+        label = "Mi casa";
+        building = g.home.lot.building;
+      } else {
+        const p = g.world.pois.find((x) => x.id === d.dest);
+        at = p.at;
+        label = p.name;
+      }
+      g.guide.setDestination({ ...at, label, building });
+      this.close();
+      this.toast(`🧭 Ruta marcada: ${label}`);
+    });
   }
 
   drawMap(canvas) {
     const g = this.game;
     const ctx = canvas.getContext("2d");
-    const sx = canvas.width / (WORLD.maxX - WORLD.minX);
-    const sz = canvas.height / (WORLD.maxZ - WORLD.minZ);
-    const X = (x) => (x - WORLD.minX) * sx;
-    const Z = (z) => (z - WORLD.minZ) * sz;
-    ctx.fillStyle = "#9edb7c";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#f3e1b9";
-    ctx.fillRect(0, Z(-10), canvas.width, Z(10) - Z(-10));
-    ctx.fillRect(X(-7), 0, X(7) - X(-7), canvas.height);
-    ctx.fillStyle = "#6b7480";
-    ctx.fillRect(0, Z(-4), canvas.width, Z(4) - Z(-4));
-    ctx.fillRect(X(-4), 0, X(4) - X(-4), canvas.height);
+    const W = canvas.width;
+    const H = canvas.height;
+    const s = Math.min(
+      W / (WORLD.maxX - WORLD.minX),
+      H / (WORLD.maxZ - WORLD.minZ),
+    );
+    const ox = (W - (WORLD.maxX - WORLD.minX) * s) / 2;
+    const oz = (H - (WORLD.maxZ - WORLD.minZ) * s) / 2;
+    const X = (x) => ox + (x - WORLD.minX) * s;
+    const Z = (z) => oz + (z - WORLD.minZ) * s;
+    const view = { X, Z, s, w: W, h: H };
+    ctx.fillStyle = "#8fcf6c";
+    ctx.fillRect(0, 0, W, H);
+    // Mar al este.
     ctx.fillStyle = "#6cc6f0";
-    ctx.beginPath();
-    ctx.arc(X(30), Z(38), 4 * sx, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(X(100), 0, W - X(100), H);
+    drawCity(ctx, g.world, view, (b) => g.guide.buildingColor(b));
+    // Nombres de las zonas.
     ctx.font = "bold 13px sans-serif";
     ctx.textAlign = "center";
-    for (const b of Object.values(g.world.buildings)) {
-      const biz = g.businesses[b.id];
-      let color = "#ffffff";
-      if (
-        biz?.owned ||
-        b.id === "casa" ||
-        (b.id === "casagrande" && g.state.items.casa)
-      )
-        color = "#5bd47a";
-      else if (biz || b.id === "casagrande") color = "#ffd166";
-      else if (b.id === "restaurante") color = "#c9c9c9";
-      ctx.fillStyle = color;
-      ctx.strokeStyle = "#33415c";
-      ctx.lineWidth = 2;
-      ctx.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), b.w * sx, b.d * sz);
-      ctx.strokeRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), b.w * sx, b.d * sz);
-      ctx.fillStyle = "#1d2b44";
-      ctx.fillText(b.name, X(b.x), Z(b.z) + 4);
-    }
-    ctx.fillStyle = "#dfe6ea";
-    ctx.fillRect(X(49), Z(12), 18 * sx, 16 * sz);
     ctx.fillStyle = "#1d2b44";
-    ctx.fillText("Concesionario", X(58), Z(20));
-    ctx.fillText("Parque", X(30), Z(46));
-    const m = currentMission(g);
-    const t = m?.target?.(g);
+    for (const z of g.world.zones) {
+      const [x0, z0, x1] = z.rect;
+      const locked = z.id === "financiero" && !g.state.unlocked?.financiero;
+      ctx.fillText(
+        `${z.name}${locked ? " 🔒" : ""}`,
+        X((x0 + x1) / 2),
+        Z(z0) + 14,
+      );
+    }
+    for (const p of g.world.pois)
+      drawIcon(ctx, view, p.at.x, p.at.z, p.icon, { size: 12 });
+    const shop = g.guide.ownShop();
+    if (shop) {
+      const dp = shop.doorPoint(0);
+      drawIcon(ctx, view, dp.x, dp.z, "🏪", { size: 14 });
+    }
+    if (g.state.home?.owned && g.home?.lot)
+      drawIcon(ctx, view, g.home.lot.door.x, g.home.lot.door.z, "🏡", {
+        size: 14,
+      });
+    const t = g.guide.currentTarget?.();
     if (t) {
-      ctx.fillStyle = "#1e9e4a";
-      ctx.font = "bold 26px sans-serif";
-      ctx.fillText("★", X(t.x), Z(t.z) + 9);
+      ctx.fillStyle = "#e08a00";
+      ctx.font = "bold 22px sans-serif";
+      ctx.fillText("★", X(t.x), Z(t.z) + 2);
+    }
+    for (const o of g.online?.remotePlayers() ?? []) {
+      ctx.fillStyle = "#9b6dff";
+      ctx.beginPath();
+      ctx.arc(X(o.x), Z(o.z), 5, 0, Math.PI * 2);
+      ctx.fill();
     }
     const p = g.player.pos;
     ctx.fillStyle = "#2ec4c4";
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(X(p.x), Z(p.z), 8, 0, Math.PI * 2);
+    ctx.arc(X(p.x), Z(p.z), 7, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#555";
-    ctx.font = "11px sans-serif";
-    ctx.fillText(
-      "Verde: tuyo · Amarillo: en venta · Gris: no disponible",
-      canvas.width / 2,
-      canvas.height - 8,
-    );
   }
 
   openMenu() {

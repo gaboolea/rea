@@ -2,6 +2,7 @@
 // en la entrada, flecha en el borde de la pantalla con distancia, ruta por
 // las calles (A*) y minimapa. Todo se calcula con posiciones reales.
 import * as THREE from "three";
+import { drawCity, drawIcon } from "./mapdraw.js";
 import { mat, mesh, cylinder, sphere } from "./gfx.js";
 
 const $ = (id) => document.getElementById(id);
@@ -306,6 +307,19 @@ export class Guide {
     el.querySelector(".nav-pointer").style.transform = `rotate(${angle}rad)`;
   }
 
+  // Color de cada edificio en los planos (tuyo, en venta, de otro…).
+  buildingColor(b) {
+    const g = this.game;
+    if (b === this.ownShop()) return "#2ec4c4";
+    if (b === g.home?.lot?.building) return "#5bd47a";
+    if (b.id === "mayorista") return "#ff9f43";
+    if (g.remoteOwnerOf?.(b.id)) return "#b39cff";
+    if (g.businesses[b.id]?.owned) return "#5bd47a";
+    if (g.businesses[b.id] || b.id === "casagrande") return "#ffd166";
+    if (g.world.pois.some((p) => p.id === b.id)) return "#ffb3d1";
+    return "#dfe6ea";
+  }
+
   drawMinimap(target) {
     const g = this.game;
     const c = this.minimap;
@@ -324,30 +338,8 @@ export class Guide {
     ctx.clip();
     ctx.fillStyle = "#a8df8a";
     ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = "#f3e1b9";
-    ctx.fillRect(0, Z(-10), size, 20 * s);
-    ctx.fillRect(X(-7), 0, 14 * s, size);
-    ctx.fillStyle = "#7d8792";
-    ctx.fillRect(0, Z(-4), size, 8 * s);
-    ctx.fillRect(X(-4), 0, 8 * s, size);
-    const shop = this.ownShop();
-    for (const b of Object.values(g.world.buildings)) {
-      let color = "#dfe6ea";
-      if (b === shop) color = "#2ec4c4";
-      else if (b.id === "mayorista") color = "#ff9f43";
-      else if (g.remoteOwnerOf?.(b.id)) color = "#b39cff";
-      else if (g.businesses[b.id]?.owned) color = "#5bd47a";
-      else if (g.businesses[b.id] || b.id === "casagrande") color = "#ffd166";
-      const a = b.toWorld(-b.w / 2, -b.d / 2);
-      const d = b.toWorld(b.w / 2, b.d / 2);
-      ctx.fillStyle = color;
-      ctx.fillRect(
-        X(Math.min(a.x, d.x)),
-        Z(Math.min(a.z, d.z)),
-        Math.abs(d.x - a.x) * s,
-        Math.abs(d.z - a.z) * s,
-      );
-    }
+    const view = { X, Z, s, w: size, h: size };
+    drawCity(ctx, g.world, view, (b) => this.buildingColor(b));
     const icon = (x, z, text, color) => {
       ctx.fillStyle = color;
       ctx.font = "bold 13px sans-serif";
@@ -363,12 +355,20 @@ export class Guide {
       ctx.arc(X(o.x), Z(o.z), 4, 0, Math.PI * 2);
       ctx.fill();
     }
+    // Lugares cercanos con su icono; la tienda propia y la casa, siempre.
+    for (const p of g.world.pois)
+      drawIcon(ctx, view, p.at.x, p.at.z, p.icon, { size: 11 });
+    const shop = this.ownShop();
     if (shop) {
       const dp = shop.doorPoint(0);
-      icon(dp.x, dp.z, "🏪", "#000");
+      drawIcon(ctx, view, dp.x, dp.z, "🏪", { clamp: true, size: 12 });
     }
-    const may = g.world.buildings.mayorista.doorPoint(0);
-    icon(may.x, may.z, "📦", "#000");
+    const home = g.home?.lot;
+    if (home && g.state.home?.owned)
+      drawIcon(ctx, view, home.door.x, home.door.z, "🏡", {
+        clamp: true,
+        size: 12,
+      });
     if (target) icon(target.x, target.z, "★", "#e08a00");
     // Jugador: flecha según su orientación.
     ctx.translate(size / 2, size / 2);

@@ -326,3 +326,11 @@ function seededNoise(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+// Material de acera con baldosas de 1,4 m (la textura se repite por tamaño).
+export function sidewalkMat(base, w, d) {
+  const map = base.clone();
+  map.repeat.set(w / 1.4, d / 1.4);
+  map.needsUpdate = true;
+  return new THREE.MeshStandardMaterial({ map, roughness: 0.85 });
+}

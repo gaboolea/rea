@@ -1,7 +1,8 @@
 // La ciudad: calles, aceras, edificios, decoración urbana, tráfico y los
 // interiores fijos (mayorista, casas, boutique, concesionario).
 import * as THREE from "three";
-import { Physics, WORLD } from "./physics.js";
+import { Physics, ZONE1 } from "./physics.js";
+import { buildExpansion, cullZones } from "./city/index.js";
 import { Building, FLOOR_Y } from "./building.js";
 import {
   mat,
@@ -13,6 +14,7 @@ import {
   signMesh,
   mergeParts,
   surfaceTexture,
+  sidewalkMat,
 } from "./gfx.js";
 import * as props from "./props.js";
 import * as decor from "./decor.js";
@@ -32,14 +34,6 @@ const LAMP_IRON = new THREE.MeshStandardMaterial({
   metalness: 0.3,
 });
 
-// Material de acera con baldosas de 1,4 m (la textura se repite por tamaño).
-function sidewalkMat(base, w, d) {
-  const map = base.clone();
-  map.repeat.set(w / 1.4, d / 1.4);
-  map.needsUpdate = true;
-  return new THREE.MeshStandardMaterial({ map, roughness: 0.85 });
-}
-
 export class World {
   constructor(scene) {
     this.scene = scene;
@@ -49,6 +43,23 @@ export class World {
     this.treeTops = [];
     this.buildings = {};
     this.staticInteractables = [];
+    // Registros compartidos por todas las zonas: rectángulos para dibujar el
+    // mapa, aceras para los peatones, zonas (con su grupo para ocultarlas
+    // de lejos) y puntos de interés del mapa.
+    this.mapRects = [];
+    this.walkAreas = [];
+    this.zones = [];
+    this.pois = [];
+    // Puntos por donde los peatones entran/salen y tiendas que visitan.
+    this.exitPoints = [
+      { x: -73, z: -6.5, zone: "barrio" },
+      { x: 73, z: -6.5, zone: "barrio" },
+      { x: -73, z: 6.5, zone: "barrio" },
+      { x: 73, z: 6.5, zone: "barrio" },
+      { x: -5.5, z: -47, zone: "barrio" },
+      { x: 5.5, z: 51, zone: "barrio" },
+    ];
+    this.visitShops = [];
     this.buildGround();
     this.buildBuildings();
     this.buildWarehouse();
@@ -57,13 +68,16 @@ export class World {
     this.buildDealership();
     this.buildDecor();
     this.buildBounds();
+    this.registerZone1();
     this.traffic = new Traffic(scene);
+    buildExpansion(this);
+    this.physics.setRoads(this.roads, this.crosswalks);
     this.traffic.setCrosswalks(this.crosswalks);
   }
 
   buildGround() {
-    const gw = WORLD.maxX - WORLD.minX + 40;
-    const gd = WORLD.maxZ - WORLD.minZ + 40;
+    const gw = ZONE1.maxX - ZONE1.minX + 40;
+    const gd = ZONE1.maxZ - ZONE1.minZ + 40;
     const grass = mesh(
       box(gw, 0.2, gd),
       new THREE.MeshStandardMaterial({
@@ -84,8 +98,8 @@ export class World {
     this.scene.add(mesh(box(160, 0.02, 8), asphalt(160, 8), 0, 0.01, 0, false));
     this.scene.add(
       mesh(
-        box(8, 0.02, WORLD.maxZ - WORLD.minZ + 10),
-        asphalt(8, WORLD.maxZ - WORLD.minZ + 10),
+        box(8, 0.02, ZONE1.maxZ - ZONE1.minZ + 10),
+        asphalt(8, ZONE1.maxZ - ZONE1.minZ + 10),
         0,
         0.012,
         2,
@@ -115,8 +129,8 @@ export class World {
       this.crosswalks.push([-4.5, cz - 1.6, 4.5, cz + 1.6]);
     }
     this.roads = [
-      [WORLD.minX - 6, -4, WORLD.maxX + 6, 4],
-      [-4, WORLD.minZ - 6, 4, WORLD.maxZ + 6],
+      [ZONE1.minX - 6, -4, ZONE1.maxX + 6, 4],
+      [-4, ZONE1.minZ - 6, 4, ZONE1.maxZ + 6],
     ];
     this.physics.setRoads(this.roads, this.crosswalks);
     // Líneas de detención del semáforo.
@@ -131,14 +145,14 @@ export class World {
     const pavers = surfaceTexture("pavers", "#f2dcb0", [1, 1]);
     const curb = mat(0xe8e2d6);
     const slabs = [
-      [WORLD.minX - 6, -10, -4, -4],
-      [4, -10, WORLD.maxX + 6, -4],
-      [WORLD.minX - 6, 4, -4, 10],
-      [4, 4, WORLD.maxX + 6, 10],
-      [-7, WORLD.minZ - 6, -4, -4],
-      [4, WORLD.minZ - 6, 7, -4],
-      [-7, 4, -4, WORLD.maxZ + 6],
-      [4, 4, 7, WORLD.maxZ + 6],
+      [ZONE1.minX - 6, -10, -4, -4],
+      [4, -10, ZONE1.maxX + 6, -4],
+      [ZONE1.minX - 6, 4, -4, 10],
+      [4, 4, ZONE1.maxX + 6, 10],
+      [-7, ZONE1.minZ - 6, -4, -4],
+      [4, ZONE1.minZ - 6, 7, -4],
+      [-7, 4, -4, ZONE1.maxZ + 6],
+      [4, 4, 7, ZONE1.maxZ + 6],
     ];
     for (const [x0, z0, x1, z1] of slabs) {
       const w = x1 - x0;
@@ -894,19 +908,114 @@ export class World {
     }
   }
 
+  // Valla del barrio inicial con aperturas donde salen las avenidas nuevas:
+  // al norte (zona comercial), al sur (zona residencial) y al oeste (hacia
+  // el distrito financiero). Al este está el mar.
   buildBounds() {
     const fence = mat(0xffffff);
-    const { minX, maxX, minZ, maxZ } = WORLD;
-    this.physics.addBox(minX - 2, minZ - 2, maxX + 2, minZ);
-    this.physics.addBox(minX - 2, maxZ, maxX + 2, maxZ + 2);
-    this.physics.addBox(minX - 2, minZ, minX, maxZ);
-    this.physics.addBox(maxX, minZ, maxX + 2, maxZ);
-    for (const z of [minZ - 0.5, maxZ + 0.5])
-      this.scene.add(mesh(box(maxX - minX, 0.8, 0.2), fence, 0, 0.4, z));
-    for (const x of [minX - 0.5, maxX + 0.5])
+    const { minX, maxX, minZ, maxZ } = ZONE1;
+    const gapX = [-8, 8];
+    const gapZ = [-11, 11];
+    const wall = (x0, z0, x1, z1) => {
+      if (x1 - x0 <= 0 || z1 - z0 <= 0) return;
+      this.physics.addBox(x0, z0, x1, z1);
+    };
+    const rail = (x0, z0, x1, z1) => {
+      const w = Math.max(0.2, x1 - x0);
+      const d = Math.max(0.2, z1 - z0);
       this.scene.add(
-        mesh(box(0.2, 0.8, maxZ - minZ), fence, x, 0.4, (minZ + maxZ) / 2),
+        mesh(box(w, 0.8, d), fence, (x0 + x1) / 2, 0.4, (z0 + z1) / 2),
       );
+    };
+    for (const [z0, z1, zr] of [
+      [minZ - 2, minZ, minZ - 0.5],
+      [maxZ, maxZ + 2, maxZ + 0.5],
+    ]) {
+      wall(minX - 2, z0, gapX[0], z1);
+      wall(gapX[1], z0, maxX + 2, z1);
+      rail(minX, zr - 0.1, gapX[0], zr + 0.1);
+      rail(gapX[1], zr - 0.1, maxX, zr + 0.1);
+    }
+    wall(minX - 2, minZ, minX, gapZ[0]);
+    wall(minX - 2, gapZ[1], minX, maxZ);
+    rail(minX - 0.6, minZ, minX - 0.4, gapZ[0]);
+    rail(minX - 0.6, gapZ[1], minX - 0.4, maxZ);
+    wall(maxX, minZ, maxX + 2, maxZ);
+    rail(maxX + 0.4, minZ, maxX + 0.6, maxZ);
+  }
+
+  // Zona que contiene el punto (por defecto, el barrio inicial).
+  zoneOf(x, z) {
+    for (const zn of this.zones)
+      if (
+        x >= zn.rect[0] &&
+        x <= zn.rect[2] &&
+        z >= zn.rect[1] &&
+        z <= zn.rect[3]
+      )
+        return zn.id;
+    return "barrio";
+  }
+
+  // Datos del barrio inicial para el mapa, los peatones y los iconos.
+  registerZone1() {
+    const { minX, maxX, minZ, maxZ } = ZONE1;
+    this.zones.push({
+      id: "barrio",
+      name: "Barrio inicial",
+      rect: [minX, minZ, maxX, maxZ],
+      group: null,
+    });
+    this.mapRects.push(
+      { kind: "grass", rect: [minX, minZ, maxX, maxZ] },
+      { kind: "walk", rect: [minX - 6, -10, maxX + 6, 10] },
+      { kind: "walk", rect: [-7, minZ - 6, 7, maxZ + 6] },
+      { kind: "road", rect: [-80, -4, 80, 4] },
+      { kind: "road", rect: [-4, minZ - 5, 4, maxZ + 5] },
+      { kind: "water", circle: [30, 38, 4] },
+    );
+    for (const r of [
+      [-70, -8.5, 70, -5],
+      [-70, 5, 70, 8.5],
+      [-6.5, -45, -4.6, -12],
+      [4.6, -45, 6.5, -12],
+      [-6.5, 12, -4.6, 48],
+      [4.6, 12, 6.5, 48],
+    ])
+      this.walkAreas.push({ zone: "barrio", rect: r });
+    const b = this.buildings;
+    this.pois.push(
+      {
+        id: "mayorista",
+        name: "Mayorista",
+        icon: "📦",
+        at: b.mayorista.doorPoint(1),
+      },
+      {
+        id: "boutique",
+        name: "Boutique",
+        icon: "👗",
+        at: b.boutique.doorPoint(1),
+      },
+      {
+        id: "cafeteria",
+        name: "Café Aroma",
+        icon: "☕",
+        at: b.cafeteria.doorPoint(1),
+      },
+      {
+        id: "casa",
+        name: "Tu casa (barrio)",
+        icon: "🛏️",
+        at: b.casa.doorPoint(1),
+      },
+      {
+        id: "concesionario",
+        name: "Concesionario del barrio",
+        icon: "🛵",
+        at: { x: 58, z: 22 },
+      },
+    );
   }
 
   trashBin(x, z) {
@@ -1022,7 +1131,7 @@ export class World {
       opacity: 0.7,
       roughness: 0.1,
     });
-    this.fountainJets = [];
+    this.fountainJets ??= [];
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
       const jet = mesh(
@@ -1138,6 +1247,7 @@ export class World {
     for (const m of this.lamps) m.emissiveIntensity = 0.1 + amount * 2.4;
     if (this.haloMat) this.haloMat.opacity = Math.max(0, amount - 0.1) * 0.9;
     for (const b of Object.values(this.buildings)) b.setNight(amount);
+    for (const m of this.nightMats ?? []) m.emissiveIntensity = amount * 0.9;
   }
 
   animateAmbient(dt, time) {
@@ -1170,7 +1280,10 @@ export class World {
   }
 
   update(dt, actors, player) {
+    cullZones(this, player);
     for (const b of Object.values(this.buildings)) {
+      // Edificios lejanos: nada que animar.
+      if (Math.abs(b.x - player.x) + Math.abs(b.z - player.z) > 140) continue;
       let near = false;
       const door = b.doorPoint(0);
       for (const a of actors) {
@@ -1182,8 +1295,10 @@ export class World {
       const inside = b.contains(player.x, player.z, -0.1);
       b.roof.visible = !inside;
     }
-    this.traffic.update(dt, actors);
+    this.traffic.update(dt, actors, player);
     this.animateAmbient(dt, performance.now() / 1000);
+    this.expansion.financial.barrier.update(dt);
+    for (const s of this.spinners ?? []) s.rotation.z += dt * 0.8;
     for (const npc of this.warehouseClerks) npc.animate(dt, 0);
     if (this.alarm > 0) {
       this.alarm = Math.max(0, this.alarm - dt);

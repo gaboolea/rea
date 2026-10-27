@@ -123,7 +123,7 @@ class Game {
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 330);
+    this.camera = new THREE.PerspectiveCamera(55, 1, 0.15, 340);
     this.setupLights();
     this.timers = [];
     this.settings = this.loadSettings();

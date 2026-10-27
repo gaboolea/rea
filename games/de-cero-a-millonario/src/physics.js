@@ -1,11 +1,21 @@
 // Colisiones en el plano XZ (cajas alineadas a ejes), altura del suelo,
 // y una rejilla de navegación con A* para los personajes no jugadores.
 
-export const WORLD = { minX: -74, maxX: 74, minZ: -48, maxZ: 52 };
+// Barrio inicial (la ciudad original): sus calles y edificios no cambian.
+export const ZONE1 = { minX: -74, maxX: 74, minZ: -48, maxZ: 52 };
+// Mundo completo: barrio inicial + zona comercial (norte), zona
+// residencial (sur) y la avenida hacia el distrito financiero (oeste).
+export const WORLD = { minX: -345, maxX: 76, minZ: -168, maxZ: 170 };
+// Tamaño de celda del índice espacial de colisiones (metros).
+const BUCKET = 8;
 
 export class Physics {
   constructor() {
     this.colliders = new Set();
+    // Índice espacial: celda → colisionadores que la tocan. Así cada
+    // consulta solo mira lo cercano aunque la ciudad sea grande.
+    this.buckets = new Map();
+    this.query = 0;
     this.floors = []; // rectángulos elevados (aceras, suelos interiores)
     this.navDirty = true;
     this.nav = null;
@@ -13,10 +23,38 @@ export class Physics {
 
   // Devuelve el colisionador para poder quitarlo después (p. ej. puertas que se abren).
   addBox(minX, minZ, maxX, maxZ, tag = "") {
-    const c = { minX, minZ, maxX, maxZ, tag, enabled: true };
+    const c = { minX, minZ, maxX, maxZ, tag, enabled: true, seen: 0 };
     this.colliders.add(c);
+    this.eachBucket(c, (key) => {
+      let list = this.buckets.get(key);
+      if (!list) this.buckets.set(key, (list = []));
+      list.push(c);
+    });
     this.navDirty = true;
     return c;
+  }
+
+  eachBucket(c, fn) {
+    const x0 = Math.floor(c.minX / BUCKET);
+    const x1 = Math.floor(c.maxX / BUCKET);
+    const z0 = Math.floor(c.minZ / BUCKET);
+    const z1 = Math.floor(c.maxZ / BUCKET);
+    for (let x = x0; x <= x1; x++)
+      for (let z = z0; z <= z1; z++) fn(`${x},${z}`);
+  }
+
+  // Colisionadores que pueden tocar el rectángulo dado (sin repetir).
+  near(minX, minZ, maxX, maxZ) {
+    const out = [];
+    const q = ++this.query;
+    this.eachBucket({ minX, minZ, maxX, maxZ }, (key) => {
+      for (const c of this.buckets.get(key) ?? []) {
+        if (c.seen === q) continue;
+        c.seen = q;
+        out.push(c);
+      }
+    });
+    return out;
   }
 
   addCentered(x, z, w, d, tag) {
@@ -24,7 +62,13 @@ export class Physics {
   }
 
   remove(c) {
-    if (c && this.colliders.delete(c)) this.navDirty = true;
+    if (!c || !this.colliders.delete(c)) return;
+    this.eachBucket(c, (key) => {
+      const list = this.buckets.get(key);
+      const i = list?.indexOf(c) ?? -1;
+      if (i >= 0) list.splice(i, 1);
+    });
+    this.navDirty = true;
   }
 
   // Calzadas (caras de cruzar) y pasos de cebra (baratos) para la navegación.
@@ -35,12 +79,20 @@ export class Physics {
   }
 
   addFloor(minX, minZ, maxX, maxZ, height) {
-    this.floors.push({ minX, minZ, maxX, maxZ, height });
+    const f = { minX, minZ, maxX, maxZ, height };
+    this.floors.push(f);
+    this.floorBuckets ??= new Map();
+    this.eachBucket(f, (key) => {
+      let list = this.floorBuckets.get(key);
+      if (!list) this.floorBuckets.set(key, (list = []));
+      list.push(f);
+    });
   }
 
   groundHeight(x, z) {
     let h = 0;
-    for (const f of this.floors) {
+    const key = `${Math.floor(x / BUCKET)},${Math.floor(z / BUCKET)}`;
+    for (const f of this.floorBuckets?.get(key) ?? []) {
       if (
         x >= f.minX &&
         x <= f.maxX &&
@@ -55,9 +107,15 @@ export class Physics {
 
   // Empuja un círculo fuera de todas las cajas. Varias pasadas para esquinas.
   resolveCircle(pos, radius) {
+    const list = this.near(
+      pos.x - radius - 1,
+      pos.z - radius - 1,
+      pos.x + radius + 1,
+      pos.z + radius + 1,
+    );
     for (let pass = 0; pass < 3; pass++) {
       let moved = false;
-      for (const c of this.colliders) {
+      for (const c of list) {
         if (!c.enabled) continue;
         if (pos.x + radius < c.minX || pos.x - radius > c.maxX) continue;
         if (pos.z + radius < c.minZ || pos.z - radius > c.maxZ) continue;

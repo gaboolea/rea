@@ -63,13 +63,13 @@ export class Scenery {
 
   // Campo verde alrededor de la ciudad hasta las montañas.
   buildOuterGround() {
-    const tex = surfaceTexture("grass", "#5fc93a", [60, 60]);
+    const tex = surfaceTexture("grass", "#5fc93a", [230, 230]);
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(260, 48),
+      new THREE.PlaneGeometry(1400, 1400),
       new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }),
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.25;
+    ground.position.set(-130, -0.25, 0);
     ground.receiveShadow = true;
     this.scene.add(ground);
   }
@@ -118,7 +118,7 @@ export class Scenery {
     for (let i = 0; i < 46; i++) {
       const a = (i / 46) * Math.PI * 2 + rnd() * 0.05;
       if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < 0.42) continue;
-      const r = 205 + rnd() * 30;
+      const r = 275 + rnd() * 25;
       const h = 30 + rnd() * 42;
       const cone = new THREE.ConeGeometry(28 + rnd() * 22, h, 7, 1);
       const x = Math.cos(a) * r;
@@ -131,7 +131,7 @@ export class Scenery {
     for (let i = 0; i < 40; i++) {
       const a = (i / 40) * Math.PI * 2 + rnd() * 0.1;
       if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < 0.5) continue;
-      const r = 150 + rnd() * 20;
+      const r = 245 + rnd() * 15;
       const s = 14 + rnd() * 14;
       const hill = new THREE.SphereGeometry(s, 12, 8);
       hill.scale(1.4, 0.55, 1.1);
@@ -144,6 +144,10 @@ export class Scenery {
         [0x52bd40, 0x6bd14a, 0x45b03b][i % 3],
       ]);
     }
+    // Las montañas acompañan a la cámara: son el horizonte, nunca se
+    // alcanzan ni se cruzan con las zonas de la ciudad.
+    this.ranges = new THREE.Group();
+    this.scene.add(this.ranges);
     for (const list of [far, near]) {
       const m = new THREE.Mesh(
         mergeParts(list),
@@ -154,13 +158,15 @@ export class Scenery {
           fog: false,
         }),
       );
-      this.scene.add(m);
+      m.frustumCulled = false;
+      this.ranges.add(m);
     }
   }
 
   // night/dusk: 0..1. Devuelve el color del horizonte (para la niebla).
   update(camera, dusk, night, time) {
     this.sky.position.copy(camera.position);
+    this.ranges.position.set(camera.position.x, 0, camera.position.z);
     this.top.copy(TOP[0]).lerp(TOP[1], dusk).lerp(TOP[2], night);
     this.horizon
       .copy(HORIZON[0])

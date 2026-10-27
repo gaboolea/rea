@@ -54,12 +54,14 @@ class Pedestrian extends Agent {
   pickActivity() {
     const c = this.crowd;
     const r = Math.random();
-    if (r < 0.38)
+    // El parque y la parada de autobús solo existen en el barrio inicial.
+    const home = c.zone() === "barrio";
+    if (r < 0.38 || (!home && r >= 0.58 && r < 0.7))
       this.go(c.randomSidewalkPoint(), () => this.idle(rand(0.5, 3)));
     else if (r < 0.58) this.visitShop();
     else if (r < 0.7)
       this.go(c.randomParkPoint(), () => this.idle(rand(5, 10)));
-    else if (r < 0.82) {
+    else if (r < 0.82 || (!home && r < 0.92)) {
       if (!this.tryChat()) this.idle(1);
     } else if (r < 0.92) this.waitForBus();
     else this.go(c.exitPoint(), () => (this.done = true));
@@ -199,6 +201,9 @@ class Pedestrian extends Agent {
   }
 }
 
+const areaOf = ([x0, z0, x1, z1]) =>
+  Math.max(0, x1 - x0) * Math.max(0, z1 - z0);
+
 export class Crowd {
   constructor(game) {
     this.game = game;
@@ -212,8 +217,27 @@ export class Crowd {
     this.target = n;
   }
 
+  // Zona donde está el jugador: los peatones viven donde se les ve.
+  zone() {
+    const p = this.game.player?.pos ?? { x: 0, z: 0 };
+    const z = this.game.world.zones.find(
+      (zn) =>
+        p.x >= zn.rect[0] &&
+        p.x <= zn.rect[2] &&
+        p.z >= zn.rect[1] &&
+        p.z <= zn.rect[3],
+    );
+    return z?.id ?? "barrio";
+  }
+
   shops() {
-    const b = this.game.world.buildings;
+    const w = this.game.world;
+    const b = w.buildings;
+    const zone = this.zone();
+    if (zone !== "barrio") {
+      const list = w.visitShops.filter((s) => w.zoneOf(s.x, s.z) === zone);
+      if (list.length) return list;
+    }
     return [
       b.boutique,
       b.mayorista,
@@ -224,12 +248,21 @@ export class Crowd {
     ].filter(Boolean);
   }
 
+  // Punto al azar en una acera de la zona (por superficie).
   randomSidewalkPoint() {
-    const r = Math.random();
-    if (r < 0.35) return { x: rand(-70, 70), z: rand(-8.5, -5) };
-    if (r < 0.7) return { x: rand(-70, 70), z: rand(5, 8.5) };
-    const x = Math.random() < 0.5 ? rand(-6.5, -4.6) : rand(4.6, 6.5);
-    return { x, z: Math.random() < 0.5 ? rand(-45, -12) : rand(12, 48) };
+    const zone = this.zone();
+    const areas = this.game.world.walkAreas.filter((a) => a.zone === zone);
+    let total = 0;
+    for (const a of areas) total += areaOf(a.rect);
+    let r = Math.random() * total;
+    for (const a of areas) {
+      r -= areaOf(a.rect);
+      if (r <= 0) {
+        const [x0, z0, x1, z1] = a.rect;
+        return { x: rand(x0, x1), z: rand(z0, z1) };
+      }
+    }
+    return { x: rand(-70, 70), z: rand(5, 8.5) };
   }
 
   randomParkPoint() {
@@ -241,14 +274,9 @@ export class Crowd {
   }
 
   exitPoint() {
-    return pick([
-      { x: -73, z: -6.5 },
-      { x: 73, z: -6.5 },
-      { x: -73, z: 6.5 },
-      { x: 73, z: 6.5 },
-      { x: -5.5, z: -47 },
-      { x: 5.5, z: 51 },
-    ]);
+    const zone = this.zone();
+    const list = this.game.world.exitPoints.filter((p) => p.zone === zone);
+    return pick(list.length ? list : this.game.world.exitPoints);
   }
 
   spawn(at) {
@@ -285,9 +313,14 @@ export class Crowd {
       );
     }
     for (const p of this.people) p.update(dt);
+    const me = this.game.player?.pos;
     for (let i = this.people.length - 1; i >= 0; i--) {
       const p = this.people[i];
-      if (p.done || this.people.length > this.target + 4) {
+      // Quien se queda muy lejos del jugador (otra zona) desaparece y
+      // aparece gente nueva donde está el jugador.
+      const far =
+        me && Math.abs(p.pos.x - me.x) + Math.abs(p.pos.z - me.z) > 170;
+      if (p.done || far || this.people.length > this.target + 4) {
         if (p.partner) p.partner.partner = null;
         p.dispose();
         this.people.splice(i, 1);
