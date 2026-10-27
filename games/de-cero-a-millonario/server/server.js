@@ -21,6 +21,10 @@ import {
   ROOM_MAX_PLAYERS,
   PRODUCTS,
   CART_CAPACITY,
+  VEHICLES,
+  WORLD,
+  DISTRICT,
+  TEST_TRACK,
 } from "../src/config.js";
 import { ITEMS, SKINS, STARTER_ITEMS, defaultLook } from "../src/look.js";
 
@@ -30,7 +34,8 @@ const PORT = Number(process.env.PORT ?? 8080);
 const store = new Store(process.env.DATA_DIR ?? path.join(HERE, "data"));
 const PROTOCOL = 2;
 const MAX_CITIES_PER_PLAYER = 5;
-const MAX_SPEED = 14; // m/s (scooter + margen)
+// Velocidad máxima a pie (correr con el impulso del gimnasio y margen).
+const FOOT_SPEED = 10;
 
 // ---------- HTTP: archivos del juego ----------
 
@@ -255,6 +260,7 @@ const ECONOMY = {
   home: (s, cp) => eco.buyHome(cp),
   furniture: (s, cp, city, m) => eco.buyFurniture(cp, m),
   layout: (s, cp, city, m) => eco.setHome(cp, m),
+  unlock: (s, cp, city, m) => eco.unlock(cp, m),
   clothing: (s, cp, city, m) =>
     eco.buyClothing(cp, store.data.profiles[s.pid], m),
   mission: (s, cp, city, m) => eco.claimMission(cp, m),
@@ -319,21 +325,68 @@ function handleEconomy(s, m) {
   });
 }
 
+const onTrack = (x, z, pad = 3) =>
+  x >= TEST_TRACK.minX - pad &&
+  x <= TEST_TRACK.maxX + pad &&
+  z >= TEST_TRACK.minZ - pad &&
+  z <= TEST_TRACK.maxZ + pad;
+
+// Prueba en la pista del concesionario: el cliente avisa al empezar (salta
+// a la salida de la pista) y al terminar (vuelve a la tienda, cerca).
+function handleTestDrive(s, m) {
+  const now = Date.now();
+  if (m.on) {
+    if (!Object.hasOwn(VEHICLES, m.id) || VEHICLES[m.id].zone) return;
+    s.test = { id: m.id, warp: true, until: now + 95000 };
+  } else if (s.test) s.test = { ...s.test, back: true, until: now + 5000 };
+}
+
+// Vehículo con el que se mueve: propio, o el de la prueba en la pista.
+function rideOf(s, cp, m) {
+  if (typeof m.r !== "string" || !Object.hasOwn(VEHICLES, m.r)) return "";
+  if (cp.items[m.r]) return m.r;
+  const t = s.test;
+  if (t && t.id === m.r && Date.now() < t.until && onTrack(m.x, m.z))
+    return m.r;
+  return "";
+}
+
 function handleState(s, m) {
   if (
-    ![m.x, m.z, m.h].every((v) => num(v, -200, 200)) ||
+    !num(m.x, WORLD.minX - 5, WORLD.maxX + 5) ||
+    !num(m.z, WORLD.minZ - 5, WORLD.maxZ + 5) ||
+    !num(m.h, -50, 50) ||
     !num(m.y ?? 0, -5, 20)
   )
     return;
   const now = Date.now();
   const prev = s.state;
+  const cp = cityProfile(s);
+  const ride = rideOf(s, cp, m);
+  const correct = () =>
+    prev && send(s.ws, { t: "correct", x: prev.x, z: prev.z });
+  // Sin desbloquear, nadie pasa las obras del distrito financiero.
+  if (!cp.unlocked.financiero && m.x < DISTRICT.barrierX - 1.5)
+    return correct();
   if (prev) {
     const dt = Math.max(0.05, (now - prev.at) / 1000);
     const dist = Math.hypot(m.x - prev.x, m.z - prev.z);
-    // Movimiento imposible: se ignora y se corrige al cliente.
-    if (dist > MAX_SPEED * dt + 3) {
-      send(s.ws, { t: "correct", x: prev.x, z: prev.z });
-      return;
+    const max = ride ? VEHICLES[ride].speed * 1.15 + 2 : FOOT_SPEED;
+    // Saltos permitidos: a la salida de la pista al empezar una prueba, y
+    // de la pista a la tienda al terminarla.
+    const t = s.test;
+    const warp =
+      t &&
+      now < t.until &&
+      ((t.warp &&
+        Math.hypot(m.x - TEST_TRACK.start.x, m.z - TEST_TRACK.start.z) < 4) ||
+        (t.back && onTrack(prev.x, prev.z) && onTrack(m.x, m.z, 45)));
+    if (warp) {
+      if (t.back) s.test = null;
+      else t.warp = false;
+    } else if (dist > max * dt + 3) {
+      // Movimiento imposible: se ignora y se corrige al cliente.
+      return correct();
     }
   }
   s.state = {
@@ -345,7 +398,7 @@ function handleState(s, m) {
     c: Array.isArray(m.c)
       ? m.c.filter((p) => PRODUCTS[p]).slice(0, CART_CAPACITY)
       : [],
-    r: !!m.r,
+    r: ride,
     k: !!m.k,
     at: now,
   };
@@ -485,6 +538,8 @@ function onMessage(s, raw) {
       return leaveCity(s);
     case "state":
       return handleState(s, m);
+    case "test":
+      return handleTestDrive(s, m);
     case "look": {
       const p = store.data.profiles[s.pid];
       const look = validLook(m.look, p.wardrobe);
@@ -604,7 +659,7 @@ setInterval(() => {
           s.state.h,
           s.state.s,
           s.state.c,
-          s.state.r ? 1 : 0,
+          s.state.r,
           s.state.k ? 1 : 0,
         ]);
     for (const s of set)

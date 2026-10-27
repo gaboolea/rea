@@ -17,7 +17,7 @@ import {
 import { productIcon } from "./icons.js";
 import { upgradeApplies } from "./business.js";
 import { currentMission, missionProgress } from "./missions.js";
-import { WORLD } from "./physics.js";
+import { WORLD } from "./config.js";
 import { drawCity, drawIcon } from "./mapdraw.js";
 import { findItem, COLORS, SLOTS } from "./look.js";
 import { WHOLESALE_STEPS } from "./tutorial.js";

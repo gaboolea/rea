@@ -194,3 +194,13 @@ test("los perfiles anteriores a la expansión se completan al cargarse", () => {
   assert.equal(cp.home.owned, false);
   assert.deepEqual(cp.furniture, {});
 });
+
+test("el distrito financiero solo se abre con las ventas pedidas", () => {
+  const cp = eco.newCityProfile();
+  assert.equal(eco.unlock(cp, { zone: "financiero" }).ok, false);
+  assert.equal(cp.unlocked.financiero, undefined);
+  cp.stats.revenue = 1500;
+  assert.equal(eco.unlock(cp, { zone: "financiero" }).ok, true);
+  assert.equal(cp.unlocked.financiero, true);
+  assert.equal(eco.unlock(cp, { zone: "luna" }).ok, false);
+});

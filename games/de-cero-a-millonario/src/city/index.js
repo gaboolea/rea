@@ -4,10 +4,12 @@
 import { toyCar, toyModernCar } from "../vehicles.js";
 import { buildCommercial } from "./commercial.js";
 import { buildResidential } from "./residential.js";
-import { buildFinancial, CROSS_X, BARRIER_X } from "./financial.js";
+import { buildFinancial, CROSS_X } from "./financial.js";
+import { DISTRICT } from "../config.js";
 import { buildClothingStore } from "../stores/clothing.js";
 import { buildDealership } from "../stores/vehicles.js";
 import { buildFurnitureStore, buildTechStore } from "../stores/furniture.js";
+import { buildLuxuryStore } from "../stores/luxury.js";
 
 // Distancia a partir de la cual una zona no se dibuja (la niebla ya la
 // oculta): menos objetos que recorrer en cada fotograma.
@@ -24,6 +26,7 @@ export function buildExpansion(world) {
     vehiculos: buildDealership(world, commercial.shops.vehiculos),
     muebles: buildFurnitureStore(world, commercial.shops.muebles),
     tecnologia: buildTechStore(world, commercial.shops.tecnologia),
+    lujo: buildLuxuryStore(world, financial.lujo),
   };
 
   const t = world.traffic;
@@ -31,7 +34,7 @@ export function buildExpansion(world) {
   t.setRange("z0", -158, 165);
   // Mientras el distrito esté cerrado, los coches dan la vuelta antes de
   // la barrera.
-  t.setRange("x0", BARRIER_X + 4, 80);
+  t.setRange("x0", DISTRICT.barrierX + 4, 80);
   const comLights = t.addLights(0, commercial.crossZ);
   const resLights = t.addLights(0, residential.crossZ);
   const finLights = t.addLights(CROSS_X, 0);
@@ -94,5 +97,5 @@ export function cullZones(world, camera) {
 
 // Abre o cierra la avenida del distrito para el tráfico.
 export function setFinancialTraffic(world, open) {
-  world.traffic.setRange("x0", open ? -232 : BARRIER_X + 4, 80);
+  world.traffic.setRange("x0", open ? -232 : DISTRICT.barrierX + 4, 80);
 }

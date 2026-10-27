@@ -4,11 +4,12 @@
 // sincronización con la economía autoritativa del servidor.
 import * as THREE from "three";
 import { ToyCharacter } from "./character.js";
-import { toyScooter } from "./vehicles.js";
+import { rideModel } from "./vehicles.js";
+import { poseRider } from "./player.js";
 import { randomLook, workerLook } from "./look.js";
 import { VIP_LOOK } from "./npc.js";
 import { Business } from "./business.js";
-import { PRODUCTS, PLOTS, BUSINESSES, BOX_UNITS } from "./config.js";
+import { PRODUCTS, PLOTS, BUSINESSES, BOX_UNITS, VEHICLES } from "./config.js";
 
 const DELAY = 0.15; // s de retraso de interpolación de jugadores
 const NPC_DELAY = 0.35;
@@ -78,9 +79,8 @@ class RemoteAvatar {
     this.tag = labelSprite(info.name, "rgba(123,92,255,0.88)", 1.6);
     this.tag.position.y = 2.35;
     this.char.root.add(this.tag);
-    this.scooter = toyScooter(0x7b5cff);
-    this.scooter.visible = false;
-    this.char.root.add(this.scooter);
+    this.ride = null; // { id, def, model } del vehículo en el que va
+    this.ridePose = {};
     this.char.root.visible = false;
     game.scene.add(this.char.root);
     if (info.state) this.push(info.state, performance.now() / 1000);
@@ -95,7 +95,7 @@ class RemoteAvatar {
       h: st.h,
       s: st.s ?? 0,
       c: st.c ?? [],
-      r: !!st.r,
+      r: Object.hasOwn(VEHICLES, st.r) ? st.r : "",
       k: !!st.k,
     });
     if (this.buf.length > 30) this.buf.shift();
@@ -124,13 +124,30 @@ class RemoteAvatar {
     this.char.root.position.set(st.x, st.y, st.z);
     this.char.root.rotation.y = st.h;
     this.char.setCarry(st.c, st.k);
-    this.scooter.visible = st.r;
+    this.setRide(st.r);
     this.char.animate(dt, st.r ? 0 : st.s, true);
-    if (st.r) this.char.rig.position.y = 0.42;
+    if (this.ride) {
+      const turn = -Math.sin(st.h - (this.lastH ?? st.h)) * 4;
+      poseRider(this.char, this.ride, this.ridePose, dt, st.s, turn);
+    }
+    this.lastH = st.h;
     if (this.bubbleTime > 0) {
       this.bubbleTime -= dt;
       if (this.bubbleTime <= 0) this.char.root.remove(this.bubble);
     }
+  }
+
+  // Monta o quita el modelo del vehículo (el conductor de un coche va
+  // dentro y no se ve, como el jugador).
+  setRide(id) {
+    if ((this.ride?.id ?? "") === id) return;
+    if (this.ride) this.char.root.remove(this.ride.model);
+    const def = VEHICLES[id];
+    this.ride = id ? { id, def, model: rideModel(id, def) } : null;
+    if (this.ride) this.char.root.add(this.ride.model);
+    this.char.rig.visible = !def || def.kind !== "car";
+    this.char.rig.position.y = 0;
+    this.char.rig.rotation.set(0, 0, 0);
   }
 
   dispose() {

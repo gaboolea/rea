@@ -183,40 +183,10 @@ export class Player {
 
   // Postura y animación sobre el vehículo: pedalear, empujar el monopatín…
   poseOnRide(dt, speed) {
-    const { def, model } = this.ride;
-    const c = this.char;
     const turn =
       -Math.sin(this.heading - (this.lastHeading ?? this.heading)) * 4;
-    this.ridePhase = (this.ridePhase ?? 0) + dt * speed * 2.2;
-    const ph = this.ridePhase;
-    for (const w of model.userData.spin ?? []) w.rotation.x += dt * speed * 3;
-    model.rotation.z = turn * (def.kind === "board" ? 1.4 : 1);
-    if (def.kind === "board") {
-      c.rig.position.y = 0.17;
-      c.legs[0].rotation.x = 0.15;
-      // Empuja con el pie al acelerar.
-      const pushing = this.rideSpeed < def.speed * 0.85 && speed > 0.3;
-      c.legs[1].rotation.x = pushing ? Math.sin(ph * 1.5) * 0.7 : -0.1;
-      c.arms[0].rotation.z = -0.6;
-      c.arms[1].rotation.z = 0.6;
-      c.rig.rotation.y = 0.35;
-    } else if (def.kind === "bike") {
-      c.rig.position.y = 0.42;
-      c.rig.rotation.x = 0.18;
-      c.legs[0].rotation.x = -0.9 + Math.sin(ph) * 0.55;
-      c.legs[1].rotation.x = -0.9 - Math.sin(ph) * 0.55;
-      c.arms.forEach((a) => (a.rotation.x = -1.25));
-      if (model.userData.crank) model.userData.crank.rotation.x = ph;
-    } else if (def.kind === "moto") {
-      c.rig.position.y = 0.48;
-      c.rig.rotation.x = 0.15;
-      c.legs.forEach((l) => (l.rotation.x = -1.1));
-      c.arms.forEach((a) => (a.rotation.x = -1.3));
-    } else {
-      c.legs.forEach((l) => (l.rotation.x = 0));
-      c.arms.forEach((a) => (a.rotation.x = -1.0));
-      c.rig.position.y = 0.42;
-    }
+    this.ridePose ??= {};
+    poseRider(this.char, this.ride, this.ridePose, dt, speed, turn);
   }
 
   // Conducción de coches: acelerar, frenar/marcha atrás, girar (más cuanto
@@ -423,5 +393,41 @@ export class CameraRig {
       this.target.z + Math.cos(this.yaw) * Math.cos(p) * this.distance,
     );
     this.camera.lookAt(this.target);
+  }
+}
+
+// Postura del personaje sobre un vehículo: empujar el monopatín, pedalear,
+// moto, scooter o al volante. La usan el jugador y los avatares remotos.
+export function poseRider(c, ride, pose, dt, speed, turn) {
+  const { def, model } = ride;
+  pose.phase = (pose.phase ?? 0) + dt * speed * 2.2;
+  const ph = pose.phase;
+  for (const w of model.userData.spin ?? []) w.rotation.x += dt * speed * 3;
+  model.rotation.z = turn * (def.kind === "board" ? 1.4 : 1);
+  if (def.kind === "board") {
+    c.rig.position.y = 0.17;
+    c.legs[0].rotation.x = 0.15;
+    // Empuja con el pie al acelerar.
+    const pushing = speed < def.speed * 0.85 && speed > 0.3;
+    c.legs[1].rotation.x = pushing ? Math.sin(ph * 1.5) * 0.7 : -0.1;
+    c.arms[0].rotation.z = -0.6;
+    c.arms[1].rotation.z = 0.6;
+    c.rig.rotation.y = 0.35;
+  } else if (def.kind === "bike") {
+    c.rig.position.y = 0.42;
+    c.rig.rotation.x = 0.18;
+    c.legs[0].rotation.x = -0.9 + Math.sin(ph) * 0.55;
+    c.legs[1].rotation.x = -0.9 - Math.sin(ph) * 0.55;
+    c.arms.forEach((a) => (a.rotation.x = -1.25));
+    if (model.userData.crank) model.userData.crank.rotation.x = ph;
+  } else if (def.kind === "moto") {
+    c.rig.position.y = 0.48;
+    c.rig.rotation.x = 0.15;
+    c.legs.forEach((l) => (l.rotation.x = -1.1));
+    c.arms.forEach((a) => (a.rotation.x = -1.3));
+  } else {
+    c.legs.forEach((l) => (l.rotation.x = 0));
+    c.arms.forEach((a) => (a.rotation.x = -1.0));
+    c.rig.position.y = 0.42;
   }
 }

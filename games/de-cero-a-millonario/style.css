@@ -2726,3 +2726,60 @@ table.rank tr.me {
   font-size: 18px;
   flex: none;
 }
+
+#unlock-banner {
+  position: fixed;
+  left: 50%;
+  top: 18%;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(92vw, 560px);
+  padding: 16px 22px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #1d2b44, #3a2a6b);
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  border: 3px solid #f2c230;
+  pointer-events: none;
+}
+
+#unlock-banner[hidden] {
+  display: none;
+}
+
+#unlock-banner b {
+  display: block;
+  font-size: 22px;
+  color: #ffd23f;
+  margin-bottom: 6px;
+}
+
+#unlock-banner span {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+#unlock-banner.show {
+  animation: unlock-pop 5.2s ease both;
+}
+
+@keyframes unlock-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.6);
+  }
+  8% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.06);
+  }
+  14% {
+    transform: translateX(-50%) scale(1);
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

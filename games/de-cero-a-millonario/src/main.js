@@ -20,6 +20,7 @@ import { Net, savedName } from "./net.js";
 import { Online } from "./online.js";
 import { Shopping } from "./shopping.js";
 import { FurnitureShop } from "./furnishop.js";
+import { District } from "./district.js";
 import { Rides, isSmall } from "./rides.js";
 import { Home } from "./home.js";
 import { Decorator } from "./decorate.js";
@@ -163,6 +164,7 @@ class Game {
     this.ui = new UI(this);
     this.shopping = new Shopping(this);
     this.furnishop = new FurnitureShop(this);
+    this.district = new District(this);
     this.rides = new Rides(this);
     this.home = new Home(this);
     this.decorator = new Decorator(this, this.home);
@@ -221,6 +223,7 @@ class Game {
       ...this.shopping.interactables(),
       ...this.rides.interactables(),
       ...this.furnishop.interactables(),
+      ...this.district.interactables(),
       ...this.home.interactables(),
       ...this.home.furnitureInteractables(),
       ...this.storeDoorHints(),
@@ -464,6 +467,7 @@ class Game {
     this.home.setup(
       this.online ? Math.max(0, PLOTS.indexOf(this.online.me.plot)) : 0,
     );
+    this.district.apply();
     this.rebuildInteractables();
     this.tutorial.render();
   }
@@ -1589,6 +1593,7 @@ class Game {
     this.tutorial.update();
     this.shopping.update();
     this.rides.update(dt);
+    this.district.update(dt);
     this.carryHint();
     this.guide.update(dt, this.elapsed);
     this.online?.update(dt);

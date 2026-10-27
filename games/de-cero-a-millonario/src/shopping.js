@@ -20,6 +20,7 @@ export class Shopping {
       if (!store.spots?.some((s) => s.kind === "clothes")) continue;
       const building = g.world.buildings[storeId];
       for (const s of store.spots) {
+        if (s.kind !== "clothes") continue;
         list.push({
           x: s.x,
           z: s.z,
@@ -61,6 +62,8 @@ export class Shopping {
     if (g.state.wardrobe.includes(id)) return { owned: true };
     if ((item.stage ?? 0) > g.stageIndex())
       return { locked: `Requiere la etapa ${STAGES[item.stage].name}` };
+    if (item.lux && !g.state.unlocked.financiero)
+      return { locked: "Desbloquea el distrito financiero" };
     const missing = Math.max(0, (item.price ?? 0) - g.state.money);
     return { price: item.price ?? 0, missing };
   }

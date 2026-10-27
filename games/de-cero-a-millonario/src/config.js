@@ -338,6 +338,27 @@ export const SHOP_ITEMS = {
 // bike, scooter, moto (dos ruedas: se manejan como al caminar, pero más
 // rápido) o car (conducción con acelerador, freno y dirección). speed en
 // m/s. store: tienda donde se venden. cargo: reparto del Mayorista.
+// Mundo completo: barrio inicial + zona comercial (norte), zona
+// residencial (sur) y la avenida hacia el distrito financiero (oeste).
+// El servidor rechaza posiciones fuera de él.
+export const WORLD = { minX: -345, maxX: 76, minZ: -168, maxZ: 170 };
+
+// Distrito financiero: las obras cortan la avenida oeste en barrierX hasta
+// que el jugador acumula estas ventas (etapa Empresario).
+export const DISTRICT = { barrierX: -100, revenue: 1500 };
+
+// Pista de pruebas del concesionario (zona comercial).
+export const TEST_TRACK = {
+  minX: 36,
+  maxX: 62,
+  minZ: -90,
+  maxZ: -64,
+  start: { x: 49, z: -67, h: Math.PI },
+};
+
+// Grúa: trae un vehículo propio aparcado lejos.
+export const TOW_PRICE = 15;
+
 export const VEHICLES = {
   skate: {
     name: "Monopatín",

@@ -142,6 +142,27 @@ test("dos jugadores se ven, chatean y no pueden hacer trampas", async () => {
   const corr = await a.wait((m) => m.t === "correct");
   assert.equal(corr.x, -22);
 
+  // Sin desbloquear el distrito financiero no se pasa la barrera, y no
+  // se va en un coche que no es tuyo.
+  await new Promise((r) => setTimeout(r, 120));
+  a.send("state", {
+    x: -24,
+    y: 0.12,
+    z: -7,
+    h: 0,
+    s: 0,
+    c: [],
+    r: "deportivo",
+  });
+  await new Promise((r) => setTimeout(r, 60));
+  a.send("state", { x: -101, y: 0.12, z: 0, h: 0, s: 0, c: [] });
+  const gate = await a.wait((m) => m.t === "correct" && m.x === -24);
+  assert.equal(gate.x, -24);
+  const snap2 = await b.wait(
+    (m) => m.t === "snap" && m.players.some((p) => p[1] === -24),
+  );
+  assert.equal(snap2.players.find((p) => p[1] === -24)[7], "");
+
   // Chat validado y difundido.
   a.send("chat", { text: "  hola <b>Beto</b>  " });
   const chat = await b.wait((m) => m.t === "chat" && m.name === "Ana");

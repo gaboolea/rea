@@ -1,11 +1,9 @@
 // Colisiones en el plano XZ (cajas alineadas a ejes), altura del suelo,
 // y una rejilla de navegación con A* para los personajes no jugadores.
+import { WORLD } from "./config.js";
 
 // Barrio inicial (la ciudad original): sus calles y edificios no cambian.
 export const ZONE1 = { minX: -74, maxX: 74, minZ: -48, maxZ: 52 };
-// Mundo completo: barrio inicial + zona comercial (norte), zona
-// residencial (sur) y la avenida hacia el distrito financiero (oeste).
-export const WORLD = { minX: -345, maxX: 76, minZ: -168, maxZ: 170 };
 // Tamaño de celda del índice espacial de colisiones (metros).
 const BUCKET = 8;
 

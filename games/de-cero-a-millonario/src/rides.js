@@ -2,14 +2,10 @@
 // encima y se usan con V; las motos y coches quedan aparcados donde los
 // dejas y se sube a ellos con E. También compra, prueba en la pista del
 // concesionario y servicio de grúa.
-import { VEHICLES, STAGES } from "./config.js";
+import { VEHICLES, STAGES, TEST_TRACK, TOW_PRICE } from "./config.js";
 import { rideModel, rideSize } from "./vehicles.js";
 
 const SMALL = new Set(["board", "bike", "scooter"]);
-const TOW_PRICE = 15;
-// Pista de pruebas del concesionario (zona comercial).
-const TRACK = { minX: 36, maxX: 62, minZ: -90, maxZ: -64 };
-const TRACK_START = { x: 49, z: -67, h: Math.PI };
 
 export const isSmall = (id) => SMALL.has(VEHICLES[id]?.kind);
 
@@ -263,9 +259,15 @@ export class Rides {
     const g = this.game;
     if (g.player.ride) return;
     this.test = { id, back, time: 90 };
-    g.player.teleport(TRACK_START.x, TRACK_START.z, TRACK_START.h);
+    // El servidor permite el salto a la pista y conducirlo solo en ella.
+    if (g.online) g.net.send("test", { id, on: true });
+    g.player.teleport(
+      TEST_TRACK.start.x,
+      TEST_TRACK.start.z,
+      TEST_TRACK.start.h,
+    );
     g.player.setRide(this.makeRide(id));
-    g.cameraRig.yaw = TRACK_START.h + Math.PI;
+    g.cameraRig.yaw = TEST_TRACK.start.h + Math.PI;
     g.cameraRig.snap(g.player);
     g.ui.toast(
       `🏁 Prueba del ${VEHICLES[id].name}: 90 s dentro de la pista`,
@@ -277,6 +279,7 @@ export class Rides {
     const g = this.game;
     const t = this.test;
     this.test = null;
+    if (g.online) g.net.send("test", { on: false });
     g.player.setRide(null);
     g.player.teleport(t.back.x, t.back.z, t.back.h ?? 0);
     g.cameraRig.snap(g.player);
@@ -376,10 +379,10 @@ export class Rides {
     if (t) {
       t.time -= dt;
       const out =
-        p.x < TRACK.minX - 1 ||
-        p.x > TRACK.maxX + 1 ||
-        p.z < TRACK.minZ - 1 ||
-        p.z > TRACK.maxZ + 1;
+        p.x < TEST_TRACK.minX - 1 ||
+        p.x > TEST_TRACK.maxX + 1 ||
+        p.z < TEST_TRACK.minZ - 1 ||
+        p.z > TEST_TRACK.maxZ + 1;
       if (out || t.time <= 0)
         this.endTest(
           out

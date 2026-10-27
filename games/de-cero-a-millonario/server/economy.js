@@ -16,6 +16,8 @@ import {
   FURNITURE,
   FURNITURE_MAX,
   HOME,
+  DISTRICT,
+  TOW_PRICE,
 } from "../src/config.js";
 import { STARTER_LAYOUT, findSpot, layoutProblem } from "../src/homelayout.js";
 import { ITEMS, SKINS } from "../src/look.js";
@@ -309,7 +311,6 @@ export function tow(cp, { id }) {
   cp.money = round2(cp.money - TOW_PRICE);
   return { ok: true };
 }
-export const TOW_PRICE = 15;
 
 // Casita: se compra una vez y trae muebles básicos colocados.
 export function buyHome(cp) {
@@ -363,6 +364,17 @@ export function setHome(cp, { layout, open }) {
   return { ok: true };
 }
 
+// Distrito financiero: se abre al llegar a las ventas pedidas (una vez y
+// para siempre).
+export function unlock(cp, { zone }) {
+  if (zone !== "financiero") return fail("Zona no válida");
+  if (cp.unlocked.financiero) return { ok: true };
+  if (cp.stats.revenue < DISTRICT.revenue)
+    return fail(`Necesitas $${DISTRICT.revenue} en ventas`);
+  cp.unlocked.financiero = true;
+  return { ok: true };
+}
+
 // Ropa: se paga con el dinero de la ciudad y queda en el perfil global.
 export function buyClothing(cp, profile, { slot, id }) {
   const item =
@@ -380,6 +392,8 @@ export function buyClothing(cp, profile, { slot, id }) {
   } else {
     if ((item.stage ?? 0) > stageIndex(cp))
       return fail(`Requiere la etapa ${STAGES[item.stage].name}`);
+    if (item.lux && !cp.unlocked.financiero)
+      return fail("Desbloquea el distrito financiero");
     const price = item.price ?? 0;
     if (cp.money < price)
       return fail(`Te faltan $${round2(price - cp.money).toFixed(2)}`);

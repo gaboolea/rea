@@ -108,6 +108,32 @@ export class Fx {
     }
   }
 
+  // Confeti de colores que sale disparado y cae (celebraciones).
+  confetti(pos, n = 60) {
+    this.confettiGeo ??= new THREE.PlaneGeometry(0.16, 0.1);
+    this.confettiMats ??= [
+      0xff5a8a, 0x3fd0ff, 0xffd23f, 0x7bd96a, 0xb07cff,
+    ].map(
+      (color) => new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }),
+    );
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(this.confettiGeo, this.confettiMats[i % 5]);
+      m.position.set(pos.x, pos.y, pos.z);
+      m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+      this.scene.add(m);
+      const a = Math.random() * Math.PI * 2;
+      const v = 1.5 + Math.random() * 3;
+      this.items.push({
+        obj: m,
+        t: 0,
+        life: 1.6 + Math.random() * 0.6,
+        vy: 5 + Math.random() * 4,
+        vx: Math.cos(a) * v,
+        vz: Math.sin(a) * v,
+      });
+    }
+  }
+
   update(dt, time) {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];

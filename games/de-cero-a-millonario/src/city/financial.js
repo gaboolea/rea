@@ -4,10 +4,10 @@
 import * as THREE from "three";
 import { mat, box, mesh, cylinder, signMesh, roundedBox } from "../gfx.js";
 import { CityKit } from "./kit.js";
+import { DISTRICT } from "../config.js";
 
 export const FINANCIAL = { minX: -345, maxX: -228, minZ: -82, maxZ: 82 };
 export const CROSS_X = -280;
-export const BARRIER_X = -100;
 
 export function buildFinancial(world) {
   const kit = new CityKit(world, {
@@ -166,7 +166,7 @@ export function buildFinancial(world) {
     { locked: true },
   );
   kit.poi("barrera", "Obras · acceso al distrito", "🚧", {
-    x: BARRIER_X + 3,
+    x: DISTRICT.barrierX + 3,
     z: 0,
   });
   kit.poi("lujo", "Galería de lujo", "💎", lujo.doorPoint(1.5), {
@@ -185,7 +185,7 @@ export function buildFinancial(world) {
 // Obras que cortan la avenida: vallas, conos, máquina y el cartel con el
 // requisito. open_() levanta las barreras y quita la colisión.
 function buildBarrier(kit, world) {
-  const x = BARRIER_X;
+  const x = DISTRICT.barrierX;
   const g = new THREE.Group();
   const arms = [];
   const stripe = new THREE.MeshStandardMaterial({
