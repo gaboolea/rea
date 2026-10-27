@@ -2627,3 +2627,102 @@ table.rank tr.me {
   font-size: 12.5px;
   font-weight: 700;
 }
+
+/* ---------- Decoración de la casa ---------- */
+.deco-btn {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(80px + var(--safe-bottom));
+  z-index: 12;
+  font-size: 15px;
+  padding: 8px 16px;
+}
+
+#deco-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(12px + var(--safe-bottom));
+  z-index: 16;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+#deco-bar[hidden] {
+  display: none;
+}
+
+#deco-status {
+  background: var(--card);
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-weight: 800;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+
+#deco-status.bad {
+  color: var(--red);
+}
+
+#deco-status.good {
+  color: #1e9e4a;
+}
+
+.deco-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.deco-buttons button {
+  border: 0;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  font: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.deco-buttons button.on {
+  background: #e8fbf9;
+}
+
+.deco-buttons button.ok {
+  background: var(--green);
+  color: #fff;
+}
+
+.deco-buttons button[hidden] {
+  display: none;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .deco-buttons button {
+    font-size: 12px;
+    padding: 6px 9px;
+  }
+  .deco-btn {
+    bottom: calc(52px + var(--safe-bottom));
+    font-size: 12px;
+  }
+}
+
+.row .chip-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #f1f4fa;
+  font-size: 18px;
+  flex: none;
+}

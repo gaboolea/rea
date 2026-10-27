@@ -154,7 +154,9 @@ export function buildResidential(world) {
     const horiz = Math.abs(Math.sin(b.rot)) < 0.5;
     for (const p of [fenceA, fenceB])
       world.physics.addCentered(p.x, p.z, horiz ? 3.8 : 0.2, horiz ? 0.2 : 3.8);
+    const interior = buildCasitaInterior(b);
     return {
+      ...interior,
       index: i,
       number: lot.number,
       building: b,
@@ -256,6 +258,66 @@ export function buildResidential(world) {
     { x: 60, z: CROSS_Z + 5.5, zone: "residencial" },
   );
   return { kit, lots, crossZ: CROSS_Z };
+}
+
+// Interior de una casita (coordenadas locales, puerta en +z): salón con
+// cocina abierta delante; dormitorio y baño detrás, separados por tabiques
+// con puertas. Devuelve las habitaciones, las zonas de paso que deben
+// quedar libres y las paredes donde se pueden colgar cuadros.
+export const CASITA = {
+  // Interior útil: x ∈ [-4.7, 4.7], z ∈ [-4.2, 4.2].
+  rooms: [
+    { id: "dormitorio", name: "Dormitorio", rect: [-4.7, -4.2, 0.9, -0.9] },
+    { id: "bano", name: "Baño", rect: [1.1, -4.2, 4.7, -0.9] },
+    { id: "salon", name: "Salón y cocina", rect: [-4.7, -0.7, 4.7, 4.2] },
+  ],
+  // Puerta de entrada y puertas interiores (no se pueden tapar).
+  clear: [
+    [-1.3, 2.9, 1.3, 4.2],
+    [-2.75, -1.75, -1.25, 0.15],
+    [2.25, -1.75, 3.55, 0.15],
+  ],
+  // Paredes interiores donde colgar cosas: [x0, z0, x1, z1, nx, nz].
+  walls: [
+    [-4.7, -4.2, 0.9, -4.2, 0, 1],
+    [1.1, -4.2, 4.7, -4.2, 0, 1],
+    [-4.7, -4.2, -4.7, -1.0, 1, 0],
+    [-4.7, -0.6, -4.7, 2.7, 1, 0],
+    [4.7, -4.2, 4.7, -1.0, -1, 0],
+    [4.7, -0.6, 4.7, 4.0, -1, 0],
+    [-1.4, -0.6, 2.4, -0.6, 0, 1],
+    [-4.7, -1.0, -2.6, -1.0, 0, -1],
+    [0.9, -4.2, 0.9, -1.0, -1, 0],
+    [1.1, -4.2, 1.1, -1.0, 1, 0],
+  ],
+  door: [0, 3.9],
+};
+
+function buildCasitaInterior(b) {
+  const wall = 0xfffaf0;
+  // Tabique horizontal (con dos puertas) y vertical entre dormitorio y baño.
+  for (const [x0, x1] of [
+    [-4.7, -2.6],
+    [-1.4, 2.4],
+    [3.4, 4.7],
+  ])
+    b.wall((x0 + x1) / 2, -0.8, x1 - x0, 0.2, wall, 0, 2.5);
+  b.wall(1.0, -2.55, 0.2, 3.3, wall, 0, 2.5);
+  // Dinteles sobre las puertas interiores.
+  for (const [x0, x1] of [
+    [-2.6, -1.4],
+    [2.4, 3.4],
+  ])
+    b.wall((x0 + x1) / 2, -0.8, x1 - x0, 0.2, wall, 2.1, 0.4, false);
+  // Suelos distintos en cocina y baño.
+  const tile = (x0, z0, x1, z1, color) => {
+    const m = mesh(box(x1 - x0, 0.02, z1 - z0), mat(color), 0, 0, 0, false);
+    b.interior.add(b.place(m, (x0 + x1) / 2, (z0 + z1) / 2, 0, 0.13));
+  };
+  tile(1.6, -0.7, 4.7, 4.2, 0xdfe9ef);
+  tile(1.1, -4.2, 4.7, -0.9, 0xcfeaf5);
+  tile(-4.7, -4.2, 0.9, -0.9, 0xe8d3b8);
+  return { rooms: CASITA.rooms, clear: CASITA.clear, walls: CASITA.walls };
 }
 
 // Casa vecina sencilla (sin interior): muros, tejado, puerta y ventanas.

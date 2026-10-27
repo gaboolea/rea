@@ -20,6 +20,8 @@ import { Net, savedName } from "./net.js";
 import { Online } from "./online.js";
 import { Shopping } from "./shopping.js";
 import { Rides, isSmall } from "./rides.js";
+import { Home } from "./home.js";
+import { Decorator } from "./decorate.js";
 import { checkMissions, currentMission } from "./missions.js";
 import { defaultLook, STARTER_ITEMS, findItem } from "./look.js";
 import {
@@ -160,6 +162,8 @@ class Game {
     this.ui = new UI(this);
     this.shopping = new Shopping(this);
     this.rides = new Rides(this);
+    this.home = new Home(this);
+    this.decorator = new Decorator(this, this.home);
     this.examine = null;
     this.rebuildInteractables();
     this.world.traffic.onBusStop = () => this.crowd.onBusStop();
@@ -214,6 +218,8 @@ class Game {
       ...this.events.merchantInteractables(),
       ...this.shopping.interactables(),
       ...this.rides.interactables(),
+      ...this.home.interactables(),
+      ...this.home.furnitureInteractables(),
       ...this.storeDoorHints(),
       ...(this.online?.interactables() ?? []),
     ];
@@ -447,6 +453,10 @@ class Game {
       else if (!this.online) b.setLocked(true, "LOCAL PARA\nMODO ONLINE");
     }
     this.guide.setBeacons(beacons);
+    this.home.setup(
+      this.online ? Math.max(0, PLOTS.indexOf(this.online.me.plot)) : 0,
+    );
+    this.rebuildInteractables();
     this.tutorial.render();
   }
 
@@ -974,6 +984,14 @@ class Game {
   // V: subir o bajar del vehículo pequeño (monopatín, bici o scooter).
   toggleRide() {
     this.rides.toggleSmall();
+  }
+
+  // ¿Está el jugador dentro de su casita?
+  atHome() {
+    const lot = this.home.lot;
+    if (!lot || !this.state.home.owned) return false;
+    const p = this.player.pos;
+    return lot.building.contains(p.x, p.z);
   }
 
   // ---------- Autoservicio del Mayorista ----------
@@ -1539,13 +1557,24 @@ class Game {
   step(dt) {
     const input = this.input;
     input.enabled = true;
+    // Modo decoración: el joystick mueve el mueble y la cámara mira desde
+    // arriba; la ciudad sigue viva.
+    if (this.decorator.active) {
+      this.decorator.update(dt);
+      if (this.examine) this.stepExamine(dt);
+      this.stepWorld(dt, false);
+      this.ui.refreshHud();
+      return;
+    }
     this.player.char.root.visible = true;
-    this.player.update(dt, input, this.cameraRig.yaw);
+    if (this.player.sitting) this.player.sit(dt);
+    else this.player.update(dt, input, this.cameraRig.yaw);
     this.checkExitGate();
     const inside = Object.values(this.world.buildings).find((b) =>
       b.contains(this.player.pos.x, this.player.pos.z),
     );
     this.cameraRig.update(dt, input, this.player, !!inside);
+    this.home.update(dt);
     this.stepWorld(dt, false);
     this.events.update(dt, this.elapsed);
     this.warehouse.update(dt);
@@ -1595,6 +1624,7 @@ class Game {
     if (input.consume("g") || input.consume("tab")) this.ui.openManagement();
     if (input.consume("m")) this.ui.openMap();
     if (input.consume("i")) this.ui.openInventory();
+    if (input.consume("b") && this.atHome()) this.ui.openDecor();
     if (input.consume("v")) this.toggleRide();
     if (input.consume("escape") || input.consume("p")) this.ui.openMenu();
     if (this.online) {

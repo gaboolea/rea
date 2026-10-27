@@ -11,6 +11,8 @@ import {
   CATEGORIES,
   CART_CAPACITY,
   VEHICLES,
+  FURNITURE,
+  FURNITURE_SECTIONS,
 } from "./config.js";
 import { productIcon } from "./icons.js";
 import { upgradeApplies } from "./business.js";
@@ -65,6 +67,7 @@ export class UI {
         fn();
       });
     click("btn-map", () => this.openMap());
+    click("btn-deco", () => this.openDecor());
     click("btn-manage", () => this.openManagement());
     click("btn-menu", () => this.openMenu());
     click("btn-bag", () => this.openInventory());
@@ -202,6 +205,7 @@ export class UI {
       !g.rides.selectedSmall() || (ride && ride.def.kind === "car");
     $("btn-jump").hidden = !!ride && ride.def.kind !== "board";
     $("btn-run").hidden = !!ride;
+    $("btn-deco").hidden = !g.atHome() || !!g.decorator.active;
   }
 
   refreshChips() {
@@ -435,6 +439,63 @@ export class UI {
       if (await rides.buy(id)) this.close();
       else this.openVehicle(rides, id, back);
     });
+  }
+
+  // Decorar la casa: muebles guardados (para colocar) y los que ya están
+  // en casa (para moverlos o guardarlos), y permiso de visitas.
+  openDecor() {
+    const g = this.game;
+    const home = g.home;
+    const stored = Object.keys(FURNITURE).filter((id) => home.stored(id) > 0);
+    const placed = home.state.layout;
+    const row = (icon, name, sub, btn) =>
+      `<div class="row"><span class="chip-icon">${icon}</span><div class="grow"><b>${name}</b><small>${sub}</small></div>${btn}</div>`;
+    this.open(
+      "decor",
+      "🛋️ Decorar mi casa",
+      `<h3>Para colocar</h3>
+      <div class="list">${
+        stored.length
+          ? stored
+              .map((id) =>
+                row(
+                  "📦",
+                  FURNITURE[id].name,
+                  `${FURNITURE_SECTIONS[FURNITURE[id].section]} · tienes ${home.stored(id)} guardado/s`,
+                  `<button data-place="${id}">Colocar</button>`,
+                ),
+              )
+              .join("")
+          : `<p class="hint">No tienes muebles guardados. Cómpralos en <b>Muebles y Decoración</b> o en <b>Tecnología</b> (zona comercial).</p>`
+      }</div>
+      <h3>En tu casa</h3>
+      <div class="list">${placed
+        .map((it, i) =>
+          row(
+            "🏠",
+            FURNITURE[it.f].name,
+            FURNITURE_SECTIONS[FURNITURE[it.f].section],
+            `<button data-move="${i}">Mover</button>`,
+          ),
+        )
+        .join("")}</div>
+      <h3>Visitas</h3>
+      <label class="field"><input type="checkbox" id="home-open" ${home.state.open ? "checked" : ""}> Dejar que otros jugadores entren en mi casa (modo online)</label>
+      <p class="hint">Mueve con ${g.input.isTouch ? "el joystick" : "WASD"}, gira con ${g.input.isTouch ? "⟳" : "R"} y coloca con ${g.input.isTouch ? "✔" : "E"}. Los muebles no pueden tapar puertas ni dejar una habitación sin paso.</p>`,
+    );
+    this.bind("[data-place]", (d) => {
+      this.close();
+      g.decorator.start({ id: d.place });
+    });
+    this.bind("[data-move]", (d) => {
+      this.close();
+      g.decorator.start({ index: Number(d.move) });
+    });
+    $("home-open").onchange = (e) => {
+      home.state.open = e.target.checked;
+      g.save();
+      g.online?.sendHome?.();
+    };
   }
 
   // Precio de una caja en el Mayorista (descuentos y ofertas incluidos).

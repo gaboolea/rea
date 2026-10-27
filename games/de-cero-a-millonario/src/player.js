@@ -290,6 +290,23 @@ export class Player {
     this.lastHeading = this.heading;
   }
 
+  // Sentado en un sofá o una silla: quieto en el asiento.
+  sit(dt) {
+    const s = this.sitting;
+    this.pos.x = s.x;
+    this.pos.z = s.z;
+    this.pos.y = s.y;
+    this.vel.x = this.vel.z = 0;
+    this.heading = s.heading;
+    this.char.root.position.set(s.x, s.y, s.z);
+    this.char.root.rotation.y = s.heading;
+    this.char.animate(dt, 0, true);
+    const c = this.char;
+    c.legs.forEach((l) => (l.rotation.x = -1.45));
+    c.arms.forEach((a) => (a.rotation.x = -0.4));
+    this.speedNow = 0;
+  }
+
   // Un coche aparta a la gente que tiene delante (nadie queda atrapado).
   pushAgentsAway(fx, fz, r) {
     const { size } = this.ride;

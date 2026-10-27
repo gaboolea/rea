@@ -445,6 +445,221 @@ export const VEHICLES = {
   },
 };
 
+// Casita propia (zona residencial): pequeña y barata para empezar.
+export const HOME = {
+  price: 250,
+  // Muebles que vienen con la casa.
+  starter: [
+    "cama_simple",
+    "mesa_pequena",
+    "silla",
+    "lampara_pie",
+    "encimera",
+    "inodoro",
+    "lavabo",
+  ],
+};
+
+// Muebles y decoración. size: [ancho, fondo] en metros (huella en el
+// suelo). wall: se cuelga en la pared. use: tv | sit | bed | lamp | pc |
+// music (lo que se puede hacer con él). flat: se puede pisar (alfombras).
+// store: muebles (Muebles y Decoración) o tecnologia (Tecnología).
+export const FURNITURE_SECTIONS = {
+  salon: "Sala de estar",
+  dormitorio: "Dormitorio",
+  cocina: "Cocina",
+  bano: "Baño",
+  iluminacion: "Iluminación",
+  decoracion: "Decoración",
+  tecnologia: "Tecnología",
+};
+export const FURNITURE = {
+  sofa: {
+    name: "Sofá",
+    price: 120,
+    section: "salon",
+    size: [2.2, 0.9],
+    use: "sit",
+    color: 0xff9f43,
+  },
+  sillon: {
+    name: "Sillón",
+    price: 70,
+    section: "salon",
+    size: [1, 0.95],
+    use: "sit",
+    color: 0x7b5cff,
+  },
+  mesa_centro: {
+    name: "Mesa de centro",
+    price: 35,
+    section: "salon",
+    size: [1.2, 0.7],
+  },
+  mueble_tv: {
+    name: "Mueble de TV",
+    price: 60,
+    section: "salon",
+    size: [1.8, 0.5],
+  },
+  estanteria: {
+    name: "Estantería",
+    price: 55,
+    section: "salon",
+    size: [1.4, 0.4],
+  },
+  alfombra: {
+    name: "Alfombra",
+    price: 30,
+    section: "salon",
+    size: [2.4, 1.6],
+    flat: true,
+    color: 0xff7eb6,
+  },
+  cama_simple: {
+    name: "Cama sencilla",
+    price: 60,
+    section: "dormitorio",
+    size: [1.1, 2.0],
+    use: "bed",
+    color: 0x6ec6ff,
+  },
+  cama_doble: {
+    name: "Cama doble",
+    price: 180,
+    section: "dormitorio",
+    size: [1.7, 2.1],
+    use: "bed",
+    color: 0xffd166,
+    stage: 1,
+  },
+  armario: {
+    name: "Armario",
+    price: 90,
+    section: "dormitorio",
+    size: [1.4, 0.6],
+  },
+  mesita: {
+    name: "Mesita de noche",
+    price: 25,
+    section: "dormitorio",
+    size: [0.5, 0.45],
+  },
+  escritorio: {
+    name: "Escritorio",
+    price: 75,
+    section: "dormitorio",
+    size: [1.3, 0.65],
+  },
+  silla: {
+    name: "Silla",
+    price: 20,
+    section: "dormitorio",
+    size: [0.5, 0.5],
+    use: "sit",
+  },
+  mesa_pequena: {
+    name: "Mesa pequeña",
+    price: 30,
+    section: "cocina",
+    size: [0.9, 0.9],
+  },
+  mesa_comedor: {
+    name: "Mesa de comedor",
+    price: 70,
+    section: "cocina",
+    size: [1.5, 0.9],
+  },
+  nevera: { name: "Nevera", price: 150, section: "cocina", size: [0.8, 0.75] },
+  cocina_horno: {
+    name: "Cocina con horno",
+    price: 130,
+    section: "cocina",
+    size: [0.8, 0.7],
+  },
+  encimera: {
+    name: "Encimera",
+    price: 60,
+    section: "cocina",
+    size: [1.6, 0.6],
+  },
+  banera: { name: "Bañera", price: 110, section: "bano", size: [1.7, 0.8] },
+  lavabo: { name: "Lavabo", price: 40, section: "bano", size: [0.6, 0.45] },
+  inodoro: { name: "Inodoro", price: 35, section: "bano", size: [0.5, 0.7] },
+  lampara_pie: {
+    name: "Lámpara de pie",
+    price: 30,
+    section: "iluminacion",
+    size: [0.5, 0.5],
+    use: "lamp",
+  },
+  lampara_mesa: {
+    name: "Lámpara de mesa",
+    price: 18,
+    section: "iluminacion",
+    size: [0.4, 0.4],
+    use: "lamp",
+  },
+  planta: {
+    name: "Planta grande",
+    price: 15,
+    section: "decoracion",
+    size: [0.5, 0.5],
+  },
+  cuadro: {
+    name: "Cuadro",
+    price: 25,
+    section: "decoracion",
+    size: [1, 0.1],
+    wall: true,
+  },
+  espejo: {
+    name: "Espejo",
+    price: 35,
+    section: "decoracion",
+    size: [0.8, 0.1],
+    wall: true,
+  },
+  reloj: {
+    name: "Reloj de pared",
+    price: 20,
+    section: "decoracion",
+    size: [0.5, 0.1],
+    wall: true,
+  },
+  tele: {
+    name: "Televisor",
+    price: 160,
+    section: "tecnologia",
+    size: [1.3, 0.4],
+    use: "tv",
+    store: "tecnologia",
+  },
+  ordenador: {
+    name: "Ordenador",
+    price: 120,
+    section: "tecnologia",
+    size: [1.0, 0.6],
+    use: "pc",
+    store: "tecnologia",
+  },
+  altavoz: {
+    name: "Altavoz",
+    price: 45,
+    section: "tecnologia",
+    size: [0.45, 0.45],
+    use: "music",
+    store: "tecnologia",
+  },
+  lavadora: {
+    name: "Lavadora",
+    price: 100,
+    section: "tecnologia",
+    size: [0.7, 0.65],
+    store: "tecnologia",
+  },
+};
+
 // Categorías del Mayorista (zonas señalizadas y pestañas de pedido).
 export const CATEGORIES = {
   bebidas: { name: "BEBIDAS", color: "#3d8bff" },
