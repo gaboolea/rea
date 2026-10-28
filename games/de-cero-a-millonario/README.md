@@ -431,7 +431,7 @@ andando o en vehículo, sin teletransportes:
 | `src/automation.js`  | Tienda automática: camión, $/min, caja fuerte                  |
 | `src/shopfit.js`     | Cinta transportadora, fachada y segunda planta                 |
 | `src/storefronts.js` | Fachada propia de cada rubro (azotea, acera, carteles)         |
-| `src/critters.js`   | Palomas y mascotas de ambiente                                 |
+| `src/critters.js`    | Palomas y mascotas de ambiente                                 |
 | `src/icons.js`       | Iconos de productos dibujados en canvas                        |
 | `src/net.js`         | Conexión WebSocket (peticiones y mensajes)                     |
 | `src/online.js`      | Modo online: avatares remotos, tiendas ajenas, chat, ranking   |
