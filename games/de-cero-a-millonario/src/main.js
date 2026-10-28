@@ -11,6 +11,8 @@ import { Fx } from "./fx.js";
 import { UI } from "./ui.js";
 import { AudioManager } from "./audio.js";
 import { Crowd } from "./pedestrians.js";
+import { Wayfinding } from "./wayfinding.js";
+import { Surprises } from "./surpriseplay.js";
 import { Events } from "./events.js";
 import { Wardrobe } from "./wardrobe.js";
 import { Guide } from "./guide.js";
@@ -164,6 +166,7 @@ class Game {
     this.cameraRig = new CameraRig(this.camera, this.settings);
     this.crowd = new Crowd(this);
     this.events = new Events(this);
+    this.surprises = new Surprises(this);
     this.wardrobe = new Wardrobe(this);
     this.warehouse = new Warehouse(this);
     this.guide = new Guide(this);
@@ -178,6 +181,7 @@ class Game {
     this.rides = new Rides(this);
     this.home = new Home(this);
     this.critters = new Critters(this);
+    this.wayfinding = new Wayfinding(this);
     this.decorator = new Decorator(this, this.home);
     this.examine = null;
     this.rebuildInteractables();
@@ -494,6 +498,9 @@ class Game {
   }
 
   missionTarget() {
+    // Un suceso es urgente: la flecha lo señala primero.
+    const sp = this.surprises.target();
+    if (sp) return sp;
     const m = currentMission(this);
     const t = m?.target ? m.target(this) : null;
     if (t) return { x: t.x, z: t.z, label: "Objetivo" };
@@ -1535,6 +1542,7 @@ class Game {
   // Vida de la ciudad (peatones, tráfico, ambiente). En la pantalla de
   // inicio no aparecen clientes nuevos para no alterar la partida guardada.
   stepWorld(dt, title) {
+    this.wayfinding.update(this.elapsed);
     this._agents = [];
     for (const b of Object.values(this.businesses))
       this._agents.push(...b.actors());
@@ -1629,6 +1637,7 @@ class Game {
     this.home.update(dt);
     this.stepWorld(dt, false);
     this.events.update(dt, this.elapsed);
+    this.surprises.update(dt, this.elapsed);
     this.warehouse.update(dt);
     this.tutorial.update();
     this.shopping.update();
@@ -1678,6 +1687,7 @@ class Game {
     if (input.consume("g") || input.consume("tab")) this.ui.openManagement();
     if (input.consume("u")) this.ui.openUpgrade();
     if (input.consume("m")) this.ui.openMap();
+    if (input.consume("c")) this.ui.openShops();
     if (input.consume("i")) this.ui.openInventory();
     if (input.consume("b") && this.atHome()) this.ui.openDecor();
     if (input.consume("v")) this.toggleRide();

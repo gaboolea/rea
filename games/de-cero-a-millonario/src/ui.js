@@ -76,6 +76,7 @@ export class UI {
         fn();
       });
     click("btn-map", () => this.openMap());
+    click("btn-shops", () => this.openShops());
     click("btn-deco", () => this.openDecor());
     click("auto-chip", () => this.openAutomation());
     click("btn-manage", () => this.openManagement());
@@ -271,6 +272,15 @@ export class UI {
           "event",
         );
       }
+    }
+    const sp = g.surprises.hud();
+    const sc = $("surprise-chip");
+    sc.hidden = !sp;
+    if (sp) {
+      sc.querySelector(".chip-icon").textContent = sp.icon;
+      sc.querySelector(".chip-text").textContent =
+        `${sp.text} · ${clock(Math.max(0, sp.left))}`;
+      sc.querySelector("i").style.width = `${(sp.left / sp.total) * 100}%`;
     }
     const enc = ev.hudEncargo();
     const e = $("encargo-chip");
@@ -1164,6 +1174,41 @@ export class UI {
     });
   }
 
+  // «¿Dónde comprar?»: cada tienda con lo que vende, la distancia y un
+  // botón que marca la ruta hasta su puerta.
+  openShops() {
+    const g = this.game;
+    const p = g.player.pos;
+    const entries = g.wayfinding.entries();
+    const groups = [...new Set(entries.map((e) => e.group))];
+    const locked = (e) => e.poi === "lujo" && !g.state.unlocked?.financiero;
+    this.open(
+      "shops",
+      "🛍️ ¿Dónde comprar?",
+      `<p class="hint">Busca el cartel flotante de cada tienda o pulsa <b>Llévame</b> y sigue la flecha.</p>
+      ${groups
+        .map(
+          (grp) =>
+            `<h3>${grp}</h3><div class="list">${entries
+              .filter((e) => e.group === grp)
+              .map((e) => {
+                const d = Math.round(Math.hypot(e.at.x - p.x, e.at.z - p.z));
+                return `<div class="row shop-row"><span class="shop-icon" style="background:${e.color}">${e.icon}</span>
+                <div class="grow"><b>${e.name}</b><small>${e.sells}</small><small>${locked(e) ? "🔒 Abre con el distrito financiero" : `📍 a ${d} m`}</small></div>
+                <button data-go="${e.poi}">Llévame</button></div>`;
+              })
+              .join("")}</div>`,
+        )
+        .join("")}`,
+    );
+    this.bind("[data-go]", (d) => {
+      const e = entries.find((x) => x.poi === d.go);
+      g.guide.setDestination({ ...e.at, label: e.name, building: e.building });
+      this.close();
+      this.toast(`🧭 Ruta marcada: ${e.icon} ${e.name}`);
+    });
+  }
+
   // Mapa de toda la ciudad con sus zonas y una lista de destinos: al
   // elegir uno se marca la ruta por las calles.
   openMap() {
@@ -1344,7 +1389,7 @@ export class UI {
     if (touch) {
       return `<div class="controls"><span>🕹️ Toca la mitad izquierda: moverse</span><span>👆 Arrastra a la derecha: cámara</span><span>✋ Interactuar</span><span>🏃 Correr</span><span>⤒ Saltar</span></div>`;
     }
-    return `<div class="controls"><span><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> moverse</span><span><kbd>Shift</kbd> correr</span><span><kbd>Espacio</kbd> saltar</span><span><kbd>E</kbd> interactuar</span><span>Arrastrar ratón: cámara · Rueda: zoom</span><span><kbd>G</kbd> gestión · <kbd>M</kbd> mapa · <kbd>I</kbd> inventario · <kbd>V</kbd> scooter · <kbd>Esc</kbd> pausa</span></div>`;
+    return `<div class="controls"><span><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> moverse</span><span><kbd>Shift</kbd> correr</span><span><kbd>Espacio</kbd> saltar</span><span><kbd>E</kbd> interactuar</span><span>Arrastrar ratón: cámara · Rueda: zoom</span><span><kbd>G</kbd> gestión · <kbd>M</kbd> mapa · <kbd>C</kbd> tiendas · <kbd>I</kbd> inventario · <kbd>V</kbd> scooter · <kbd>Esc</kbd> pausa</span></div>`;
   }
 
   // ---------- Multijugador ----------
@@ -1541,6 +1586,10 @@ export class UI {
       <button data-act="tutorial">Repetir el tutorial de primeros pasos</button>
       <h3>🧭 Orientación</h3>
       <p>El botón <b>🏪 IR A MI TIENDA</b> marca la ruta por las calles. Toca el minimapa para abrir el mapa y elegir otro destino.</p>
+      <h3>🛍️ ¿Dónde comprar?</h3>
+      <p>Cada tienda tiene un <b>cartel flotante</b> con su icono (👕 ROPA, 🚗 AUTOS, 🛋️ MUEBLES…) y en los cruces hay <b>postes con flechas</b> y distancias. El botón <b>🛍️</b>${g.input.isTouch ? "" : " (tecla C)"} lista qué vende cada tienda y marca la ruta.</p>
+      <h3>🚨 Sucesos inesperados</h3>
+      <p>De vez en cuando pasa algo: un <b>ladrón</b> sale corriendo de tu tienda con género (alcánzalo para recuperarlo y cobrar la recompensa) o alguien pierde una <b>cartera</b>, un <b>perro</b> o un <b>paquete</b> (encuéntralo y llévaselo a su dueño). La flecha te guía y el aviso rojo muestra el tiempo que queda.</p>
       <h3>🎮 Controles</h3>${this.controlsHtml(g.input.isTouch)}
       <button class="primary big" data-act="back">Volver</button>`,
     );

@@ -219,6 +219,10 @@ function joinCity(s, code) {
   }
   profile.cities[code] ??= eco.newCityProfile();
   eco.upgradeProfile(profile.cities[code]);
+  eco.upgradeWarehouse(city.warehouse);
+  // Al volver a entrar, el suceso en marcha se anula (la primera posición
+  // tras entrar no se puede comparar con la anterior).
+  eco.cancelSurprise(profile.cities[code]);
   // Lo que ganó la tienda automática mientras no estaba.
   eco.accrueIdle(profile.cities[code]);
   s.city = code;
@@ -282,6 +286,9 @@ const ECONOMY = {
   coin: (s, cp) => eco.claimCoin(cp),
   discover: (s, cp, city, m) => eco.discover(cp, m),
   encargo: (s, cp, city, m) => eco.encargo(cp, m),
+  surprise: (s, cp, city, m) =>
+    eco.surpriseStart(cp, city.members[s.pid]?.plot, m),
+  surpriseStep: (s, cp) => eco.surpriseStep(cp, s.state, eco.stageIndex(cp)),
   p2p: p2pBuy,
   idle: (s, cp) => eco.accrueIdle(cp),
   collect: (s, cp) => eco.collectVault(cp),

@@ -244,3 +244,125 @@ test("la caja fuerte guarda lo ganado fuera con límite y se cobra una vez", () 
   assert.equal(cp.money, money + 15);
   assert.equal(eco.collectVault(cp).ok, false);
 });
+
+test("los alimentos nuevos se compran y las ciudades antiguas los reciben", () => {
+  const cp = eco.newCityProfile();
+  const old = { ...city(), warehouse: { agua: 30, galletas: 30 } };
+  assert.equal(eco.buySupplies(cp, old, { order: { pan: 1 } }).ok, false);
+  eco.upgradeWarehouse(old.warehouse);
+  assert.equal(old.warehouse.agua, 30);
+  const r = eco.buySupplies(cp, old, { order: { pan: 1, arroz: 1 } });
+  assert.equal(r.ok, true);
+  assert.equal(cp.ledger.pan, 10);
+  assert.equal(old.warehouse.arroz, eco.WAREHOUSE_MAX - 1);
+  // Los de etapa Comerciante siguen bloqueados al principio.
+  assert.equal(eco.buySupplies(cp, old, { order: { aceite: 1 } }).ok, false);
+  // El cruasán es de la cafetería.
+  assert.equal(eco.buySupplies(cp, old, { order: { croissant: 1 } }).ok, false);
+});
+
+test("suceso del ladrón: se lleva género y solo se recupera alcanzándolo", async () => {
+  const { thiefAt, THIEF_PATHS, thiefSeconds } = await import(
+    "../../src/surprises.js"
+  );
+  const cp = eco.newCityProfile();
+  const t0 = 1e7;
+  // El cliente no puede inventarse el robo de lo que no tiene.
+  assert.equal(
+    eco.surpriseStart(
+      cp,
+      "tienda",
+      { types: ["ladron"], steal: { product: "agua", units: 50 } },
+      t0,
+    ).ok,
+    false,
+  );
+  const r = eco.surpriseStart(
+    cp,
+    "tienda",
+    { types: ["ladron"], steal: { product: "agua", units: 5 } },
+    t0,
+  );
+  assert.equal(r.ok, true);
+  assert.equal(r.surprise.type, "ladron");
+  assert.equal(cp.ledger.agua, 7);
+  // Otro suceso mientras tanto: no.
+  assert.equal(
+    eco.surpriseStart(cp, "tienda", { types: ["cartera"] }, t0 + 1000).ok,
+    false,
+  );
+  // Lejos del ladrón no cuenta.
+  assert.equal(
+    eco.surpriseStep(cp, { x: 60, z: -100 }, 0, t0 + 6000).ok,
+    false,
+  );
+  // Junto a él (según el camino compartido), sí.
+  const q = thiefAt(THIEF_PATHS.tienda, 6);
+  const money = cp.money;
+  const ok = eco.surpriseStep(cp, { x: q.x + 1, z: q.z }, 0, t0 + 6000);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.done, true);
+  assert.equal(cp.ledger.agua, 12);
+  assert.equal(cp.money, money + ok.reward);
+  assert.equal(cp.stats.thieves, 1);
+  assert.equal(cp.surprise, null);
+  // Ya cobrado: no se paga dos veces.
+  assert.equal(
+    eco.surpriseStep(cp, { x: q.x, z: q.z }, 0, t0 + 6100).ok,
+    false,
+  );
+
+  // Si escapa, el género se pierde.
+  const t1 = t0 + 200000;
+  eco.surpriseStart(
+    cp,
+    "tienda",
+    { types: ["ladron"], steal: { product: "galletas", units: 4 } },
+    t1,
+  );
+  const end = thiefAt(THIEF_PATHS.tienda, 99);
+  const late = t1 + (thiefSeconds(THIEF_PATHS.tienda) + 1) * 1000;
+  assert.equal(eco.surpriseStep(cp, { x: end.x, z: end.z }, 0, late).ok, false);
+  assert.equal(cp.ledger.galletas, 8);
+});
+
+test("suceso de buscar y devolver: hay que pasar por cada punto en orden", () => {
+  const cp = eco.newCityProfile();
+  const t0 = 2e7;
+  assert.equal(
+    eco.surpriseStart(cp, "tienda", { types: ["oro"] }, t0).ok,
+    false,
+  );
+  const r = eco.surpriseStart(cp, "tienda", { types: ["perro"] }, t0);
+  assert.equal(r.ok, true);
+  const [find, owner] = r.surprise.stops;
+  const at = ([x, z]) => ({ x, z });
+  // Ir directamente al dueño no vale.
+  assert.equal(eco.surpriseStep(cp, at(owner), 0, t0 + 5000).ok, false);
+  assert.deepEqual(eco.surpriseStep(cp, at(find), 0, t0 + 5000), {
+    ok: true,
+    step: 1,
+  });
+  const money = cp.money;
+  const done = eco.surpriseStep(cp, at(owner), 2, t0 + 9000);
+  assert.equal(done.done, true);
+  // La recompensa sube con la etapa (Empresario: × 2,5).
+  assert.equal(done.reward, Math.round(45 * 2.5));
+  assert.equal(cp.money, money + done.reward);
+  assert.equal(cp.stats.surprises, 1);
+  // Hay que esperar al siguiente.
+  assert.equal(
+    eco.surpriseStart(cp, "tienda", { types: ["perro"] }, t0 + 10000).ok,
+    false,
+  );
+});
+
+test("objetivos de sucesos: se pagan con las estadísticas del servidor", () => {
+  const cp = eco.newCityProfile();
+  assert.equal(eco.claimGoal(cp, { id: "heroe" }).ok, false);
+  cp.stats.thieves = 3;
+  const r = eco.claimGoal(cp, { id: "heroe" });
+  assert.equal(r.ok, true);
+  assert.equal(r.reward, 150);
+  assert.equal(eco.claimGoal(cp, { id: "heroe" }).ok, false);
+});

@@ -29,6 +29,17 @@ import {
 import { STARTER_LAYOUT, findSpot, layoutProblem } from "../src/homelayout.js";
 import { ITEMS, SKINS } from "../src/look.js";
 import { MISSIONS } from "../src/missions.js";
+import {
+  SURPRISES,
+  SURPRISE_SECONDS,
+  SERVER_NEAR,
+  THIEF_MAX_UNITS,
+  THIEF_PATHS,
+  thiefAt,
+  thiefSeconds,
+  surpriseReward,
+  planStops,
+} from "../src/surprises.js";
 
 export const WAREHOUSE_MAX = 30;
 export const PRICE_CAP = 2.5; // precio de venta máximo = base × 2.5
@@ -113,7 +124,16 @@ export function newWarehouse() {
 }
 
 export function regenWarehouse(w) {
+  upgradeWarehouse(w);
   for (const p of Object.keys(w)) w[p] = Math.min(WAREHOUSE_MAX, w[p] + 1);
+}
+
+// Ciudades creadas antes de que existiera un producto: llega con el
+// Mayorista lleno.
+export function upgradeWarehouse(w) {
+  for (const [p, def] of Object.entries(PRODUCTS))
+    if (!def.crafted) w[p] ??= WAREHOUSE_MAX;
+  return w;
 }
 
 const owns = (cp, biz) => !!cp.businesses[biz];
@@ -576,4 +596,100 @@ export function collectVault(cp) {
   cp.vault = 0;
   cp.money = round2(cp.money + v);
   return { ok: true, total: v, vault: 0 };
+}
+
+// ---------- Sucesos inesperados ----------
+// El servidor elige el suceso y sus puntos, y solo paga cuando la posición
+// sincronizada del jugador llega a ellos (o alcanza al ladrón) a tiempo.
+
+function activeSurprise(cp, now) {
+  const sp = cp.surprise;
+  if (sp && now > sp.until) cp.surprise = null;
+  return cp.surprise;
+}
+
+// types: sucesos que el cliente puede mostrar ahora (p. ej. sin ladrón si
+// estás lejos de la tienda). steal: lo que se llevaría el ladrón de las
+// estanterías; se descuenta de tus existencias al empezar.
+export function surpriseStart(cp, plot, { types, steal }, now = Date.now()) {
+  if (activeSurprise(cp, now)) return fail("Ya hay un suceso en marcha");
+  if (!Array.isArray(types)) return fail("Suceso no válido");
+  const thief =
+    THIEF_PATHS[plot] &&
+    PRODUCTS[steal?.product] &&
+    !PRODUCTS[steal.product].ingredient &&
+    isInt(steal?.units, 1, THIEF_MAX_UNITS) &&
+    (cp.ledger[steal.product] ?? 0) >= steal.units;
+  const options = types.filter(
+    (t) => SURPRISES[t] && (t !== "ladron" || thief),
+  );
+  if (!options.length) return fail("Suceso no válido");
+  if (!allow(cp, "surprise", 1 / 120, 1, now))
+    return fail("Aún no toca otro suceso");
+  const type = options[Math.floor(Math.random() * options.length)];
+  const sp = { type, step: 0, started: now };
+  if (type === "ladron") {
+    sp.path = THIEF_PATHS[plot];
+    sp.stolen = { product: steal.product, units: steal.units };
+    sp.until = now + thiefSeconds(sp.path) * 1000;
+    take(cp, steal.product, steal.units);
+  } else {
+    sp.stops = planStops(type);
+    sp.until = now + SURPRISE_SECONDS * 1000;
+  }
+  cp.surprise = sp;
+  return { ok: true, surprise: surpriseView(sp, now) };
+}
+
+// Anula el suceso en marcha; lo robado vuelve a su dueño.
+export function cancelSurprise(cp) {
+  const sp = cp.surprise;
+  cp.surprise = null;
+  if (sp?.stolen && Date.now() <= sp.until)
+    give(cp, sp.stolen.product, sp.stolen.units);
+}
+
+export function surpriseView(sp, now = Date.now()) {
+  return {
+    type: sp.type,
+    step: sp.step,
+    stops: sp.stops,
+    path: sp.path,
+    stolen: sp.stolen,
+    elapsed: (now - sp.started) / 1000,
+    left: (sp.until - now) / 1000,
+  };
+}
+
+// El jugador dice que llegó al siguiente punto (o que alcanzó al ladrón);
+// pos es su última posición aceptada por el servidor.
+export function surpriseStep(cp, pos, stage, now = Date.now()) {
+  const sp = activeSurprise(cp, now);
+  if (!sp) return fail("El suceso ya terminó");
+  if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.z))
+    return fail("Sin posición");
+  if (sp.type === "ladron") {
+    // Las posiciones llegan con algo de retraso: se compara con dónde
+    // estaba el ladrón en los últimos 2,5 s.
+    const t = (now - sp.started) / 1000;
+    let caught = false;
+    for (let back = 0; back <= 2.5 && !caught; back += 0.25) {
+      const q = thiefAt(sp.path, t - back);
+      caught = Math.hypot(q.x - pos.x, q.z - pos.z) <= SERVER_NEAR;
+    }
+    if (!caught) return fail("El ladrón está demasiado lejos");
+    give(cp, sp.stolen.product, sp.stolen.units);
+    cp.stats.thieves = (cp.stats.thieves ?? 0) + 1;
+  } else {
+    const [x, z] = sp.stops[sp.step];
+    if (Math.hypot(x - pos.x, z - pos.z) > SERVER_NEAR)
+      return fail("Aún no has llegado");
+    sp.step += 1;
+    if (sp.step < sp.stops.length) return { ok: true, step: sp.step };
+  }
+  const reward = surpriseReward(sp.type, stage);
+  cp.surprise = null;
+  cp.money = round2(cp.money + reward);
+  cp.stats.surprises = (cp.stats.surprises ?? 0) + 1;
+  return { ok: true, done: true, reward, stolen: sp.stolen };
 }

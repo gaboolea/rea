@@ -63,7 +63,7 @@ function pigeonModel() {
   return { g, head, wings };
 }
 
-function dogModel(color, spot) {
+export function dogModel(color, spot) {
   const g = new THREE.Group();
   const fur = mat(color);
   const body = mesh(sphere(0.25, 12), fur, 0, 0.38, 0);

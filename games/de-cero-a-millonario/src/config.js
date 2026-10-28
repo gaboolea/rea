@@ -133,6 +133,123 @@ export const PRODUCTS = {
     kind: "grocery",
     frozen: true,
   },
+  // Alimentos de despensa, frescos y congelados.
+  pan: {
+    cat: "alimentos",
+    name: "Pan de molde",
+    cost: 0.9,
+    base: 2.2,
+    color: 0xd9a05b,
+    shape: "loaf",
+    kind: "grocery",
+  },
+  arroz: {
+    cat: "alimentos",
+    name: "Arroz",
+    cost: 1.0,
+    base: 2.4,
+    color: 0xf3eee0,
+    shape: "bag",
+    kind: "grocery",
+  },
+  huevos: {
+    cat: "alimentos",
+    name: "Huevos",
+    cost: 1.4,
+    base: 3.2,
+    color: 0xf2d3a8,
+    shape: "eggs",
+    kind: "grocery",
+  },
+  atun: {
+    cat: "alimentos",
+    name: "Atún en lata",
+    cost: 1.2,
+    base: 2.8,
+    color: 0x2e86de,
+    shape: "can",
+    kind: "grocery",
+  },
+  aceite: {
+    cat: "alimentos",
+    name: "Aceite de oliva",
+    cost: 2.0,
+    base: 4.6,
+    color: 0xc9b018,
+    shape: "bottle",
+    kind: "grocery",
+    stage: 1,
+  },
+  mermelada: {
+    cat: "alimentos",
+    name: "Mermelada",
+    cost: 1.3,
+    base: 3.0,
+    color: 0xc0392b,
+    shape: "jar",
+    kind: "grocery",
+    stage: 1,
+  },
+  chocolate: {
+    cat: "snacks",
+    name: "Chocolate",
+    cost: 1.1,
+    base: 2.7,
+    color: 0x6d3b1f,
+    shape: "bar",
+    kind: "grocery",
+  },
+  zumo: {
+    cat: "bebidas",
+    name: "Zumo de naranja",
+    cost: 1.2,
+    base: 2.9,
+    color: 0xff9f1c,
+    shape: "carton",
+    kind: "grocery",
+    cold: true,
+  },
+  queso: {
+    cat: "frescos",
+    name: "Queso",
+    cost: 2.2,
+    base: 5.0,
+    color: 0xffd54f,
+    shape: "wedge",
+    kind: "grocery",
+    cold: true,
+    stage: 1,
+  },
+  tomate: {
+    cat: "frescos",
+    name: "Tomates",
+    cost: 0.9,
+    base: 2.2,
+    color: 0xff3b30,
+    shape: "fruit",
+    kind: "grocery",
+    fresh: true,
+  },
+  pizza: {
+    cat: "frescos",
+    name: "Pizza congelada",
+    cost: 2.0,
+    base: 4.8,
+    color: 0xe74c3c,
+    shape: "pizza",
+    kind: "grocery",
+    frozen: true,
+    stage: 1,
+  },
+  croissant: {
+    cat: "cafeteria",
+    name: "Cruasán",
+    cost: 0.8,
+    base: 2.9,
+    color: 0xe0a040,
+    shape: "loaf",
+    kind: "cafe",
+  },
   pastel: {
     cat: "cafeteria",
     name: "Pastel",
@@ -257,7 +374,7 @@ export const UPGRADES = {
   refrigerador: {
     name: "Refrigerador",
     price: 200,
-    desc: "Permite vender Leche y Yogur.",
+    desc: "Permite vender Leche, Yogur, Zumo y Queso.",
     types: ["grocery"],
     stage: 1,
     upkeep: 5,
@@ -302,7 +419,7 @@ export const UPGRADES = {
   congelador: {
     name: "Congelador",
     price: 220,
-    desc: "Permite vender Helado.",
+    desc: "Permite vender Helado y Pizza congelada.",
     types: ["grocery"],
     stage: 1,
     upkeep: 4,
@@ -628,10 +745,24 @@ export const GOALS = [
     reward: 300,
     target: 4,
   },
+  {
+    id: "vecino",
+    name: "Buen vecino",
+    desc: "Resuelve 5 sucesos inesperados",
+    reward: 100,
+    target: 5,
+  },
+  {
+    id: "heroe",
+    name: "Héroe del barrio",
+    desc: "Atrapa a 3 ladrones",
+    reward: 150,
+    target: 3,
+  },
 ];
 
 // Progreso de un objetivo con los datos del jugador ({ items, home,
-// unlocked }): { done, count }.
+// unlocked, stats }): { done, count }.
 export function goalProgress(id, p) {
   const vehicles = Object.keys(VEHICLES).filter((v) => p.items?.[v]);
   switch (id) {
@@ -649,6 +780,14 @@ export function goalProgress(id, p) {
       return { done: !!p.unlocked?.financiero };
     case "garaje":
       return { done: vehicles.length >= 4, count: vehicles.length };
+    case "vecino": {
+      const count = p.stats?.surprises ?? 0;
+      return { done: count >= 5, count };
+    }
+    case "heroe": {
+      const count = p.stats?.thieves ?? 0;
+      return { done: count >= 3, count };
+    }
     default:
       return { done: false };
   }

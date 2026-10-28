@@ -24,6 +24,14 @@ const productGeometries = {
   jug: () => new THREE.CylinderGeometry(0.09, 0.11, 0.32, 8),
   can: () => new THREE.CylinderGeometry(0.07, 0.07, 0.18, 12),
   tub: () => new THREE.CylinderGeometry(0.1, 0.09, 0.12, 14),
+  loaf: () => new THREE.BoxGeometry(0.24, 0.16, 0.14),
+  eggs: () => new THREE.BoxGeometry(0.24, 0.09, 0.13),
+  jar: () => new THREE.CylinderGeometry(0.065, 0.07, 0.15, 12),
+  bar: () => new THREE.BoxGeometry(0.18, 0.26, 0.05),
+  // Cuña de queso: un tercio de cilindro.
+  wedge: () =>
+    new THREE.CylinderGeometry(0.13, 0.13, 0.1, 12, 1, false, 0, Math.PI / 1.5),
+  pizza: () => new THREE.BoxGeometry(0.26, 0.05, 0.26),
 };
 const geoCache = {};
 function productGeometry(shape) {

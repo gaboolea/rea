@@ -759,6 +759,25 @@ button:focus-visible {
   background: #4f8dff;
 }
 
+.chip.surprise {
+  background: #ffe3e0;
+  animation:
+    fade-up 0.4s both,
+    surprise-pulse 1.2s ease-in-out infinite;
+}
+
+.chip.surprise i {
+  background: #e5484d;
+}
+
+@keyframes surprise-pulse {
+  50% {
+    box-shadow:
+      var(--shadow),
+      0 0 0 3px rgba(229, 72, 77, 0.35);
+  }
+}
+
 .clock-pill {
   padding: 4px 12px;
 }
@@ -3034,4 +3053,19 @@ table.rank tr.me {
 
 .next-step .ns-lock {
   color: #6b7280;
+}
+
+.shop-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 12px;
+  font-size: 20px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+
+.shop-row small + small {
+  margin-top: 2px;
 }

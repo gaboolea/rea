@@ -23,7 +23,7 @@ const MERCHANTS = [
     name: "Chef Paco",
     x: -48.6,
     z: 8.2,
-    wants: ["fruta", "pasta", "leche", "refresco"],
+    wants: ["fruta", "pasta", "leche", "huevos", "arroz", "tomate", "pan"],
     look: {
       skin: "canela",
       top: { id: "chaqueta", color: "blanco" },
@@ -57,7 +57,7 @@ const MERCHANTS = [
     name: "Leo del quiosco",
     x: 9.6,
     z: 24.2,
-    wants: ["refresco", "galletas", "cereal", "agua"],
+    wants: ["refresco", "galletas", "cereal", "agua", "chocolate", "zumo"],
     look: {
       skin: "cacao",
       top: { id: "camiseta", color: "amarillo" },

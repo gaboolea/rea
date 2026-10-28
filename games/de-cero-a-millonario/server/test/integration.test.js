@@ -57,7 +57,8 @@ before(async () => {
       },
       exclusive: {},
       shops: {},
-      warehouse: eco.newWarehouse(),
+      // Guardada antes de que existiera el pan.
+      warehouse: { agua: 30, galletas: 30 },
     },
     RICH1: {
       code: "RICH1",
@@ -298,5 +299,38 @@ test("la tienda automática gana mientras no estás y se cobra una sola vez", as
   // Recién visto: pedir más ganancias no da nada.
   const idle = await a.req("idle");
   assert.equal(idle.vault, 0);
+  a.ws.close();
+});
+
+test("los sucesos se validan con la posición que ve el servidor", async () => {
+  const a = client(KEYS[2], "Vecina");
+  await a.open();
+  await a.hello();
+  const j = await a.req("join", { code: "AUTO1" });
+  assert.equal(j.ok, true);
+  // La ciudad antigua recibe los alimentos nuevos.
+  assert.equal(j.warehouse.pan, eco.WAREHOUSE_MAX);
+  assert.equal((await a.req("buy", { order: { pan: 1 } })).ok, true);
+  // Sin posición no se puede cumplir nada.
+  const start = await a.req("surprise", { types: ["cartera"] });
+  assert.equal(start.ok, true);
+  const [find, owner] = start.surprise.stops;
+  assert.equal((await a.req("surpriseStep")).ok, false);
+  a.send("state", { x: find[0], y: 0, z: find[1], h: 0 });
+  await new Promise((r) => setTimeout(r, 150));
+  const step = await a.req("surpriseStep");
+  assert.deepEqual([step.ok, step.step], [true, 1]);
+  // El dueño está a 30 m o más: desde aquí no se cobra.
+  const early = await a.req("surpriseStep");
+  assert.equal(early.ok, false);
+  assert.ok(Math.hypot(owner[0] - find[0], owner[1] - find[1]) >= 30);
+  // Saltar hasta el dueño es un movimiento imposible: no cuenta.
+  a.send("state", { x: owner[0], y: 0, z: owner[1], h: 0 });
+  await a.wait((m) => m.t === "correct");
+  assert.equal((await a.req("surpriseStep")).ok, false);
+  // Volver a entrar anula el suceso.
+  await a.req("join", { code: "AUTO1" });
+  const gone = await a.req("surpriseStep");
+  assert.equal(gone.error, "El suceso ya terminó");
   a.ws.close();
 });

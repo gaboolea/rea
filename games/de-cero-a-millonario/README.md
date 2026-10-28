@@ -85,6 +85,12 @@ Qué hace el servidor:
   demás en su parcela. Solo se entra en una casa ajena si su dueño deja
   visitas (Decorar o Inventario → Casa); el servidor devuelve a la puerta a
   quien intente entrar en una casa cerrada.
+- **Sucesos inesperados validados**: el servidor elige el suceso y sus
+  puntos (no el cliente), descuenta al empezar lo que se lleva el ladrón y
+  solo paga si la última posición del jugador que aceptó el servidor está
+  junto a cada punto, en orden y a tiempo, o junto al ladrón según su
+  camino compartido (`src/surprises.js`). Hay como mucho uno cada 2
+  minutos y volver a entrar en la ciudad anula el que esté en marcha.
 - **Compras entre jugadores**: entra en la tienda de otro jugador y compra
   de sus estanterías; el cobro y el traspaso de unidades son atómicos.
   Cada jugador decide en Gestión si vende a otros.
@@ -113,6 +119,10 @@ Límites conocidos:
 - Los peatones, el tráfico y el reloj visual se simulan en cada navegador;
   solo los jugadores, las tiendas, sus clientes y el Mayorista se
   comparten.
+- Los sucesos se comprueban con la posición que el servidor ya valida por
+  velocidad; la primera posición tras entrar en la ciudad no tiene con qué
+  compararse, por eso entrar de nuevo anula el suceso en curso. El
+  ladrón, los objetos y sus dueños solo los ve quien vive el suceso.
 - La base de datos es un archivo JSON pensado para unas pocas ciudades en
   un servidor pequeño. Se ha probado con dos navegadores a la vez; no está
   diseñado ni probado para cientos de jugadores.
@@ -135,6 +145,7 @@ horizontal el HUD se compacta para dejar libre el centro.
 | Interactuar                                      | E                                    | Botón ✋ (se ilumina si puedes)    |
 | Girar cámara / zoom                              | Arrastrar ratón / rueda              | Arrastrar en la mitad derecha      |
 | Gestión / mapa                                   | G / M                                | Botones de arriba a la derecha     |
+| ¿Dónde comprar? (tiendas y ruta)                 | C                                    | Botón 🛍️                           |
 | Inventario                                       | I                                    | Botón 🎒                           |
 | Bici / skate / scooter                           | V                                    | Botón 🛴                           |
 | Subir/bajar del coche o moto                     | E                                    | Botón ✋                           |
@@ -170,7 +181,8 @@ Después se alternan metas rápidas con objetivos de progreso.
 2. Repón estanterías, cobra en la caja, ajusta precios y contrata personal.
 3. Mientras tanto surgen **eventos**: ofertas flash del Mayorista con reto
    de ventas, hora punta, clientes VIP que pagan el doble y monedas perdidas
-   por la ciudad.
+   por la ciudad. Además pasan **sucesos inesperados** con recompensa (ver
+   abajo).
 4. Los comerciantes del barrio (Chef Paco, Rosa la florista, Leo del
    quiosco) piden **encargos**: llévales la mercadería antes de que acabe el
    tiempo. Completarlos desbloquea prendas especiales.
@@ -178,6 +190,57 @@ Después se alternan metas rápidas con objetivos de progreso.
 6. Cada día dura 5 minutos; al terminar se pagan alquiler, salarios,
    mantenimiento de mejoras y vehículos y aparece un resumen breve sin
    detener el juego.
+
+### Alimentos
+
+El Mayorista vende 12 alimentos más, cada uno en su estantería por
+categoría y con su forma en la tienda (pan de molde, cartón de huevos,
+tarros, tabletas, cuñas de queso, cajas de pizza):
+
+| Categoría  | Nuevos                                                               |
+| ---------- | -------------------------------------------------------------------- |
+| Alimentos  | Pan de molde, arroz, huevos, atún en lata; aceite y mermelada (🔒 1) |
+| Snacks     | Chocolate                                                            |
+| Bebidas    | Zumo de naranja (refrigerador)                                       |
+| Frescos    | Tomates (frutería); queso (refrigerador, 🔒 1)                       |
+| Congelados | Pizza congelada (congelador, 🔒 1)                                   |
+| Cafetería  | Cruasán (vitrina de la cafetería)                                    |
+
+🔒 1: desde la etapa Comerciante. Los clientes los eligen como el resto y
+los encargos de Chef Paco y Leo del quiosco también los piden. En online
+el servidor los valida igual que los demás (precio máximo, existencias,
+etapa) y las ciudades guardadas antes reciben su stock en el Mayorista al
+entrar.
+
+### Sucesos inesperados
+
+Cada 2–4 minutos de juego (después del tutorial) pasa algo, con un aviso
+rojo con cuenta atrás, la flecha y la ruta hacia donde hay que ir:
+
+| Suceso             | Qué pasa                                                                                                                    | Recompensa |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 🦹 ¡Al ladrón!     | Un ladrón sale de tu tienda con hasta 6 unidades de la estantería más llena y huye por las aceras. Alcánzalo y lo recuperas | $40        |
+| 👛 Cartera perdida | Encuentra la cartera (columna de luz) y llévasela a su dueña                                                                | $30        |
+| 🐶 Perro perdido   | Encuentra al perro; te sigue hasta su dueño                                                                                 | $45        |
+| 📦 Paquete caído   | Encuentra el paquete del camión y devuélvelo en la puerta del Mayorista                                                     | $30        |
+
+La recompensa se multiplica por la etapa (×1, ×1,5, ×2,5 y ×4). Si el
+ladrón escapa, el género se pierde; si se acaba el tiempo, no pasa nada
+más. El ladrón solo aparece si estás a menos de 45 m de tu tienda y tienes
+género en las estanterías. Dos objetivos nuevos los premian: **Buen
+vecino** (5 sucesos, $100) y **Héroe del barrio** (3 ladrones, $150).
+
+### Dónde comprar cada cosa
+
+- **Carteles flotantes** sobre cada tienda, visibles de lejos y desde
+  cualquier lado: 📦 MAYORISTA, 👕 ROPA, 👗 BOUTIQUE, 🚗 AUTOS, 🚚
+  FURGONETAS, 💎 LUJO, 🛋️ MUEBLES, 📺 TECNOLOGÍA, 🏋️ GIMNASIO y ☕ CAFÉ.
+- **Postes indicadores** con flechas de doble cara y la distancia en el
+  cruce del barrio, la entrada y el cruce de la zona comercial y la
+  entrada de la zona residencial.
+- **Panel «¿Dónde comprar?»** (botón 🛍️ o tecla C): cada tienda agrupada
+  por lo que buscas (para tu tienda, ropa, vehículos, tu casa, otros), qué
+  vende, a qué distancia está y un botón **Llévame** que marca la ruta.
 
 ### Mejorar la tienda y contratar personal
 
@@ -328,7 +391,8 @@ andando o en vehículo, sin teletransportes:
   vehículos (elegir el de V, ir a donde está aparcado, grúa), muebles
   (colocados y guardados), casa (ir, permitir visitas) y objetivos.
 - **Objetivos opcionales** con recompensa única: primer vehículo, casa,
-  10 muebles colocados, un coche, el distrito y 4 vehículos.
+  10 muebles colocados, un coche, el distrito, 4 vehículos, 5 sucesos y
+  3 ladrones atrapados.
 - **Mapa** con iconos de cada zona y tienda y lista de destinos; el
   elegido se marca con la flecha en el borde de la pantalla y la distancia.
   Avisos «ENTRAR A LA TIENDA», «EXAMINAR VEHÍCULO», «COMPRAR MUEBLE» y
@@ -403,53 +467,56 @@ andando o en vehículo, sin teletransportes:
 
 ## Código
 
-| Archivo              | Responsabilidad                                                |
-| -------------------- | -------------------------------------------------------------- |
-| `src/config.js`      | Datos ajustables: productos, etapas, mejoras, personal, bienes |
-| `src/look.js`        | Catálogo de ropa y accesorios, looks por defecto y aleatorios  |
-| `src/main.js`        | Arranque, modos (inicio, armario, partida), economía, guardado |
-| `src/world.js`       | Ciudad, decoración, interiores fijos y animaciones ambientales |
-| `src/scenery.js`     | Cielo, montañas, mar y terreno exterior (solo decorativo)      |
-| `src/building.js`    | Edificio genérico: paredes, puertas, techo, letreros, luces    |
-| `src/business.js`    | Negocios: mobiliario, existencias, cajas, clientes y empleados |
-| `src/npc.js`         | Agentes con navegación; clientes (y VIP) y empleados           |
-| `src/pedestrians.js` | Peatones y sus actividades                                     |
-| `src/vehicles.js`    | Coches, autobús, camiones, semáforos                           |
-| `src/events.js`      | Eventos, encargos, monedas y descubrimientos                   |
-| `src/audio.js`       | Música, efectos y ambiente sintetizados                        |
-| `src/wardrobe.js`    | Pantalla de personalización 3D                                 |
-| `src/player.js`      | Movimiento del jugador y cámara                                |
-| `src/physics.js`     | Colisiones, altura del suelo, rejilla A\* con coste de calzada |
-| `src/character.js`   | Personajes de juguete, ropa 3D y animación                     |
-| `src/props.js`       | Muebles y expositores con productos instanciados               |
-| `src/ui.js`          | HUD y paneles                                                  |
-| `src/missions.js`    | Misiones y progreso                                            |
-| `src/decor.js`       | Decoración: carritos, relojes, estanterías industriales...     |
-| `src/guide.js`       | Indicadores de tienda, flecha, ruta y minimapa                 |
-| `src/warehouse.js`   | Stock del Mayorista, pedidos y trabajadores                    |
-| `src/tutorial.js`    | Tutorial de primeros pasos                                     |
-| `src/automation.js`  | Tienda automática: camión, $/min, caja fuerte                  |
-| `src/shopfit.js`     | Cinta transportadora, fachada y segunda planta                 |
-| `src/storefronts.js` | Fachada propia de cada rubro (azotea, acera, carteles)         |
-| `src/critters.js`    | Palomas y mascotas de ambiente                                 |
-| `src/icons.js`       | Iconos de productos dibujados en canvas                        |
-| `src/net.js`         | Conexión WebSocket (peticiones y mensajes)                     |
-| `src/online.js`      | Modo online: avatares remotos, tiendas ajenas, chat, ranking   |
-| `src/city/`          | Zonas nuevas: comercial, residencial, distrito financiero      |
-| `src/stores/`        | Interiores: ropa, vehículos, muebles, tecnología, lujo, gym    |
-| `src/shopping.js`    | Ver, probar y comprar ropa en las tiendas                      |
-| `src/rides.js`       | Vehículos: comprar, probar, subir/bajar, aparcar, grúa         |
-| `src/furnishop.js`   | Comprar muebles y aparatos en las tiendas                      |
-| `src/furniture.js`   | Modelos 3D de los muebles                                      |
-| `src/homelayout.js`  | Reglas de la casa (cliente y servidor): huecos, puertas, paso  |
-| `src/home.js`        | Casita propia y casas ajenas, usos de los muebles              |
-| `src/decorate.js`    | Modo decoración                                                |
-| `src/district.js`    | Barrera y desbloqueo del distrito financiero                   |
-| `src/goals.js`       | Gimnasio y objetivos opcionales                                |
-| `src/mapdraw.js`     | Dibujo de la ciudad en el mapa y el minimapa                   |
-| `server/server.js`   | Servidor HTTP + WebSocket: ciudades, sincronización, chat      |
-| `server/economy.js`  | Reglas de economía validadas en el servidor                    |
-| `server/store.js`    | Persistencia en JSON                                           |
+| Archivo               | Responsabilidad                                                |
+| --------------------- | -------------------------------------------------------------- |
+| `src/config.js`       | Datos ajustables: productos, etapas, mejoras, personal, bienes |
+| `src/look.js`         | Catálogo de ropa y accesorios, looks por defecto y aleatorios  |
+| `src/main.js`         | Arranque, modos (inicio, armario, partida), economía, guardado |
+| `src/world.js`        | Ciudad, decoración, interiores fijos y animaciones ambientales |
+| `src/scenery.js`      | Cielo, montañas, mar y terreno exterior (solo decorativo)      |
+| `src/building.js`     | Edificio genérico: paredes, puertas, techo, letreros, luces    |
+| `src/business.js`     | Negocios: mobiliario, existencias, cajas, clientes y empleados |
+| `src/npc.js`          | Agentes con navegación; clientes (y VIP) y empleados           |
+| `src/pedestrians.js`  | Peatones y sus actividades                                     |
+| `src/vehicles.js`     | Coches, autobús, camiones, semáforos                           |
+| `src/events.js`       | Eventos, encargos, monedas y descubrimientos                   |
+| `src/audio.js`        | Música, efectos y ambiente sintetizados                        |
+| `src/wardrobe.js`     | Pantalla de personalización 3D                                 |
+| `src/player.js`       | Movimiento del jugador y cámara                                |
+| `src/physics.js`      | Colisiones, altura del suelo, rejilla A\* con coste de calzada |
+| `src/character.js`    | Personajes de juguete, ropa 3D y animación                     |
+| `src/props.js`        | Muebles y expositores con productos instanciados               |
+| `src/ui.js`           | HUD y paneles                                                  |
+| `src/missions.js`     | Misiones y progreso                                            |
+| `src/decor.js`        | Decoración: carritos, relojes, estanterías industriales...     |
+| `src/guide.js`        | Indicadores de tienda, flecha, ruta y minimapa                 |
+| `src/warehouse.js`    | Stock del Mayorista, pedidos y trabajadores                    |
+| `src/tutorial.js`     | Tutorial de primeros pasos                                     |
+| `src/automation.js`   | Tienda automática: camión, $/min, caja fuerte                  |
+| `src/shopfit.js`      | Cinta transportadora, fachada y segunda planta                 |
+| `src/storefronts.js`  | Fachada propia de cada rubro (azotea, acera, carteles)         |
+| `src/critters.js`     | Palomas y mascotas de ambiente                                 |
+| `src/icons.js`        | Iconos de productos dibujados en canvas                        |
+| `src/net.js`          | Conexión WebSocket (peticiones y mensajes)                     |
+| `src/online.js`       | Modo online: avatares remotos, tiendas ajenas, chat, ranking   |
+| `src/city/`           | Zonas nuevas: comercial, residencial, distrito financiero      |
+| `src/stores/`         | Interiores: ropa, vehículos, muebles, tecnología, lujo, gym    |
+| `src/shopping.js`     | Ver, probar y comprar ropa en las tiendas                      |
+| `src/rides.js`        | Vehículos: comprar, probar, subir/bajar, aparcar, grúa         |
+| `src/furnishop.js`    | Comprar muebles y aparatos en las tiendas                      |
+| `src/furniture.js`    | Modelos 3D de los muebles                                      |
+| `src/homelayout.js`   | Reglas de la casa (cliente y servidor): huecos, puertas, paso  |
+| `src/home.js`         | Casita propia y casas ajenas, usos de los muebles              |
+| `src/decorate.js`     | Modo decoración                                                |
+| `src/district.js`     | Barrera y desbloqueo del distrito financiero                   |
+| `src/goals.js`        | Gimnasio y objetivos opcionales                                |
+| `src/mapdraw.js`      | Dibujo de la ciudad en el mapa y el minimapa                   |
+| `src/surprises.js`    | Reglas de los sucesos (cliente y servidor): caminos, puntos    |
+| `src/surpriseplay.js` | Sucesos en el mundo: ladrón, objetos perdidos, dueños, HUD     |
+| `src/wayfinding.js`   | Carteles flotantes, postes indicadores y «¿Dónde comprar?»     |
+| `server/server.js`    | Servidor HTTP + WebSocket: ciudades, sincronización, chat      |
+| `server/economy.js`   | Reglas de economía validadas en el servidor                    |
+| `server/store.js`     | Persistencia en JSON                                           |
 
 ## Pendiente
 

@@ -122,6 +122,89 @@ export function productIcon(id) {
       ctx.arc(48, 36, 7, 0, Math.PI * 2);
       ctx.fill();
     },
+    loaf: () => {
+      ctx.beginPath();
+      ctx.roundRect(18, 38, 60, 40, 8);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(48, 40, 30, 14, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.45)";
+      for (const x of [34, 48, 62]) ctx.fillRect(x - 2, 32, 4, 14);
+    },
+    eggs: () => {
+      ctx.beginPath();
+      ctx.roundRect(16, 50, 64, 28, 6);
+      ctx.fill();
+      ctx.fillStyle = "#fffaf0";
+      for (const x of [26, 42, 58, 74]) {
+        ctx.beginPath();
+        ctx.ellipse(x, 46, 7, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    },
+    jar: () => {
+      ctx.beginPath();
+      ctx.roundRect(30, 34, 36, 46, 8);
+      ctx.fill();
+      ctx.fillStyle = "#f2f2f2";
+      ctx.fillRect(28, 24, 40, 12);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(34, 50, 28, 14);
+    },
+    bar: () => {
+      ctx.beginPath();
+      ctx.roundRect(24, 28, 48, 44, 4);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.35)";
+      ctx.lineWidth = 2;
+      for (const x of [40, 56]) {
+        ctx.beginPath();
+        ctx.moveTo(x, 28);
+        ctx.lineTo(x, 72);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#ffd23f";
+      ctx.fillRect(24, 44, 48, 12);
+    },
+    wedge: () => {
+      ctx.beginPath();
+      ctx.moveTo(18, 74);
+      ctx.lineTo(78, 74);
+      ctx.lineTo(78, 34);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      for (const [x, y] of [
+        [58, 62],
+        [70, 50],
+        [44, 68],
+      ]) {
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    },
+    pizza: () => {
+      ctx.fillStyle = "#f5d6a1";
+      ctx.beginPath();
+      ctx.arc(48, 50, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(48, 50, 24, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff3b0";
+      for (const [x, y] of [
+        [40, 42],
+        [58, 46],
+        [46, 60],
+      ]) {
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    },
   };
   (shapes[p.shape] ?? shapes.box)();
   const url = c.toDataURL();
