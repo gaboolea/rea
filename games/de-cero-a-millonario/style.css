@@ -2896,3 +2896,142 @@ table.rank tr.me {
   font-size: 46px;
   margin: 4px 0 8px;
 }
+
+/* Botón «Mejorar» del HUD: siempre visible tras el tutorial y brillante
+   cuando el siguiente paso ya se puede pagar. */
+.upgrade-btn {
+  position: relative;
+  pointer-events: auto;
+  border: 0;
+  border-radius: 16px;
+  background: var(--yellow);
+  color: #1d2b44;
+  padding: 6px 14px;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+  box-shadow:
+    0 4px 0 #e0a92e,
+    var(--shadow);
+  cursor: pointer;
+}
+
+.upgrade-btn[hidden] {
+  display: none;
+}
+
+.upgrade-btn b {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.upgrade-btn small {
+  font-size: 11px;
+  font-weight: 700;
+  max-width: 170px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upgrade-btn i {
+  display: none;
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e74c3c;
+  color: #fff;
+  font-style: normal;
+  font-weight: 900;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.upgrade-btn.ready {
+  animation: pulse 1.4s infinite;
+}
+
+.upgrade-btn.ready i {
+  display: block;
+}
+
+.upgrade-btn:active {
+  transform: translateY(3px);
+}
+
+/* Tarjeta del siguiente paso en Gestión. */
+.next-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #fff8e1;
+  border: 3px solid var(--yellow);
+}
+
+.next-step.ready {
+  border-color: var(--green);
+  background: #eefbf1;
+}
+
+.next-step .ns-icon {
+  font-size: 30px;
+  flex: none;
+}
+
+.next-step .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.next-step .grow > small:first-child {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #9a6a00;
+}
+
+.next-step b {
+  font-size: 16px;
+}
+
+#panel-body .next-step button.primary {
+  flex: none;
+  font-size: 14px;
+  padding: 10px 14px;
+}
+
+#panel-body .next-step button[disabled] {
+  opacity: 0.5;
+}
+
+@media (max-width: 720px), (max-height: 520px) {
+  .upgrade-btn {
+    min-width: 0;
+    padding: 4px 10px;
+  }
+  .upgrade-btn b {
+    font-size: 12px;
+  }
+  .upgrade-btn small {
+    font-size: 9.5px;
+    max-width: 120px;
+  }
+  .next-step {
+    flex-wrap: wrap;
+  }
+  .next-step .ns-icon {
+    font-size: 24px;
+  }
+}
+
+.next-step .ns-lock {
+  color: #6b7280;
+}

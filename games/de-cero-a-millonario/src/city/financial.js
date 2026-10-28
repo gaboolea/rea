@@ -125,6 +125,7 @@ export function buildFinancial(world) {
 
   // Galería de lujo (tienda exclusiva).
   const lujo = kit.building("lujo", {
+    style: "luxury",
     name: "Galería de Lujo",
     x: -251,
     z: -24,

@@ -179,6 +179,22 @@ Después se alternan metas rápidas con objetivos de progreso.
    mantenimiento de mejoras y vehículos y aparece un resumen breve sin
    detener el juego.
 
+### Mejorar la tienda y contratar personal
+
+Tras el tutorial hay siempre a mano un botón amarillo **⬆️ MEJORAR**
+(debajo del minimapa, tecla U) que dice cuál es el siguiente paso; se
+ilumina y muestra «!» cuando ya se puede pagar, y la primera vez avisa con
+un mensaje. Abre la gestión del local en el que estás (o de tu tienda) con
+una tarjeta **Siguiente paso** y un solo botón: en la tienda sigue la ruta
+automática (reponedor, cajero, camión...); en los demás negocios, primero
+el personal que falta y después la mejora más barata. Si el paso de la ruta
+espera una etapa, la tarjeta lo dice («🔒 Después: Reponedor, al llegar a
+la etapa Comerciante»). Cada negocio propio tiene además un cartel amarillo
+**MEJORAR TIENDA + PERSONAL** en el escaparate, junto a la puerta, que abre
+lo mismo con E. Las pestañas de Gestión llevan icono (⬆️ Mejoras, 👥
+Personal, 💲 Precios, 📋 Resumen). Contratar y comprar usan las mismas
+acciones de siempre, así que en online las sigue validando el servidor.
+
 ### Tienda automática
 
 Desde **Gestión → ⚙️ Automática** (o el indicador `🏪 +$/min` del HUD) la
@@ -210,6 +226,31 @@ Etapas: Principiante → Comerciante ($300 en ventas) → Empresario ($1.500) �
 Magnate ($8.000).
 
 ## Qué incluye
+
+### Edificios según el rubro
+
+Todos los edificios comparten la misma base (paredes, puerta, cartel), pero
+cada negocio lleva piezas propias (`src/storefronts.js`):
+
+| Edificio          | Qué lo distingue                                                     |
+| ----------------- | -------------------------------------------------------------------- |
+| Tiendas de barrio | Máquina de refrescos roja junto a la esquina                         |
+| Café Aroma        | Pilares de madera y taza gigante humeante en la azotea               |
+| Minimercado Sol   | Una planta, sol del logotipo (brilla de noche), cartel «24 H», hielo |
+| Súper Millonario  | Una planta, marquesina con luz, tótem, carritos y placas solares     |
+| Mayorista         | Nave de chapa con tejado curvo, bolardos, palés y muelle de carga    |
+| Boutique          | Arbustos podados y molduras doradas                                  |
+| Restaurante       | Tejado a dos aguas, chimenea, farolillos y pizarra del menú          |
+| Ropa              | Banderines sobre los escaparates y camiseta gigante en la azotea     |
+| Vehículos         | Neumático gigante y franja de cuadros de meta                        |
+| Muebles           | Sillón gigante y lámpara de pie en la azotea                         |
+| Tecnología        | Antena parabólica, mástil con luz y franja LED                       |
+| Gimnasio          | Mancuerna gigante en la azotea                                       |
+| Galería de lujo   | Alfombra roja con postes dorados y corona en la azotea               |
+
+Las piezas de cada edificio se funden en pocas mallas; las de la azotea se
+ocultan al entrar, como el techo, y solo las que estorban al paso tienen
+colisión.
 
 ### La gran expansión
 
@@ -360,6 +401,7 @@ andando o en vehículo, sin teletransportes:
 | `src/tutorial.js`    | Tutorial de primeros pasos                                     |
 | `src/automation.js`  | Tienda automática: camión, $/min, caja fuerte                  |
 | `src/shopfit.js`     | Cinta transportadora, fachada y segunda planta                 |
+| `src/storefronts.js` | Fachada propia de cada rubro (azotea, acera, carteles)         |
 | `src/icons.js`       | Iconos de productos dibujados en canvas                        |
 | `src/net.js`         | Conexión WebSocket (peticiones y mensajes)                     |
 | `src/online.js`      | Modo online: avatares remotos, tiendas ajenas, chat, ranking   |

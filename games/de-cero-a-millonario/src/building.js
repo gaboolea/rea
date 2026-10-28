@@ -14,6 +14,7 @@ import {
   mergeParts,
   facadeTexture,
 } from "./gfx.js";
+import { decorateStorefront } from "./storefronts.js";
 
 const H = 3.4;
 // Altura de la planta alta decorativa.
@@ -183,6 +184,8 @@ export class Building {
         wallColor,
       );
     }
+    // Piezas propias del rubro (puesto de fruta, terraza, muelle...).
+    if (this.opts.style) decorateStorefront(this, this.opts.style);
   }
 
   buildFront(w, d, doorW, wallColor, trimColor) {
@@ -242,6 +245,8 @@ export class Building {
     });
     this.updateDoors(0, false);
     if (this.opts.awning) this.buildAwning(doorW + 3, d);
+    // Sin planta alta el cartel va delante del borde de la azotea.
+    this.signZ = d / 2 + ((this.opts.floors ?? 2) > 1 ? 0.03 : 0.32);
     if (this.opts.sign) {
       const sign = signMesh(
         this.opts.sign,
@@ -249,7 +254,7 @@ export class Building {
         1.1,
         this.opts.signColors,
       );
-      this.place(sign, 0, d / 2 + 0.03, 0, H + 0.45);
+      this.place(sign, 0, this.signZ, 0, H + 0.45);
       this.group.add(sign);
       const back = mesh(
         roundedBox(Math.min(w - 1, 7) + 0.3, 1.35, 0.15, 0.06),
@@ -258,7 +263,7 @@ export class Building {
         0,
         0,
       );
-      this.place(back, 0, d / 2 - 0.06, 0, H + 0.45);
+      this.place(back, 0, this.signZ - 0.09, 0, H + 0.45);
       this.group.add(back);
       this.world.occluders.push(sign, back);
       this.signBoard = sign;
@@ -359,6 +364,7 @@ export class Building {
       0,
     );
     this.world.occluders.push(ac);
+    this.roofUnit = ac;
     this.place(ac, -w / 4, -d / 4, 0, top + 0.7);
     this.roof.add(ac);
     if (this.opts.gable) {

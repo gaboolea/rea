@@ -1672,6 +1672,7 @@ class Game {
       this.ui.refreshHud(true);
     }
     if (input.consume("g") || input.consume("tab")) this.ui.openManagement();
+    if (input.consume("u")) this.ui.openUpgrade();
     if (input.consume("m")) this.ui.openMap();
     if (input.consume("i")) this.ui.openInventory();
     if (input.consume("b") && this.atHome()) this.ui.openDecor();

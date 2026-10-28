@@ -333,8 +333,51 @@ export class Business {
     }
     this.buildDecor();
     this.refreshFixtures();
-    if (!this.remote) this.interactables.push(this.storageInteractable());
+    if (!this.remote) {
+      this.interactables.push(this.storageInteractable());
+      this.buildUpgradeBoard();
+    }
     this.updateStoragePile();
+  }
+
+  // Cartel amarillo en el escaparate, junto a la puerta: abre las mejoras
+  // y el personal de este local desde la acera.
+  buildUpgradeBoard() {
+    const bld = this.building;
+    const lx = -(bld.opts.doorW / 2 + 1.1);
+    const front = bld.d / 2 + 0.2;
+    const sign = signMesh("MEJORAR\nTIENDA\n+ PERSONAL", 1.3, 1.15, {
+      bg: "#ffd23f",
+      fg: "#1d2b44",
+      font: "bold 92px",
+      border: "#ff8a3d",
+    });
+    sign.material.emissive = new THREE.Color(0xffffff);
+    sign.material.emissiveMap = sign.material.map;
+    sign.material.emissiveIntensity = 0.25;
+    bld.place(sign, lx, front, 0, 1.75);
+    bld.group.add(sign);
+    const arrow = signMesh("▲", 0.5, 0.5, {
+      bg: "#ff8a3d",
+      fg: "#ffffff",
+      font: "bold 300px",
+    });
+    bld.place(arrow, lx, front + 0.01, 0, 2.6);
+    bld.group.add(arrow);
+    this.upgradeArrow = arrow;
+    const at = bld.toWorld(lx, bld.d / 2 + 1.1);
+    const game = this.game;
+    this.interactables.push({
+      x: at.x,
+      z: at.z,
+      alt: bld.toWorld(lx, front),
+      radius: 1.8,
+      label: () => ({
+        text: "Mejorar tienda y contratar personal",
+        enabled: true,
+      }),
+      action: () => game.ui.openUpgrade(this.id),
+    });
   }
 
   buildDecor() {
@@ -435,7 +478,7 @@ export class Business {
       neon.material.emissive = new THREE.Color(0xffffff);
       neon.material.emissiveMap = neon.material.map;
       neon.material.emissiveIntensity = 0.6;
-      this.building.place(neon, 0, this.building.d / 2 + 0.25, 0, 2.95 + 0.85);
+      this.building.place(neon, 0, this.building.signZ + 0.22, 0, 2.95 + 0.85);
       this.building.group.add(neon);
     }
     this.refreshAutomation();
@@ -1174,6 +1217,9 @@ export class Business {
 
   update(dt, budget) {
     if (!this.owned) return;
+    if (this.upgradeArrow)
+      this.upgradeArrow.position.y =
+        2.6 + Math.sin(performance.now() / 300) * 0.08;
     this.detailTimer = (this.detailTimer ?? 0) - dt;
     if (this.detailTimer <= 0) {
       this.detailTimer = 0.5;

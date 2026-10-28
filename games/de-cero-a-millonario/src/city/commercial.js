@@ -51,6 +51,7 @@ export function buildCommercial(world) {
   // Tiendas. Las fachadas dan a la avenida (oeste: rot π/2, este: −π/2).
   const shops = {
     ropa: kit.building("ropa", {
+      style: "clothing",
       name: "Tienda de Ropa",
       x: -16,
       z: -72,
@@ -66,6 +67,7 @@ export function buildCommercial(world) {
       floor: ["#fbe9ef", "#f3d5e1"],
     }),
     vehiculos: kit.building("vehiculos", {
+      style: "dealer",
       name: "Vehículos",
       x: 19,
       z: -74,
@@ -82,6 +84,7 @@ export function buildCommercial(world) {
       floor: ["#e8edf3", "#d9e1ea"],
     }),
     muebles: kit.building("muebles", {
+      style: "furniture",
       name: "Muebles y Decoración",
       x: -18,
       z: -132,
@@ -97,6 +100,7 @@ export function buildCommercial(world) {
       floor: ["#f1e2c8", "#e6d2b0"],
     }),
     tecnologia: kit.building("tecnologia", {
+      style: "tech",
       name: "Tecnología",
       x: 16,
       z: -132,
@@ -112,6 +116,7 @@ export function buildCommercial(world) {
       floor: ["#e6eef2", "#d6e2e8"],
     }),
     gimnasio: kit.building("gimnasio", {
+      style: "gym",
       name: "Gimnasio",
       x: -36,
       z: -85,

@@ -59,6 +59,7 @@ const hex = (c) => `#${c.toString(16).padStart(6, "0")}`;
 const SLOT_NAMES = Object.fromEntries(
   SLOTS.map((s) => [s.id, `${s.icon} ${s.name}`]),
 );
+const STAFF_ICONS = { reponedor: "📦", cajero: "🧾", barista: "☕" };
 const clock = (sec) =>
   `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 
@@ -78,6 +79,7 @@ export class UI {
     click("btn-deco", () => this.openDecor());
     click("auto-chip", () => this.openAutomation());
     click("btn-manage", () => this.openManagement());
+    click("btn-upgrade", () => this.openUpgrade());
     click("btn-menu", () => this.openMenu());
     click("btn-bag", () => this.openInventory());
     click("btn-sound", () => game.toggleMute());
@@ -247,6 +249,29 @@ export class UI {
     if (!$("auto-chip").hidden)
       $("auto-chip").querySelector(".chip-text").textContent =
         `+${money(Math.round(auto.perMinute()))}/min${vault > 0 ? ` · 💰 ${money(Math.round(vault))}` : ""}`;
+    // Botón «Mejorar»: siempre a mano; brilla cuando hay algo pagable.
+    const up = $("btn-upgrade");
+    const here =
+      Object.values(g.businesses).find(
+        (b) => b.owned && b.building.contains(g.player.pos.x, g.player.pos.z),
+      ) ?? g.businesses.tienda;
+    up.hidden = g.tutorial.active() || !here?.owned;
+    if (!up.hidden) {
+      const step = this.nextStep(here);
+      const ready = !!step && g.state.money >= step.cost;
+      up.classList.toggle("ready", ready);
+      up.querySelector("small").textContent = step
+        ? `${step.icon} ${step.title}`
+        : "Todo mejorado";
+      // La primera vez que se puede pagar algo, se avisa una sola vez.
+      if (ready && !g.state.tutorial.mejorar && !this.upgradeTipShown) {
+        this.upgradeTipShown = true;
+        this.toast(
+          `💡 Ya puedes mejorar tu tienda: pulsa ⬆️ MEJORAR${this.game.input.isTouch ? "" : " (U)"}`,
+          "event",
+        );
+      }
+    }
     const enc = ev.hudEncargo();
     const e = $("encargo-chip");
     e.hidden = !enc;
@@ -752,18 +777,19 @@ export class UI {
     if (this.tab === "auto" && b.id !== "tienda") this.tab = "resumen";
     const tabs = [
       ...(b.id === "tienda" ? [["auto", "⚙️ Automática"]] : []),
-      ["resumen", "Resumen"],
-      ["precios", "Precios"],
-      ["mejoras", "Mejoras"],
-      ["personal", "Personal"],
+      ["mejoras", "⬆️ Mejoras"],
+      ["personal", "👥 Personal"],
+      ["precios", "💲 Precios"],
+      ["resumen", "📋 Resumen"],
     ];
     const bizTabs =
       owned.length > 1
         ? `<div class="tabs">${owned.map((o) => `<button data-biz="${o.id}" class="${o.id === b.id ? "on" : ""}">${o.name}</button>`).join("")}</div>`
         : "";
-    const html = `${bizTabs}<div class="tabs small">${tabs.map(([id, t]) => `<button data-tab="${id}" class="${this.tab === id ? "on" : ""}">${t}</button>`).join("")}</div>
+    const html = `${bizTabs}${this.nextStepHtml(b)}<div class="tabs small">${tabs.map(([id, t]) => `<button data-tab="${id}" class="${this.tab === id ? "on" : ""}">${t}</button>`).join("")}</div>
       <div class="tab-body">${this[`tab_${this.tab}`](b)}</div>`;
     this.open("manage", `Gestión · ${b.name}`, html);
+    this.bindNextStep(b, () => this.openManagement());
     this.bind("[data-biz]", (d) => this.openManagement(d.biz));
     this.bind("[data-tab]", (d) => {
       this.tab = d.tab;
@@ -882,7 +908,115 @@ export class UI {
         return `<div class="row ${owned ? "done" : ""}"><div class="grow"><b>${u.name}</b><small>${upgradeDesc(u)}</small></div>${btn}</div>`;
       })
       .join("");
-    return `<div class="list">${rows}</div>`;
+    return `<p class="hint">Cada mejora se compra una vez y se ve en tu local. Las grises necesitan otra antes o una etapa más alta.</p><div class="list">${rows}</div>`;
+  }
+
+  // Lo siguiente que conviene hacer en un negocio: en la tienda, el paso
+  // de la ruta automática; en los demás, el personal que falta y después
+  // la mejora más barata disponible. null si no queda nada a su alcance.
+  nextStep(b) {
+    const g = this.game;
+    const stage = g.stageIndex();
+    const hasRole = (r) => b.employees.some((e) => e.role === r);
+    const canHire = (r) =>
+      (STAFF[r].stage ?? 0) <= stage && b.employees.length < 4;
+    const canBuy = (id) => {
+      const u = UPGRADES[id];
+      return (
+        upgradeApplies(b, id) &&
+        !b.upgrades.has(id) &&
+        (u.stage ?? 0) <= stage &&
+        (u.needs ?? []).every((n) => b.upgrades.has(n)) &&
+        (u.staff ?? []).every(hasRole)
+      );
+    };
+    const hire = (r) => ({
+      kind: "hire",
+      id: r,
+      icon: STAFF_ICONS[r] ?? "👤",
+      title: `Contrata un/a ${STAFF[r].name.toLowerCase()}`,
+      desc: STAFF[r].desc,
+      cost: STAFF[r].salary,
+      label: `CONTRATAR · ${money(STAFF[r].salary)}/día`,
+    });
+    const buy = (id) => ({
+      kind: "upgrade",
+      id,
+      icon: "⬆️",
+      title: UPGRADES[id].name,
+      desc: upgradeDesc(UPGRADES[id]),
+      cost: UPGRADES[id].price,
+      label: `COMPRAR · ${money(UPGRADES[id].price)}`,
+    });
+    if (b.id === "tienda") {
+      const step = AUTOMATION[g.automation.level(b)];
+      if (step?.staff && canHire(step.staff)) return hire(step.staff);
+      if (step?.upgrade && canBuy(step.upgrade)) return buy(step.upgrade);
+      const id = step?.upgrades?.find(canBuy);
+      if (id) return buy(id);
+    } else {
+      const role = b.def.staff.find((r) => !hasRole(r) && canHire(r));
+      if (role) return hire(role);
+    }
+    const ids = Object.keys(UPGRADES)
+      .filter(canBuy)
+      .sort((x, y) => UPGRADES[x].price - UPGRADES[y].price);
+    return ids.length ? buy(ids[0]) : null;
+  }
+
+  // En la tienda, el paso de la ruta automática que aún espera etapa.
+  lockedRouteStep(b) {
+    if (b.id !== "tienda") return "";
+    const g = this.game;
+    const step = AUTOMATION[g.automation.level(b)];
+    const req = step?.staff
+      ? STAFF[step.staff].stage
+      : step?.upgrade
+        ? UPGRADES[step.upgrade].stage
+        : 0;
+    if (!step || (req ?? 0) <= g.stageIndex()) return "";
+    const st = STAGES[req];
+    return `<small class="ns-lock">🔒 Después: ${step.icon} ${step.name}, al llegar a la etapa ${st.name}${st.revenue ? ` (${money(st.revenue)} en ventas)` : ""}.</small>`;
+  }
+
+  // Tarjeta grande con el siguiente paso y un solo botón.
+  nextStepHtml(b) {
+    const step = this.nextStep(b);
+    if (!step)
+      return `<div class="next-step done"><span class="ns-icon">🏆</span><div class="grow"><small>TU NEGOCIO</small><b>¡No hay más mejoras disponibles por ahora!</b><small>Sube de etapa vendiendo más para desbloquear otras.</small>${this.lockedRouteStep(b)}</div></div>`;
+    const missing = Math.max(0, step.cost - this.game.state.money);
+    const why =
+      step.kind === "hire"
+        ? "Los empleados trabajan solos: el primer día se paga al contratar."
+        : "Se instala al momento en tu local.";
+    return `<div class="next-step ${missing ? "" : "ready"}"><span class="ns-icon">${step.icon}</span><div class="grow"><small>👉 SIGUIENTE PASO PARA MEJORAR</small><b>${step.title}</b><small>${step.desc} ${why}</small>${missing ? `<small class="bad">Te faltan ${money(Math.ceil(missing * 100) / 100)}: vende un poco más y vuelve.</small>` : ""}${this.lockedRouteStep(b)}</div><button class="primary" data-next ${missing ? "disabled" : ""}>${step.label}</button></div>`;
+  }
+
+  bindNextStep(b, reopen) {
+    this.bind("[data-next]", async () => {
+      const step = this.nextStep(b);
+      if (!step) return;
+      if (step.kind === "hire") await this.game.hire(b.id, step.id);
+      else await this.game.buyUpgrade(b.id, step.id);
+      reopen();
+    });
+  }
+
+  // Botón «Mejorar»: el negocio en el que estás (o tu tienda), en la
+  // pestaña que explica qué hacer.
+  openUpgrade(bizId) {
+    const g = this.game;
+    const p = g.player.pos;
+    const owned = Object.values(g.businesses).filter((b) => b.owned);
+    if (!owned.length) return;
+    const b =
+      g.businesses[bizId] ??
+      owned.find((o) => o.building.contains(p.x, p.z)) ??
+      g.businesses.tienda ??
+      owned[0];
+    this.tab = b.id === "tienda" ? "auto" : "personal";
+    g.state.tutorial.mejorar = true;
+    this.openManagement(b.id);
   }
 
   // Ruta de la tienda automática: cinco pasos en orden.
@@ -972,6 +1106,7 @@ export class UI {
         <div class="big">🏪➡️🤖💰</div>
         <p><b>Ya sabes cómo funciona tu tienda. Ahora haz que trabaje por ti.</b></p>
         <p class="hint">Contrata un reponedor y un cajero, compra un camión y una cinta… y tu tienda venderá sola mientras paseas, conduces o juegas con amigos.</p>
+        <p class="hint">Cuando quieras mejorar, pulsa el botón amarillo <b>⬆️ MEJORAR</b> (debajo del mapa) o el cartel amarillo junto a la puerta de tu tienda: siempre te dice el siguiente paso.</p>
         <div class="order-actions">
           <button class="ghost" data-act="later">SEGUIR JUGANDO</button>
           <button class="primary" data-act="auto">VER TIENDA AUTOMÁTICA</button>
@@ -996,12 +1131,12 @@ export class UI {
         const st = STAFF[role];
         const count = b.employees.filter((e) => e.role === role).length;
         const locked = (st.stage ?? 0) > stage;
-        return `<div class="row"><div class="grow"><b>${st.name} × ${count}</b><small>${st.desc} Salario: ${money(st.salary)}/día.</small></div>
+        return `<div class="row"><span class="chip-icon">${STAFF_ICONS[role] ?? "👤"}</span><div class="grow"><b>${st.name} × ${count}</b><small>${st.desc} Salario: ${money(st.salary)}/día.</small></div>
         ${locked ? `<span class="tag">Etapa ${STAGES[st.stage].name}</span>` : `<button data-hire="${role}">Contratar</button>`}
         ${count ? `<button class="ghost" data-fire="${role}">Despedir</button>` : ""}</div>`;
       })
       .join("");
-    return `<p class="hint">Los empleados trabajan solos, pero tú sigues comprando la mercadería y tomando decisiones.</p><div class="list">${rows}</div>`;
+    return `<p class="hint">Pulsa <b>Contratar</b> y el empleado empieza al momento en tu local. Cobran su salario cada día; tú sigues decidiendo precios y mejoras.</p><div class="list">${rows}</div>`;
   }
 
   openDealer() {
