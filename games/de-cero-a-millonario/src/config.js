@@ -257,9 +257,10 @@ export const UPGRADES = {
   refrigerador: {
     name: "Refrigerador",
     price: 200,
-    desc: "Permite vender Leche y Yogur. +$5/día de luz.",
+    desc: "Permite vender Leche y Yogur.",
     types: ["grocery"],
     stage: 1,
+    upkeep: 5,
   },
   caja2: {
     name: "Segunda caja registradora",
@@ -301,14 +302,50 @@ export const UPGRADES = {
   congelador: {
     name: "Congelador",
     price: 220,
-    desc: "Permite vender Helado. +$4/día de luz.",
+    desc: "Permite vender Helado.",
     types: ["grocery"],
     stage: 1,
+    upkeep: 4,
   },
   suelo: {
     name: "Suelo nuevo",
     price: 200,
     desc: "Baldosas brillantes: +10 reputación.",
+  },
+  // Tienda automática (ver AUTOMATION).
+  camion: {
+    name: "Camión de reparto propio",
+    price: 350,
+    desc: "Trae mercadería del Mayorista solo cuando el almacén baja del nivel que elijas. Sin coste de envío.",
+    types: ["grocery"],
+    stage: 1,
+    staff: ["reponedor", "cajero"],
+    upkeep: 4,
+  },
+  cinta: {
+    name: "Cinta transportadora",
+    price: 550,
+    desc: "Lleva cajas del almacén a las estanterías ella sola.",
+    types: ["grocery"],
+    stage: 1,
+    needs: ["camion"],
+    upkeep: 2,
+  },
+  fachada: {
+    name: "Fachada de lujo",
+    price: 700,
+    desc: "Columnas, marco dorado y luces: +10 reputación y +10% de clientes.",
+    stage: 1,
+    needs: ["cinta"],
+  },
+  planta2: {
+    name: "Segunda planta",
+    price: 1200,
+    desc: "Almacén arriba (+120 de capacidad) con montacargas y +2 clientes a la vez.",
+    types: ["grocery"],
+    stage: 2,
+    needs: ["cinta"],
+    upkeep: 6,
   },
   vitrina2: {
     name: "Vitrina extra",
@@ -317,6 +354,91 @@ export const UPGRADES = {
     types: ["cafe"],
   },
 };
+
+// Gasto diario de luz y mantenimiento de las mejoras instaladas.
+// Texto de una mejora con su gasto diario (sale de `upkeep`).
+export function upgradeDesc(u) {
+  return u.upkeep ? `${u.desc} Mantenimiento: $${u.upkeep}/día.` : u.desc;
+}
+
+export function upgradeUpkeep(upgrades) {
+  let total = 0;
+  for (const id of upgrades) total += UPGRADES[id]?.upkeep ?? 0;
+  return total;
+}
+
+// Ruta de automatización de la tienda, en orden. Cada paso exige el
+// anterior; el último reúne las ampliaciones físicas.
+export const AUTOMATION = [
+  {
+    id: "reponedor",
+    staff: "reponedor",
+    icon: "📦",
+    name: "Reponedor",
+    desc: "Rellena las estanterías desde el almacén.",
+  },
+  {
+    id: "cajero",
+    staff: "cajero",
+    icon: "🧾",
+    name: "Cajero",
+    desc: "Cobra solo a los clientes.",
+  },
+  {
+    id: "camion",
+    upgrade: "camion",
+    icon: "🚚",
+    name: "Camión propio",
+    desc: "Compra en el Mayorista por ti cuando el almacén baja.",
+  },
+  {
+    id: "cinta",
+    upgrade: "cinta",
+    icon: "⚙️",
+    name: "Cinta transportadora",
+    desc: "Las cajas viajan solas del almacén a las estanterías.",
+  },
+  {
+    id: "ampliar",
+    upgrades: [
+      "estanteria1",
+      "estanteria2",
+      "caja2",
+      "letrero",
+      "fachada",
+      "planta2",
+    ],
+    icon: "🏗️",
+    name: "Ampliaciones",
+    desc: "Más estanterías, segunda caja, cartel, fachada y segunda planta.",
+  },
+];
+
+// Pasos completados en orden: { roles: puestos contratados, upgrades }.
+export function automationLevel({ roles, upgrades }) {
+  const has = (step) =>
+    step.staff
+      ? roles.includes(step.staff)
+      : step.upgrade
+        ? upgrades.includes(step.upgrade)
+        : step.upgrades.every((u) => upgrades.includes(u));
+  let level = 0;
+  while (level < AUTOMATION.length && has(AUTOMATION[level])) level++;
+  return level;
+}
+
+// Ganancias mientras no juegas (las guarda la caja de la tienda hasta que
+// vuelves): $ por minuto y minutos como máximo, según el nivel. Sin cajero
+// nadie vende; sin camión el género se acaba pronto.
+export const IDLE = {
+  rate: [0, 0, 0.5, 1.0, 1.6, 2.5],
+  capMinutes: [0, 0, 30, 90, 180, 360],
+};
+
+export function idleEarnings(level, minutes) {
+  const m = Math.max(0, Math.min(minutes, IDLE.capMinutes[level] ?? 0));
+  return Math.round((IDLE.rate[level] ?? 0) * m * 100) / 100;
+}
 
 export const SHOP_ITEMS = {
   carretilla: {

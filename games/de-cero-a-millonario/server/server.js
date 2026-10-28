@@ -219,6 +219,8 @@ function joinCity(s, code) {
   }
   profile.cities[code] ??= eco.newCityProfile();
   eco.upgradeProfile(profile.cities[code]);
+  // Lo que ganó la tienda automática mientras no estaba.
+  eco.accrueIdle(profile.cities[code]);
   s.city = code;
   s.state = null;
   if (!cityOnline.has(code)) cityOnline.set(code, new Set());
@@ -248,6 +250,8 @@ function leaveCity(s) {
   if (!s.city) return;
   const code = s.city;
   cityOnline.get(code)?.delete(s);
+  const cp = store.data.profiles[s.pid]?.cities[code];
+  if (cp) cp.lastSeen = Date.now();
   broadcast(code, { t: "playerLeft", id: s.pid });
   s.city = null;
   s.state = null;
@@ -279,6 +283,8 @@ const ECONOMY = {
   discover: (s, cp, city, m) => eco.discover(cp, m),
   encargo: (s, cp, city, m) => eco.encargo(cp, m),
   p2p: p2pBuy,
+  idle: (s, cp) => eco.accrueIdle(cp),
+  collect: (s, cp) => eco.collectVault(cp),
 };
 
 function p2pBuy(s, cp, city, m) {
@@ -386,6 +392,7 @@ function handleState(s, m) {
   const now = Date.now();
   const prev = s.state;
   const cp = cityProfile(s);
+  cp.lastSeen = now;
   const ride = rideOf(s, cp, m);
   const correct = () =>
     prev && send(s.ws, { t: "correct", x: prev.x, z: prev.z });

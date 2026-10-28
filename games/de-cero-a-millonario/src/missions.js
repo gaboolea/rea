@@ -6,6 +6,9 @@ import { GOAL_NET_WORTH, STAGES } from "./config.js";
 
 const owns = (g, id) => g.businesses[id]?.owned;
 const upg = (g, biz, id) => g.businesses[biz]?.upgrades.has(id);
+// Lugares descubiertos aparte de la propia tienda.
+const placesFound = (g) =>
+  g.state.discovered.filter((p) => p !== "tienda").length;
 const delta = (g, base, key) => (g.state.stats[key] ?? 0) - (base[key] ?? 0);
 const count = (n, max) => [Math.min(n, max), max];
 
@@ -80,8 +83,8 @@ export const MISSIONS = [
   {
     text: "Descubre 3 lugares de la ciudad",
     hint: "Cada lugar nuevo da $10",
-    progress: (g) => count(g.state.discovered.length - 1, 3),
-    done: (g) => g.state.discovered.length - 1 >= 3,
+    progress: (g) => count(placesFound(g), 3),
+    done: (g) => placesFound(g) >= 3,
     reward: 15,
   },
   {
@@ -192,35 +195,50 @@ export const MISSIONS = [
   },
 ];
 
+// Misiones que cubre el tutorial de inicio (entrar, cobrar, reponer,
+// ventas, Mayorista y llevar la mercadería): al acabarlo o saltarlo se dan
+// por cumplidas y pagan su recompensa.
+const TUTORIAL_MISSIONS = 6;
+
 export function checkMissions(game) {
   const s = game.state;
   s.missionBase ??= { ...s.stats };
+  // Mientras el tutorial guía al jugador, las misiones esperan.
+  if (game.tutorial?.active()) return;
   while (
     s.mission < MISSIONS.length &&
     MISSIONS[s.mission].done(game, s.missionBase)
-  ) {
-    const m = MISSIONS[s.mission];
-    const index = s.mission;
-    s.mission++;
-    s.missionBase = { ...s.stats };
-    if (game.online) {
-      // El servidor paga la recompensa (una sola vez y en orden).
-      game.net.request("mission", { index }).then((r) => {
-        game.applyServerMoney(r);
-        if (typeof r.mission === "number")
-          s.mission = Math.max(s.mission, r.mission);
-      });
-      if (m.reward) game.ui.floatMoney(m.reward);
-    } else if (m.reward) {
-      s.money += m.reward;
-      game.ui.floatMoney(m.reward);
-    }
-    game.ui.missionComplete(m, MISSIONS[s.mission]);
-    game.audio.sfx("mission");
-    game.player.char.playAction("cheer", 0.9);
-    game.unlockRewards();
-    game.save();
+  )
+    completeMission(game);
+}
+
+export function finishTutorialMissions(game) {
+  while (game.state.mission < TUTORIAL_MISSIONS) completeMission(game);
+}
+
+function completeMission(game) {
+  const s = game.state;
+  const m = MISSIONS[s.mission];
+  const index = s.mission;
+  s.mission++;
+  s.missionBase = { ...s.stats };
+  if (game.online) {
+    // El servidor paga la recompensa (una sola vez y en orden).
+    game.net.request("mission", { index }).then((r) => {
+      game.applyServerMoney(r);
+      if (typeof r.mission === "number")
+        s.mission = Math.max(s.mission, r.mission);
+    });
+    if (m.reward) game.ui.floatMoney(m.reward);
+  } else if (m.reward) {
+    s.money += m.reward;
+    game.ui.floatMoney(m.reward);
   }
+  game.ui.missionComplete(m, MISSIONS[s.mission]);
+  game.audio.sfx("mission");
+  game.player.char.playAction("cheer", 0.9);
+  game.unlockRewards();
+  game.save();
 }
 
 export function currentMission(game) {

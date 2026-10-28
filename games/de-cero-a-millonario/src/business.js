@@ -14,6 +14,12 @@ import { Customer, Employee } from "./npc.js";
 import { signMesh } from "./gfx.js";
 import * as decor from "./decor.js";
 import { cardboardBox } from "./props.js";
+import {
+  Conveyor,
+  buildFacade,
+  buildUpperStore,
+  updateLift,
+} from "./shopfit.js";
 import * as THREE from "three";
 
 const PI2 = Math.PI / 2;
@@ -141,6 +147,17 @@ const STARTER = {
     "plantas",
     "letrero",
     "suelo",
+    "camion",
+    "cinta",
+    "fachada",
+    "planta2",
+  ],
+  // Cinta transportadora colgada del techo: del almacén al pasillo de las
+  // estanterías del fondo.
+  conveyor: [
+    [5.6, 1.2],
+    [5.6, -3.7],
+    [-5.8, -3.7],
   ],
   offsetZ: 3,
   storageCap: 120,
@@ -421,6 +438,17 @@ export class Business {
       this.building.place(neon, 0, this.building.d / 2 + 0.25, 0, 2.95 + 0.85);
       this.building.group.add(neon);
     }
+    this.refreshAutomation();
+  }
+
+  // Instalaciones de la tienda automática (una sola vez cada una).
+  refreshAutomation() {
+    if (this.upgrades.has("cinta") && !this.conveyor && this.layout.conveyor)
+      this.conveyor = new Conveyor(this, this.layout.conveyor);
+    if (this.upgrades.has("fachada") && !this.facade)
+      this.facade = buildFacade(this);
+    if (this.upgrades.has("planta2") && !this.upperStore)
+      this.upperStore = buildUpperStore(this);
   }
 
   addDisplay(def) {
@@ -730,7 +758,11 @@ export class Business {
   // ---------- Inventario ----------
 
   storageCap() {
-    return this.layout.storageCap + (this.upgrades.has("ampliacion") ? 60 : 0);
+    return (
+      this.layout.storageCap +
+      (this.upgrades.has("ampliacion") ? 60 : 0) +
+      (this.upgrades.has("planta2") ? 120 : 0)
+    );
   }
 
   storageUnits() {
@@ -903,6 +935,7 @@ export class Business {
       3 +
       this.registers.length * 2 +
       (this.upgrades.has("ampliacion") ? 2 : 0) +
+      (this.upgrades.has("planta2") ? 2 : 0) +
       (this.id === "supermercado" ? 6 : 0)
     );
   }
@@ -915,7 +948,9 @@ export class Business {
       this.reputation / 100 +
       (this.upgrades.has("plantas") ? 0.05 : 0) +
       (this.upgrades.has("suelo") ? 0.1 : 0);
-    const sign = this.upgrades.has("letrero") ? 1.15 : 1;
+    const sign =
+      (this.upgrades.has("letrero") ? 1.15 : 1) *
+      (this.upgrades.has("fachada") ? 1.1 : 1);
     const rush = this.game.events?.rushFactor(this) ?? 1;
     return (
       this.layout.spawnEvery /
@@ -1165,6 +1200,8 @@ export class Business {
       }
     }
     for (const e of this.employees) e.update(dt);
+    this.conveyor?.update(dt);
+    if (this.upperStore) updateLift(this.upperStore, dt);
   }
 
   // Los clientes llegan andando por la acera desde una calle cercana.

@@ -204,3 +204,43 @@ test("el distrito financiero solo se abre con las ventas pedidas", () => {
   assert.equal(cp.unlocked.financiero, true);
   assert.equal(eco.unlock(cp, { zone: "luna" }).ok, false);
 });
+
+test("tienda automática: personal antes del camión, mantenimiento y reparto", () => {
+  const cp = eco.newCityProfile();
+  cp.money = 5000;
+  cp.stats.revenue = 500;
+  const up = (id) => eco.buyUpgrade(cp, { biz: "tienda", id }).ok;
+  assert.equal(up("camion"), false);
+  cp.businesses.tienda.employees.push("reponedor", "cajero");
+  assert.equal(up("cinta"), false);
+  assert.equal(up("camion"), true);
+  assert.equal(up("cinta"), true);
+  assert.equal(eco.dailyExpenses(cp).total, 15 + 18 + 22 + 4 + 2);
+  // Con camión propio el reparto a la tienda no cobra la tarifa.
+  const before = cp.money;
+  const r = eco.buySupplies(cp, city(), {
+    order: { agua: 1 },
+    deliver: "tienda",
+  });
+  assert.equal(r.cost, 8);
+  assert.equal(cp.money, before - 8);
+});
+
+test("la caja fuerte guarda lo ganado fuera con límite y se cobra una vez", () => {
+  const cp = eco.newCityProfile();
+  const t0 = 1_000_000;
+  // Sin automatizar no gana nada mientras no estás.
+  eco.accrueIdle(cp, t0);
+  assert.equal(eco.accrueIdle(cp, t0 + 60 * 60000).vault, 0);
+  cp.businesses.tienda.employees.push("reponedor", "cajero");
+  // Ausencias cortas no cuentan.
+  assert.equal(eco.accrueIdle(cp, t0 + 61 * 60000).vault, 0);
+  // 20 minutos a $0.5/min.
+  assert.equal(eco.accrueIdle(cp, t0 + 81 * 60000).vault, 10);
+  // Tope de 30 minutos del nivel 2, aunque falte un día.
+  assert.equal(eco.accrueIdle(cp, t0 + 2000 * 60000).vault, 15);
+  const money = cp.money;
+  assert.equal(eco.collectVault(cp).total, 15);
+  assert.equal(cp.money, money + 15);
+  assert.equal(eco.collectVault(cp).ok, false);
+});

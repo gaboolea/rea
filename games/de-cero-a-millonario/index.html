@@ -117,6 +117,9 @@
           <span class="chip-icon">📦</span><span class="chip-text"></span
           ><i></i>
         </div>
+        <button id="auto-chip" class="chip auto" hidden>
+          <span class="chip-icon">🏪</span><span class="chip-text"></span>
+        </button>
         <div id="buff-chip" class="chip" hidden>
           <span class="chip-icon">💪</span><span class="chip-text"></span
           ><i></i>
@@ -167,10 +170,13 @@
     </div>
     <div id="tutorial-card" hidden>
       <header>
-        <span>📦 Tutorial del Mayorista <b class="tut-count"></b></span>
+        <span>⭐ Primeros pasos <b class="tut-count"></b></span>
         <button id="tut-skip">Saltar</button>
       </header>
-      <ol></ol>
+      <div class="tut-row">
+        <span class="tut-icon"></span><b class="tut-text"></b>
+      </div>
+      <div class="tut-dots"></div>
     </div>
     <div id="social" hidden>
       <button id="btn-wave" title="Saludar (1)">👋</button>

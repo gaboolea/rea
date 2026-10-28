@@ -339,6 +339,7 @@ export class Building {
     const floors = this.opts.floors ?? 2;
     if (floors > 1) this.buildUpperFloor();
     const top = floors > 1 ? H + UPPER_H + 0.35 : H;
+    this.roofTop = top + 0.35;
     const slab = mesh(
       roundedBox(w + 0.5, 0.35, d + 0.5, 0.1),
       mat(roofColor).clone(),

@@ -22,6 +22,7 @@ import { Shopping } from "./shopping.js";
 import { FurnitureShop } from "./furnishop.js";
 import { District } from "./district.js";
 import { Gym, Goals } from "./goals.js";
+import { Automation } from "./automation.js";
 import { Rides, isSmall } from "./rides.js";
 import { Home } from "./home.js";
 import { Decorator } from "./decorate.js";
@@ -41,6 +42,7 @@ import {
   CART_CAPACITY,
   CATEGORIES,
   VEHICLES,
+  upgradeUpkeep,
 } from "./config.js";
 
 const SAVE_KEY = "de-cero-a-millonario-v1";
@@ -107,6 +109,9 @@ function freshState() {
     home: { owned: false, layout: [], open: false },
     furniture: {},
     goals: [],
+    // Tienda automática: nivel de almacén al que sale el camión y caja
+    // fuerte con lo ganado mientras no juegas.
+    auto: { threshold: 0.4, vault: 0 },
     pickup: [],
     deliveries: [],
     warehouse: {},
@@ -167,6 +172,7 @@ class Game {
     this.furnishop = new FurnitureShop(this);
     this.district = new District(this);
     this.gym = new Gym(this);
+    this.automation = new Automation(this);
     this.goals = new Goals(this);
     this.rides = new Rides(this);
     this.home = new Home(this);
@@ -228,6 +234,7 @@ class Game {
       ...this.furnishop.interactables(),
       ...this.district.interactables(),
       ...this.gym.interactables(),
+      ...this.automation.interactables(),
       ...this.home.interactables(),
       ...this.home.furnitureInteractables(),
       ...this.storeDoorHints(),
@@ -301,6 +308,12 @@ class Game {
       unlocked: { ...cp.unlocked },
       goals: [...cp.goals],
     });
+    // La caja fuerte la llena el servidor (ganancias mientras no juegas).
+    this.state.auto = {
+      ...fresh.auto,
+      ...(blob.state?.auto ?? {}),
+      vault: cp.vault ?? 0,
+    };
     this.state.stats = {
       ...fresh.stats,
       ...(blob.state?.stats ?? {}),
@@ -473,8 +486,9 @@ class Game {
     );
     this.district.apply();
     this.goals.check();
+    this.automation.setup();
     this.rebuildInteractables();
-    this.tutorial.render();
+    this.tutorial.begin();
   }
 
   missionTarget() {
@@ -722,6 +736,7 @@ class Game {
     const s = this.state;
     s.stats.grossProfit += profit;
     s.stats.sales++;
+    if (business) this.automation.recordSale(profit, business);
     if (this.online) {
       const items = basket.map((i) => ({
         p: i.product,
@@ -787,16 +802,11 @@ class Game {
     return this.stageIndex() >= 3 ? 0.85 : 1;
   }
 
-  // Paga en la CAJA las cajas sin pagar del carro (order: producto → cajas).
-  // deliverTo: negocio al que las lleva el camión; si no, salen contigo.
-  async buySupplies(order, deliverTo) {
-    const stage = this.stageIndex();
+  // Precio del Mayorista de un pedido (producto → cajas), sin envío.
+  supplyCost(order) {
     let cost = 0;
-    let boxes = 0;
-    let units = 0;
     for (const [p, n] of Object.entries(order)) {
       if (!n) continue;
-      if ((PRODUCTS[p].stage ?? 0) > stage) return false;
       const per = PRODUCTS[p].boxUnits ?? BOX_UNITS;
       cost +=
         PRODUCTS[p].cost *
@@ -804,8 +814,22 @@ class Game {
         n *
         this.supplierDiscount() *
         this.events.discount(p);
+    }
+    return Math.round(cost * 100) / 100;
+  }
+
+  // Paga en la CAJA las cajas sin pagar del carro (order: producto → cajas).
+  // deliverTo: negocio al que las lleva el camión; si no, salen contigo.
+  async buySupplies(order, deliverTo) {
+    const stage = this.stageIndex();
+    let cost = this.supplyCost(order);
+    let boxes = 0;
+    let units = 0;
+    for (const [p, n] of Object.entries(order)) {
+      if (!n) continue;
+      if ((PRODUCTS[p].stage ?? 0) > stage) return false;
       boxes += n;
-      units += per * n;
+      units += (PRODUCTS[p].boxUnits ?? BOX_UNITS) * n;
     }
     if (!boxes) return false;
     // Solo se paga lo que de verdad llevas sin pagar.
@@ -822,7 +846,9 @@ class Game {
       }
     }
     const target = deliverTo ? this.businesses[deliverTo] : null;
-    const van = !!this.state.items.furgoneta;
+    // Con furgoneta o camión propio el envío es gratis.
+    const van =
+      !!this.state.items.furgoneta || !!target?.upgrades.has("camion");
     if (target && !van) cost += 4;
     if (target) {
       const pending = this.state.deliveries
@@ -907,13 +933,18 @@ class Game {
     const u = UPGRADES[id];
     if (b.upgrades.has(id) || (u.stage ?? 0) > this.stageIndex()) return;
     if ((u.needs ?? []).some((n) => !b.upgrades.has(n))) return;
+    if ((u.staff ?? []).some((r) => !b.employees.some((e) => e.role === r))) {
+      this.ui.toast("Antes contrata a un reponedor y a un cajero", "bad");
+      return;
+    }
     if (this.online) {
       if (!(await this.serverAction("upgrade", { biz, id })).ok) return;
     } else if (!this.spend(u.price)) return;
     b.upgrades.add(id);
     b.refreshFixtures();
     if (id === "plantas") b.reputation = Math.min(100, b.reputation + 5);
-    if (id === "suelo") b.reputation = Math.min(100, b.reputation + 10);
+    if (id === "suelo" || id === "fachada")
+      b.reputation = Math.min(100, b.reputation + 10);
     this.ui.toast(`¡${u.name} instalada en ${b.name}!`, "good");
     this.ui.floatMoney(-u.price);
     this.audio.sfx("sparkle");
@@ -1598,6 +1629,7 @@ class Game {
     this.tutorial.update();
     this.shopping.update();
     this.rides.update(dt);
+    this.automation.update(dt);
     this.district.update(dt);
     this.carryHint();
     this.guide.update(dt, this.elapsed);
@@ -1671,10 +1703,7 @@ class Game {
     const lines = [];
     for (const b of Object.values(this.businesses)) {
       if (!b.owned) continue;
-      const fridge =
-        (b.upgrades.has("refrigerador") ? 5 : 0) +
-        (b.upgrades.has("congelador") ? 4 : 0);
-      const cost = b.def.rent + b.salaries() + fridge;
+      const cost = b.def.rent + b.salaries() + upgradeUpkeep(b.upgrades);
       expenses += cost;
       lines.push({
         name: b.name,
@@ -1811,6 +1840,8 @@ class Game {
       });
       return true;
     }
+    // Para calcular lo que gana la tienda mientras la partida está cerrada.
+    this.state.auto.savedAt = Date.now();
     const data = {
       version: SAVE_VERSION,
       state: this.state,

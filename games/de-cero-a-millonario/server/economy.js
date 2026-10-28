@@ -21,6 +21,10 @@ import {
   GYM,
   GOALS,
   goalProgress,
+  upgradeUpkeep,
+  automationLevel,
+  idleEarnings,
+  IDLE,
 } from "../src/config.js";
 import { STARTER_LAYOUT, findSpot, layoutProblem } from "../src/homelayout.js";
 import { ITEMS, SKINS } from "../src/look.js";
@@ -91,6 +95,8 @@ function expansionFields() {
     furniture: {},
     unlocked: {},
     goals: [],
+    vault: 0,
+    lastSeen: null,
   };
 }
 
@@ -151,7 +157,12 @@ export function buySupplies(cp, city, { order, deliver }) {
   if (!boxes) return fail("Pedido vacío");
   if (deliver != null) {
     if (!owns(cp, deliver)) return fail("Ese negocio no es tuyo");
-    if (!cp.items.furgoneta) cost += 4;
+    // El reparto es gratis con furgoneta o con el camión propio.
+    if (
+      !cp.items.furgoneta &&
+      !cp.businesses[deliver].upgrades.includes("camion")
+    )
+      cost += 4;
   }
   cost = round2(cost);
   if (cp.money < cost)
@@ -230,6 +241,8 @@ export function buyUpgrade(cp, { biz, id }) {
     return fail(`Requiere la etapa ${STAGES[u.stage].name}`);
   if ((u.needs ?? []).some((n) => !b.upgrades.includes(n)))
     return fail("Antes necesitas otra mejora");
+  if ((u.staff ?? []).some((r) => !b.employees.includes(r)))
+    return fail("Antes necesitas contratar al personal");
   if (cp.money < u.price)
     return fail(`Te faltan $${round2(u.price - cp.money).toFixed(2)}`);
   cp.money = round2(cp.money - u.price);
@@ -498,17 +511,14 @@ export function p2pBuy(buyer, seller, shop, { display, units }) {
   return { ok: true, product, total };
 }
 
-// Gastos diarios: alquiler, salarios, luz de frío y furgoneta.
+// Gastos diarios: alquiler, salarios, mantenimiento de mejoras y furgoneta.
 export function dailyExpenses(cp) {
   let total = 0;
   const lines = [];
   for (const [id, b] of Object.entries(cp.businesses)) {
     const def = BUSINESSES[id];
     const salaries = b.employees.reduce((a, r) => a + STAFF[r].salary, 0);
-    const power =
-      (b.upgrades.includes("refrigerador") ? 5 : 0) +
-      (b.upgrades.includes("congelador") ? 4 : 0);
-    const cost = def.rent + salaries + power;
+    const cost = def.rent + salaries + upgradeUpkeep(b.upgrades);
     total += cost;
     lines.push({ name: def.name, cost });
   }
@@ -536,4 +546,34 @@ export function netWorth(cp) {
   for (const [id, v] of Object.entries(cp.items))
     if (v && SHOP_ITEMS[id]) worth += SHOP_ITEMS[id].price * 0.5;
   return Math.round(worth);
+}
+
+// Tienda automática: lo que gana la tienda mientras el jugador no está
+// (desde la última vez que el servidor lo vio jugando). Se guarda en la
+// caja fuerte, con un límite que sube con el nivel de automatización.
+const MIN_AWAY_MS = 2 * 60000;
+
+export function automation(cp) {
+  const b = cp.businesses.tienda;
+  if (!b) return 0;
+  return automationLevel({ roles: b.employees, upgrades: b.upgrades });
+}
+
+export function accrueIdle(cp, now = Date.now()) {
+  const since = cp.lastSeen;
+  cp.lastSeen = now;
+  if (!since || now - since < MIN_AWAY_MS) return { ok: true, vault: cp.vault };
+  const level = automation(cp);
+  const cap = idleEarnings(level, IDLE.capMinutes[level]);
+  const gained = idleEarnings(level, (now - since) / 60000);
+  cp.vault = round2(Math.min(cap, cp.vault + gained));
+  return { ok: true, vault: cp.vault, gained };
+}
+
+export function collectVault(cp) {
+  const v = cp.vault;
+  if (!(v > 0)) return fail("La caja fuerte está vacía");
+  cp.vault = 0;
+  cp.money = round2(cp.money + v);
+  return { ok: true, total: v, vault: 0 };
 }

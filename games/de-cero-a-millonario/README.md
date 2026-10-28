@@ -76,6 +76,11 @@ Qué hace el servidor:
   dentro de una habitación, sin tapar puertas ni dejar habitaciones sin
   paso), el desbloqueo del distrito financiero, los objetivos (se pagan una
   vez y solo si se cumplen con los datos del servidor) y el gimnasio.
+- **Tienda automática en el servidor**: el orden de las mejoras (personal
+  antes del camión), su mantenimiento diario, el reparto gratis del camión
+  propio y la caja fuerte. Las ganancias de fuera las calcula el servidor
+  desde la última vez que te vio jugar (nivel de automatización de sus
+  datos, con tope) y solo se cobran una vez; el cliente no puede fijarlas.
 - **Casas y visitas**: cada jugador ve los muebles de las casas de los
   demás en su parcela. Solo se entra en una casa ajena si su dueño deja
   visitas (Decorar o Inventario → Casa); el servidor devuelve a la puerta a
@@ -145,10 +150,14 @@ detrás: **Continuar** (si hay partida), **Jugar**, **Personalizar
 personaje**, **Opciones** y **Créditos**.
 
 La partida empieza en la puerta de tu tienda, con algo de género ya en las
-estanterías: el primer cliente llega en segundos. El tutorial son misiones
-cortas (entrar, cobrar, reponer desde el almacén, 5 ventas, comprar en el
-Mayorista, llevar la mercadería…) y después se alternan metas rápidas con
-objetivos de progreso.
+estanterías. Un **tutorial de primeros pasos** enseña el ciclo completo en
+ocho pasos muy cortos, con icono, una frase y flecha en el mundo: conocer la
+tienda → ir al Mayorista → coger cajas con el carro → pagar → volver →
+reponer → los clientes eligen → cobrar. Cada paso se celebra (sonido, «+$»;
+confeti en la primera venta) y al terminar se presenta la tienda
+automática. Se puede saltar, no se repite en partidas guardadas (las de
+antes del tutorial lo dan por visto) y se puede repetir desde Ayuda.
+Después se alternan metas rápidas con objetivos de progreso.
 
 1. Compra en el **Mayorista**, que es de autoservicio: toma un **carro**
    a la izquierda de la entrada (lleva hasta 10 cajas; sin carro solo
@@ -157,8 +166,7 @@ objetivos de progreso.
    **+**; luego paga en la **CAJA**. Las antenas de la puerta no te dejan
    salir con cajas sin pagar. Al pagar puedes llevártelo tú o mandarlo con
    el **camión de reparto** (o tu furgoneta) a uno de tus negocios. En tu
-   almacén descargas el carro entero de una vez. La primera visita activa
-   un tutorial de 6 pasos (se puede repetir desde Ayuda).
+   almacén descargas el carro entero de una vez.
 2. Repón estanterías, cobra en la caja, ajusta precios y contrata personal.
 3. Mientras tanto surgen **eventos**: ofertas flash del Mayorista con reto
    de ventas, hora punta, clientes VIP que pagan el doble y monedas perdidas
@@ -167,8 +175,36 @@ objetivos de progreso.
    quiosco) piden **encargos**: llévales la mercadería antes de que acabe el
    tiempo. Completarlos desbloquea prendas especiales.
 5. Explorar da dinero: cada lugar nuevo descubierto suma $10.
-6. Cada día dura 5 minutos; al terminar se pagan alquiler, salarios, luz y
-   vehículos y aparece un resumen breve sin detener el juego.
+6. Cada día dura 5 minutos; al terminar se pagan alquiler, salarios,
+   mantenimiento de mejoras y vehículos y aparece un resumen breve sin
+   detener el juego.
+
+### Tienda automática
+
+Desde **Gestión → ⚙️ Automática** (o el indicador `🏪 +$/min` del HUD) la
+tienda se automatiza en orden; cada paso exige el anterior y se ve en el
+mundo:
+
+| Paso                    | Precio            | Qué hace                                                                                                      |
+| ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| 1. Reponedor            | $18/día (etapa 1) | Rellena las estanterías desde el almacén                                                                      |
+| 2. Cajero               | $22/día (etapa 1) | Cobra solo                                                                                                    |
+| 3. Camión propio        | $350 + $4/día     | Compra en el Mayorista cuando el almacén baja del 20/40/60 % elegido                                          |
+| 4. Cinta transportadora | $550 + $2/día     | Cajas que viajan por el techo del almacén a las estanterías                                                   |
+| 5. Ampliaciones         | $60–$1.200        | Más estanterías, segunda caja, cartel luminoso, fachada de lujo y segunda planta (almacén +120, más clientes) |
+
+Con reponedor y cajero la tienda vende sola mientras conduces, decoras o
+juegas con amigos: el HUD muestra la ganancia por minuto y, si estás lejos,
+monedas volando hacia tu dinero. Mientras no juegas, la **caja fuerte**
+junto al almacén guarda ganancias ($0,50–$2,50/min según el nivel) hasta un
+tope de 30 min–6 h, y se cobran al volver a la tienda. Siempre se puede
+seguir haciendo todo a mano.
+
+Equilibrio medido con un jugador simulado que solo atiende la tienda (sin
+misiones, objetivos ni otros negocios): primera automatización a los ~9
+minutos de juego, cinta a los ~42 y fachada a los ~150; con la segunda
+planta la tienda queda completa en unas 4 horas (antes si además se hacen
+misiones, objetivos y encargos).
 
 Etapas: Principiante → Comerciante ($300 en ventas) → Empresario ($1.500) →
 Magnate ($8.000).
@@ -321,7 +357,9 @@ andando o en vehículo, sin teletransportes:
 | `src/decor.js`       | Decoración: carritos, relojes, estanterías industriales...     |
 | `src/guide.js`       | Indicadores de tienda, flecha, ruta y minimapa                 |
 | `src/warehouse.js`   | Stock del Mayorista, pedidos y trabajadores                    |
-| `src/tutorial.js`    | Tutorial del Mayorista                                         |
+| `src/tutorial.js`    | Tutorial de primeros pasos                                     |
+| `src/automation.js`  | Tienda automática: camión, $/min, caja fuerte                  |
+| `src/shopfit.js`     | Cinta transportadora, fachada y segunda planta                 |
 | `src/icons.js`       | Iconos de productos dibujados en canvas                        |
 | `src/net.js`         | Conexión WebSocket (peticiones y mensajes)                     |
 | `src/online.js`      | Modo online: avatares remotos, tiendas ajenas, chat, ranking   |

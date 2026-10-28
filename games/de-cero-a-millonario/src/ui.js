@@ -15,9 +15,12 @@ import {
   FURNITURE_SECTIONS,
   GYM,
   GOALS,
-  goalProgress,
   TOW_PRICE,
   HOME,
+  AUTOMATION,
+  IDLE,
+  upgradeUpkeep,
+  upgradeDesc,
 } from "./config.js";
 import { isSmall } from "./rides.js";
 import { productIcon } from "./icons.js";
@@ -26,7 +29,6 @@ import { currentMission, missionProgress } from "./missions.js";
 import { WORLD } from "./config.js";
 import { drawCity, drawIcon } from "./mapdraw.js";
 import { findItem, COLORS, SLOTS, CLOTH_COLORS } from "./look.js";
-import { WHOLESALE_STEPS } from "./tutorial.js";
 import {
   Net,
   defaultServerUrl,
@@ -74,6 +76,7 @@ export class UI {
       });
     click("btn-map", () => this.openMap());
     click("btn-deco", () => this.openDecor());
+    click("auto-chip", () => this.openAutomation());
     click("btn-manage", () => this.openManagement());
     click("btn-menu", () => this.openMenu());
     click("btn-bag", () => this.openInventory());
@@ -236,6 +239,14 @@ export class UI {
       $("buff-chip").querySelector("i").style.width =
         `${(left / GYM.seconds) * 100}%`;
     }
+    // Tienda automática: ganancia por minuto y caja fuerte.
+    const auto = g.automation;
+    const lvl = auto.level();
+    const vault = g.state.auto.vault ?? 0;
+    $("auto-chip").hidden = (lvl === 0 && vault <= 0) || g.tutorial.active();
+    if (!$("auto-chip").hidden)
+      $("auto-chip").querySelector(".chip-text").textContent =
+        `+${money(Math.round(auto.perMinute()))}/min${vault > 0 ? ` · 💰 ${money(Math.round(vault))}` : ""}`;
     const enc = ev.hudEncargo();
     const e = $("encargo-chip");
     e.hidden = !enc;
@@ -283,6 +294,25 @@ export class UI {
     $("hud-money").classList.remove("bump");
     void $("hud-money").offsetWidth;
     $("hud-money").classList.add("bump");
+  }
+
+  // Monedas que vuelan hacia tu dinero (ventas lejos, cobrar la caja).
+  coinBurst(n = 3) {
+    const target = $("hud-money").getBoundingClientRect();
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement("div");
+      c.className = "coin-fly";
+      c.textContent = "🪙";
+      const x = window.innerWidth * (0.4 + Math.random() * 0.2);
+      const y = window.innerHeight * (0.55 + Math.random() * 0.15);
+      c.style.left = `${x}px`;
+      c.style.top = `${y}px`;
+      c.style.setProperty("--dx", `${target.left + 18 - x}px`);
+      c.style.setProperty("--dy", `${target.top + 14 - y}px`);
+      c.style.animationDelay = `${i * 0.08}s`;
+      document.body.appendChild(c);
+      setTimeout(() => c.remove(), 1100 + i * 80);
+    }
   }
 
   missionComplete(m, next) {
@@ -719,7 +749,9 @@ export class UI {
     if (bizId) this.selectedBiz = bizId;
     if (!g.businesses[this.selectedBiz]?.owned) this.selectedBiz = owned[0].id;
     const b = g.businesses[this.selectedBiz];
+    if (this.tab === "auto" && b.id !== "tienda") this.tab = "resumen";
     const tabs = [
+      ...(b.id === "tienda" ? [["auto", "⚙️ Automática"]] : []),
       ["resumen", "Resumen"],
       ["precios", "Precios"],
       ["mejoras", "Mejoras"],
@@ -754,6 +786,11 @@ export class UI {
     });
     this.bind("[data-fire]", async (d) => {
       await g.fire(b.id, d.fire);
+      this.openManagement();
+    });
+    this.bind("[data-threshold]", (d) => {
+      g.state.auto.threshold = Number(d.threshold);
+      g.save();
       this.openManagement();
     });
     this.bind("[data-open]", () => {
@@ -792,7 +829,7 @@ export class UI {
         <div><small>Ingresos hoy</small><b>${money(Math.round(b.today.revenue * 100) / 100)}</b></div>
         <div><small>Ganancia bruta hoy</small><b>${money(Math.round(b.today.profit * 100) / 100)}</b></div>
         <div><small>Reputación</small><b>${rep}/100</b></div>
-        <div><small>Gastos diarios</small><b>${money(b.def.rent + b.salaries() + (b.upgrades.has("refrigerador") ? 5 : 0))}</b></div>
+        <div><small>Gastos diarios</small><b>${money(b.def.rent + b.salaries() + upgradeUpkeep(b.upgrades))}</b></div>
         <div><small>Clientes en el local</small><b>${b.customers.length}</b></div>
       </div>
       ${share}
@@ -836,12 +873,119 @@ export class UI {
         if (owned) btn = `<span class="tag good">Instalada</span>`;
         else if (needs.length)
           btn = `<span class="tag">Requiere ${UPGRADES[needs[0]].name}</span>`;
+        else if (
+          (u.staff ?? []).some((r) => !b.employees.some((e) => e.role === r))
+        )
+          btn = `<span class="tag">Requiere reponedor y cajero</span>`;
         else if (lockedStage)
           btn = `<span class="tag">Etapa ${STAGES[u.stage].name}</span>`;
-        return `<div class="row ${owned ? "done" : ""}"><div class="grow"><b>${u.name}</b><small>${u.desc}</small></div>${btn}</div>`;
+        return `<div class="row ${owned ? "done" : ""}"><div class="grow"><b>${u.name}</b><small>${upgradeDesc(u)}</small></div>${btn}</div>`;
       })
       .join("");
     return `<div class="list">${rows}</div>`;
+  }
+
+  // Ruta de la tienda automática: cinco pasos en orden.
+  automationHtml() {
+    const g = this.game;
+    const b = g.businesses.tienda;
+    const auto = g.automation;
+    const lvl = auto.level();
+    const stage = g.stageIndex();
+    const vault = g.state.auto.vault ?? 0;
+    const hasRole = (r) => b.employees.some((e) => e.role === r);
+    const buyBtn = (id) => {
+      const u = UPGRADES[id];
+      if (b.upgrades.has(id)) return `<span class="tag good">✓</span>`;
+      if ((u.stage ?? 0) > stage)
+        return `<span class="tag">Etapa ${STAGES[u.stage].name}</span>`;
+      const need = (u.needs ?? []).find((n) => !b.upgrades.has(n));
+      if (need) return `<span class="tag">Antes: ${UPGRADES[need].name}</span>`;
+      return `<button data-upgrade="${id}" ${g.state.money < u.price ? "class=poor" : ""}>${money(u.price)}</button>`;
+    };
+    const rows = AUTOMATION.map((step, i) => {
+      const done = i < lvl;
+      const next = i === lvl;
+      let action = "";
+      if (done) action = `<span class="tag good">✓ Listo</span>`;
+      else if (!next) action = `<span class="tag">🔒 Paso ${i}</span>`;
+      else if (step.staff) {
+        const st = STAFF[step.staff];
+        action =
+          (st.stage ?? 0) > stage
+            ? `<span class="tag">Etapa ${STAGES[st.stage].name}</span>`
+            : `<button data-hire="${step.staff}">Contratar · ${money(st.salary)}/día</button>`;
+      } else if (step.upgrade) action = buyBtn(step.upgrade);
+      let extra = "";
+      if (step.upgrade === "camion" && b.upgrades.has("camion"))
+        extra = `<div class="auto-opts">Sale a comprar cuando el almacén baja del ${[
+          0.2, 0.4, 0.6,
+        ]
+          .map(
+            (t) =>
+              `<button data-threshold="${t}" class="${g.state.auto.threshold === t ? "on" : ""}">${t * 100}%</button>`,
+          )
+          .join("")}</div>`;
+      if (step.upgrades && (next || done))
+        extra = `<div class="list sub">${step.upgrades
+          .map(
+            (id) =>
+              `<div class="row"><div class="grow"><b>${UPGRADES[id].name}</b><small>${upgradeDesc(UPGRADES[id])}</small></div>${buyBtn(id)}</div>`,
+          )
+          .join("")}</div>`;
+      if (step.staff && done && !hasRole(step.staff)) action = "";
+      return `<div class="row auto-step ${done ? "done" : next ? "next" : "locked"}"><span class="chip-icon">${step.icon}</span><div class="grow"><b>${i + 1}. ${step.name}</b><small>${step.desc}</small>${extra}</div>${step.upgrades ? "" : action}</div>`;
+    }).join("");
+    return `<div class="stats"><div><small>Automatización</small><b>${lvl}/${AUTOMATION.length}</b></div><div><small>Ganancia ahora</small><b>${money(Math.round(auto.perMinute()))}/min</b></div><div><small>Caja fuerte</small><b>${money(Math.round(vault))}</b></div></div>
+      <p class="hint">${lvl >= 2 ? `Mientras no juegas, tu tienda guarda hasta ${IDLE.capMinutes[lvl] / 60} h de ganancias en la caja fuerte (junto al almacén).` : "Con reponedor y cajero, tu tienda vende sola mientras paseas, conduces o juegas con amigos."} Siempre puedes seguir haciéndolo a mano.</p>
+      <div class="list">${rows}</div>`;
+  }
+
+  openAutomation() {
+    this.open("auto", "⚙️ Tienda automática", this.automationHtml());
+    this.bindAutomation(() => this.openAutomation());
+  }
+
+  bindAutomation(reopen) {
+    const g = this.game;
+    this.bind("[data-hire]", async (d) => {
+      await g.hire("tienda", d.hire);
+      reopen();
+    });
+    this.bind("[data-upgrade]", async (d) => {
+      await g.buyUpgrade("tienda", d.upgrade);
+      reopen();
+    });
+    this.bind("[data-threshold]", (d) => {
+      g.state.auto.threshold = Number(d.threshold);
+      g.save();
+      reopen();
+    });
+  }
+
+  // Al acabar el tutorial: presentación de la automatización.
+  openAutomationIntro() {
+    this.open(
+      "auto-intro",
+      "🎉 ¡Tu tienda ya funciona!",
+      `<div class="auto-intro">
+        <div class="big">🏪➡️🤖💰</div>
+        <p><b>Ya sabes cómo funciona tu tienda. Ahora haz que trabaje por ti.</b></p>
+        <p class="hint">Contrata un reponedor y un cajero, compra un camión y una cinta… y tu tienda venderá sola mientras paseas, conduces o juegas con amigos.</p>
+        <div class="order-actions">
+          <button class="ghost" data-act="later">SEGUIR JUGANDO</button>
+          <button class="primary" data-act="auto">VER TIENDA AUTOMÁTICA</button>
+        </div>
+      </div>`,
+    );
+    this.bind("[data-act]", (d) => {
+      if (d.act === "auto") this.openAutomation();
+      else this.close();
+    });
+  }
+
+  tab_auto() {
+    return this.automationHtml();
   }
 
   tab_personal(b) {
@@ -1257,9 +1401,9 @@ export class UI {
       "help",
       "Ayuda",
       `<h3>📦 Comprar en el Mayorista</h3>
-      <ol class="steps">${WHOLESALE_STEPS.map((t) => `<li>${t}</li>`).join("")}</ol>
+      <ol class="steps"><li>Toma un carro en la entrada</li><li>Mete cajas desde las estanterías</li><li>Paga en la CAJA</li><li>Llévalo a tu tienda y repón</li></ol>
       <p class="hint">El Mayorista es de <b>autoservicio</b>: toma un <b>carro</b> en la entrada (hasta 10 cajas), elige tus cajas en las <b>estanterías</b> por categoría y paga en la <b>CAJA</b>. No se puede salir con cajas sin pagar. Al pagar puedes mandarlo en camión a tu negocio; si te lo llevas, en tu almacén descargas el carro entero de una vez.</p>
-      <button data-act="tutorial">Repetir el tutorial del Mayorista</button>
+      <button data-act="tutorial">Repetir el tutorial de primeros pasos</button>
       <h3>🧭 Orientación</h3>
       <p>El botón <b>🏪 IR A MI TIENDA</b> marca la ruta por las calles. Toca el minimapa para abrir el mapa y elegir otro destino.</p>
       <h3>🎮 Controles</h3>${this.controlsHtml(g.input.isTouch)}
@@ -1267,7 +1411,7 @@ export class UI {
     );
     this.bind("[data-act]", (d) => {
       if (d.act === "tutorial") {
-        g.tutorial.start();
+        g.tutorial.restart();
         this.close();
       } else this.openMenu();
     });

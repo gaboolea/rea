@@ -16,6 +16,18 @@ const pid = (k) =>
   crypto.createHash("sha256").update(k).digest("hex").slice(0, 12);
 let server;
 
+// Tienda automática (nivel 3) que no se ve desde hace 45 minutos.
+function autoProfile() {
+  const cp = eco.newCityProfile();
+  cp.stats.revenue = 3000;
+  cp.businesses.tienda = {
+    employees: ["reponedor", "cajero"],
+    upgrades: ["camion"],
+  };
+  cp.lastSeen = Date.now() - 45 * 60000;
+  return cp;
+}
+
 // Ciudad sembrada con dos jugadores ricos para probar la carrera por un local.
 before(async () => {
   const profiles = {};
@@ -30,11 +42,23 @@ before(async () => {
       name: id,
       look: null,
       wardrobe: [],
-      cities: { RICH1: cp },
+      cities: { RICH1: cp, AUTO1: autoProfile() },
       createdAt: 0,
     };
   }
   const cities = {
+    AUTO1: {
+      code: "AUTO1",
+      name: "Automática",
+      public: false,
+      members: {
+        [pid(KEYS[0])]: { plot: "tienda" },
+        [pid(KEYS[1])]: { plot: "oeste" },
+      },
+      exclusive: {},
+      shops: {},
+      warehouse: eco.newWarehouse(),
+    },
     RICH1: {
       code: "RICH1",
       name: "Rica",
@@ -256,4 +280,23 @@ test("el progreso se guarda y se recupera al volver a conectar", async () => {
   assert.equal(j2.profile.money, r.money);
   assert.equal(j2.profile.ledger.agua, (j.profile.ledger.agua ?? 0) + 10);
   again.ws.close();
+});
+
+test("la tienda automática gana mientras no estás y se cobra una sola vez", async () => {
+  const a = client(KEYS[1], "Rica B");
+  await a.open();
+  await a.hello();
+  const j = await a.req("join", { code: "AUTO1" });
+  // Nivel 3: $1 por minuto, 45 minutos fuera (tope 90).
+  assert.ok(Math.abs(j.profile.vault - 45) < 0.5, `caja ${j.profile.vault}`);
+  const money = j.profile.money;
+  const c = await a.req("collect");
+  assert.equal(c.ok, true);
+  assert.equal(c.money, Math.round((money + c.total) * 100) / 100);
+  const again = await a.req("collect");
+  assert.equal(again.ok, false);
+  // Recién visto: pedir más ganancias no da nada.
+  const idle = await a.req("idle");
+  assert.equal(idle.vault, 0);
+  a.ws.close();
 });
