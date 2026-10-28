@@ -252,6 +252,32 @@ Las piezas de cada edificio se funden en pocas mallas; las de la azotea se
 ocultan al entrar, como el techo, y solo las que estorban al paso tienen
 colisión.
 
+### Plantas, materiales y tejados
+
+`Building` admite de 1 a 3 plantas (`floors`), material de fachada
+(`facade`: revoco, ladrillo, madera, piedra o paneles), ventanas
+(`windows`: con jardinera, contraventanas, balcón, de medio punto o franja
+corrida moderna) y tejado (`roof`: plano con aire acondicionado, a dos
+aguas, a cuatro aguas, con pretil o azotea jardín). Ejemplos: el local
+oeste tiene 3 plantas de ladrillo con contraventanas; el este, 1 planta de
+madera con tejado a cuatro aguas; la boutique, 3 plantas con balcones;
+Tecnología, 3 plantas de paneles con ventanas corridas; Vehículos y el
+gimnasio, 1 planta.
+
+### Árboles, palomas y mascotas
+
+- Cinco especies de árbol: frondoso, pino, cerezo en flor, abedul y
+  palmera (en la plaza del distrito financiero). Sin especie indicada se
+  elige una fija según la posición.
+- **Palomas** (`src/critters.js`) en la plaza de las palomas, junto a la
+  fuente, en el parque residencial y en el distrito financiero: picotean y
+  salen volando si te acercas; vuelven cuando te alejas.
+- **Mascotas**: perros (Toby vive en el jardín de tu casa, con caseta;
+  Luna y Rocky en el barrio residencial) y gatos (Misi, Nube y Tigre).
+  Pasean, se sientan, mueven la cola y los perros se acercan a saludar.
+  Con E se acarician (corazones). Son solo ambiente: no se guardan ni se
+  sincronizan en online.
+
 ### La gran expansión
 
 El barrio inicial no cambia; la ciudad crece a su alrededor y se recorre
@@ -279,6 +305,9 @@ andando o en vehículo, sin teletransportes:
   aceleran, frenan, dan marcha atrás, giran según la velocidad, chocan con
   todo su chasis y no entran en los edificios. Servicio de grúa ($15) desde
   el inventario.
+- **Tu casa** («MI CASA», donde se descansa y se guarda la partida) está
+  en la zona residencial, en la calle transversal; su sitio en el barrio
+  inicial es ahora la **plaza de las palomas**.
 - **Zona residencial** (al sur): la **casita** ($250, con muebles básicos)
   tiene salón con cocina, dormitorio y baño, jardín, buzón con número y
   farola. Con **🛋️ Decorar** se colocan, mueven, giran (cuadrícula
@@ -402,6 +431,7 @@ andando o en vehículo, sin teletransportes:
 | `src/automation.js`  | Tienda automática: camión, $/min, caja fuerte                  |
 | `src/shopfit.js`     | Cinta transportadora, fachada y segunda planta                 |
 | `src/storefronts.js` | Fachada propia de cada rubro (azotea, acera, carteles)         |
+| `src/critters.js`   | Palomas y mascotas de ambiente                                 |
 | `src/icons.js`       | Iconos de productos dibujados en canvas                        |
 | `src/net.js`         | Conexión WebSocket (peticiones y mensajes)                     |
 | `src/online.js`      | Modo online: avatares remotos, tiendas ajenas, chat, ranking   |

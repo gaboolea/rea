@@ -99,7 +99,7 @@ export function buildFinancial(world) {
       [-266, 44],
       [-236, 44],
     ])
-      world.tree(x, z, 0.85, true);
+      world.tree(x, z, 0.85, true, "palmera");
     // Arte urbano: escultura de moneda.
     const coin = new THREE.Group();
     coin.add(mesh(cylinder(1.2, 1.4, 1.2, 16), mat(0x9aa7b0), 0, 0.6, 0));
@@ -126,6 +126,10 @@ export function buildFinancial(world) {
   // Galería de lujo (tienda exclusiva).
   const lujo = kit.building("lujo", {
     style: "luxury",
+    floors: 3,
+    facade: "stone",
+    windows: "arched",
+    roof: "parapet",
     name: "Galería de Lujo",
     x: -251,
     z: -24,

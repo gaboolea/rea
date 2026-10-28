@@ -164,7 +164,6 @@ export function buildResidential(world) {
   const neighbors = [
     [-50, 124, Math.PI],
     [-34, 124, Math.PI],
-    [-18, 124, Math.PI],
     [18, 124, Math.PI],
     [34, 124, Math.PI],
     [50, 124, Math.PI],
@@ -193,6 +192,19 @@ export function buildResidential(world) {
       world.tree(x + 6, z + (rot ? 4 : -4), 0.9);
     }),
   );
+
+  // Tu casa (edificio «casa» de World) ocupa el hueco de la calle
+  // transversal: camino hasta la acera y jardín lateral con la caseta del
+  // perro (Critters).
+  kit.inside(() => {
+    kit.add(mesh(box(1.4, 0.08, 2.2), mat(0xe8dcc4), -18, 0.05, 118, false));
+    kit.add(mesh(box(4.2, 0.05, 11.5), mat(0x6fd24c), -10.4, 0.03, 124, false));
+  });
+  for (const [x, z] of [
+    [-24.5, 118.5],
+    [-11, 118.2],
+  ])
+    world.planter(x, z, Math.PI, 2.2);
 
   // Parque con estanque, columpio y bancos (este) y huerto vecinal (oeste).
   kit.inside(() => {

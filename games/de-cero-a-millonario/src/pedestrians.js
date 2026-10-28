@@ -242,7 +242,7 @@ export class Crowd {
       b.boutique,
       b.mayorista,
       b.restaurante,
-      b.casa,
+      b.casagrande,
       b.minimercado,
       b.cafeteria,
     ].filter(Boolean);

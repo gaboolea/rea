@@ -23,6 +23,7 @@ import { FurnitureShop } from "./furnishop.js";
 import { District } from "./district.js";
 import { Gym, Goals } from "./goals.js";
 import { Automation } from "./automation.js";
+import { Critters } from "./critters.js";
 import { Rides, isSmall } from "./rides.js";
 import { Home } from "./home.js";
 import { Decorator } from "./decorate.js";
@@ -176,6 +177,7 @@ class Game {
     this.goals = new Goals(this);
     this.rides = new Rides(this);
     this.home = new Home(this);
+    this.critters = new Critters(this);
     this.decorator = new Decorator(this, this.home);
     this.examine = null;
     this.rebuildInteractables();
@@ -1331,6 +1333,7 @@ class Game {
     const all = [...this.staticInteractables];
     const ride = this.rides.dynamic();
     if (ride) all.push(ride);
+    all.push(...this.critters.interactables());
     for (const b of Object.values(this.businesses))
       if (b.owned) all.push(...b.interactables);
     for (const it of all) {
@@ -1566,6 +1569,7 @@ class Game {
     const focus = title ? this.titleSpot() : this.player.pos;
     this.world.update(dt, [...this._agents, this.player.pos], focus);
     this.fx.update(dt, this.elapsed);
+    this.critters.update(dt, this.elapsed);
     this.updateSun(focus);
   }
 

@@ -316,6 +316,66 @@ export function facadeTexture(base, repeat) {
   return tex;
 }
 
+// Material de fachada: ladrillo, tablas de madera, sillares de piedra o
+// paneles modernos. Se dibuja sobre el color base (claro) del edificio.
+export function materialTexture(kind, base, repeat) {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const rnd = seededNoise(kind.length * 131 + base.length);
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+  if (kind === "brick") {
+    ctx.fillStyle = "#e9dcc8";
+    ctx.fillRect(0, 0, size, size);
+    const reds = ["#c8553d", "#b84a35", "#d2694c", "#bf5a3f"];
+    for (let row = 0; row < 8; row++)
+      for (let col = -1; col < 4; col++) {
+        const x = col * 32 + (row % 2) * 16;
+        ctx.fillStyle = reds[Math.floor(rnd() * reds.length)];
+        ctx.fillRect(x + 1.5, row * 16 + 1.5, 29, 13);
+      }
+  } else if (kind === "wood") {
+    for (let row = 0; row < 8; row++) {
+      ctx.fillStyle = `rgba(110,70,30,${0.05 + rnd() * 0.08})`;
+      ctx.fillRect(0, row * 16, size, 16);
+      ctx.fillStyle = "rgba(80,50,20,0.28)";
+      ctx.fillRect(0, row * 16 + 14, size, 2);
+    }
+  } else if (kind === "stone") {
+    for (let row = 0; row < 4; row++)
+      for (let col = -1; col < 3; col++) {
+        const x = col * 56 + (row % 2) * 28;
+        const v = rnd();
+        ctx.fillStyle = `rgba(${v > 0.5 ? "255,255,255" : "90,80,70"},${0.06 + Math.abs(v - 0.5) * 0.18})`;
+        ctx.fillRect(x + 2, row * 32 + 2, 52, 28);
+        ctx.strokeStyle = "rgba(90,80,70,0.35)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, row * 32 + 1, 54, 30);
+      }
+  } else if (kind === "panel") {
+    ctx.strokeStyle = "rgba(60,80,100,0.25)";
+    ctx.lineWidth = 3;
+    for (let i = 0; i <= size; i += 64) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, size);
+      ctx.moveTo(0, i);
+      ctx.lineTo(size, i);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(4, 4, 56, 56);
+    ctx.fillRect(68, 68, 56, 56);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat[0], repeat[1]);
+  return tex;
+}
+
 function seededNoise(seed) {
   let s = seed >>> 0;
   return () => {

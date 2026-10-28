@@ -211,8 +211,19 @@ export class World {
       signColors: { bg: "#ffffff", fg: "#1f8f86" },
     });
     // Locales iniciales de los demás jugadores en el modo online.
-    const plot = (id, x, z, rot, wallColor, trimColor, roofColor, awning) =>
+    const plot = (
+      id,
+      x,
+      z,
+      rot,
+      wallColor,
+      trimColor,
+      roofColor,
+      awning,
+      look,
+    ) =>
       this.building(id, {
+        ...look,
         name: "Local",
         x,
         z,
@@ -231,18 +242,39 @@ export class World {
           fg: "#" + trimColor.toString(16).padStart(6, "0"),
         },
       });
-    plot("oeste", -16, -38, Math.PI / 2, 0xfbe8ff, 0x9b6dff, 0xb18cff, [
-      "#9b6dff",
-      "#ffffff",
-    ]);
-    plot("este", 16, -38, -Math.PI / 2, 0xe2f4ff, 0x3d8bff, 0x6fb2ff, [
-      "#3d8bff",
-      "#ffffff",
-    ]);
-    plot("sur", -16, 38, Math.PI / 2, 0xfff0d9, 0xff8a3d, 0xffa45c, [
-      "#ff8a3d",
-      "#ffffff",
-    ]);
+    plot(
+      "oeste",
+      -16,
+      -38,
+      Math.PI / 2,
+      0xfbe8ff,
+      0x9b6dff,
+      0xb18cff,
+      ["#9b6dff", "#ffffff"],
+      { floors: 3, facade: "brick", windows: "shutters", roof: "parapet" },
+    );
+    plot(
+      "este",
+      16,
+      -38,
+      -Math.PI / 2,
+      0xe2f4ff,
+      0x3d8bff,
+      0x6fb2ff,
+      ["#3d8bff", "#ffffff"],
+      { floors: 1, facade: "wood", roof: "hip" },
+    );
+    plot(
+      "sur",
+      -16,
+      38,
+      Math.PI / 2,
+      0xfff0d9,
+      0xff8a3d,
+      0xffa45c,
+      ["#ff8a3d", "#ffffff"],
+      { facade: "stone", windows: "balcony", roof: "garden" },
+    );
     this.building("minimercado", {
       name: "Minimercado Sol",
       x: -51,
@@ -251,6 +283,7 @@ export class World {
       d: 14,
       floors: 1,
       style: "minimarket",
+      roof: "parapet",
       wallColor: 0xfff4c9,
       trimColor: 0xf2a531,
       roofColor: 0xf7b955,
@@ -265,6 +298,8 @@ export class World {
       w: 14,
       d: 12,
       style: "cafe",
+      facade: "brick",
+      windows: "shutters",
       wallColor: 0xffe2c4,
       trimColor: 0x8b5a3c,
       roofColor: 0xd9824b,
@@ -280,6 +315,9 @@ export class World {
       w: 10,
       d: 10,
       style: "boutique",
+      floors: 3,
+      windows: "balcony",
+      roof: "hip",
       wallColor: 0xffe0ef,
       trimColor: 0xff6fa8,
       roofColor: 0xff8fbf,
@@ -297,6 +335,7 @@ export class World {
       doorW: 4.4,
       floors: 1,
       style: "supermarket",
+      facade: "panel",
       wallColor: 0xe9f6ff,
       trimColor: 0x3d7be0,
       roofColor: 0x4f8dff,
@@ -331,6 +370,8 @@ export class World {
       rot: Math.PI,
       style: "restaurant",
       gable: true,
+      facade: "brick",
+      windows: "arched",
       wallColor: 0xfde2d5,
       trimColor: 0xc0392b,
       roofColor: 0xe0705a,
@@ -339,13 +380,18 @@ export class World {
       signColors: { bg: "#ffffff", fg: "#c0392b" },
     });
     this.buildings.restaurante.setLocked(true, "PRÓXIMAMENTE\nen obras");
+    // Tu casa: en la zona residencial (calle transversal, junto a las
+    // casas de los vecinos).
     this.building("casa", {
       name: "Tu casa",
-      x: 17,
-      z: 16,
+      x: -18,
+      z: 125,
       w: 10,
       d: 12,
       rot: Math.PI,
+      gable: true,
+      facade: "wood",
+      windows: "shutters",
       doorW: 2.4,
       wallColor: 0xfff6e5,
       trimColor: 0x5cb6e0,
@@ -681,30 +727,119 @@ export class World {
     this.scene.add(this.ownVan);
   }
 
-  // Árbol frondoso de juguete: copa de varias esferas en dos verdes, unida
-  // en una sola malla (muchos árboles, pocas llamadas de dibujo).
-  tree(x, z, s = 1, planter = false) {
+  // Árboles de juguete en cinco especies: frondoso (copa de esferas),
+  // pino (conos), cerezo en flor, abedul (tronco blanco y copa alta) y
+  // palmera. Sin especie, se elige una fija según la posición (la mitad
+  // siguen siendo frondosos). Copa y tronco van en una malla cada uno.
+  tree(x, z, s = 1, planter = false, kind) {
     const g = new THREE.Group();
-    g.add(mesh(cylinder(0.17, 0.26, 1.6, 8), mat(0x8b5a3c), 0, 0.8, 0));
     const k = Math.floor(Math.abs(x * 7 + z * 3));
-    const dark = [0x3fa55a, 0x4bb05c, 0x379a4f][k % 3];
-    const light = [0x6fd67a, 0x7fdc6a, 0x63cc73][k % 3];
-    const leaves = [
-      [0, 2.35, 0, 1.05, dark],
-      [0.62, 2.0, 0.25, 0.75, dark],
-      [-0.6, 2.1, -0.2, 0.72, dark],
-      [0.1, 2.05, -0.65, 0.7, dark],
-      [-0.2, 2.75, 0.35, 0.72, light],
-      [0.45, 2.55, -0.3, 0.6, light],
-      [-0.5, 2.5, 0.45, 0.55, light],
-    ].map(([px, py, pz, r, c]) => [
-      sphere(r, 10).clone().scale(1, 0.88, 1),
-      px,
-      py,
-      pz,
-      0,
-      c,
-    ]);
+    if (!kind) {
+      const mix = planter
+        ? ["frondoso", "frondoso", "cerezo", "abedul"]
+        : ["frondoso", "pino", "frondoso", "cerezo", "abedul", "pino"];
+      kind = mix[Math.floor(Math.abs(x * 13 + z * 5)) % mix.length];
+    }
+    const sph = (r, sy = 0.88) => sphere(r, 10).clone().scale(1, sy, 1);
+    let trunk;
+    let leaves;
+    if (kind === "pino") {
+      trunk = [cylinder(0.14, 0.22, 1.2, 8), 0, 0.6, 0, 0x7a4a2a];
+      const greens = [0x2f8a4a, 0x379a55, 0x2a7d43];
+      leaves = [0, 1, 2, 3].map((i) => [
+        new THREE.ConeGeometry(1.25 - i * 0.26, 1.15, 9),
+        0,
+        1.45 + i * 0.68,
+        0,
+        0,
+        greens[(k + i) % 3],
+      ]);
+    } else if (kind === "cerezo") {
+      trunk = [cylinder(0.15, 0.24, 1.7, 8), 0, 0.85, 0, 0x6b4430];
+      const pinks = [0xffb7d5, 0xff9fc6, 0xffd1e4];
+      leaves = [
+        [0, 2.3, 0, 1.0],
+        [0.7, 2.05, 0.2, 0.7],
+        [-0.65, 2.1, -0.15, 0.7],
+        [0.1, 2.0, -0.7, 0.65],
+        [-0.15, 2.75, 0.3, 0.65],
+        [0.4, 2.6, 0.55, 0.5],
+      ].map(([px, py, pz, r], i) => [
+        sph(r),
+        px,
+        py,
+        pz,
+        0,
+        pinks[(k + i) % 3],
+      ]);
+    } else if (kind === "abedul") {
+      trunk = [cylinder(0.11, 0.16, 2.4, 8), 0, 1.2, 0, 0xf1efe6];
+      const greens = [0x8fd14f, 0x7cc744, 0xa3dc5c];
+      leaves = [
+        [0, 2.7, 0, 0.75, 1.5],
+        [0.35, 2.3, 0.2, 0.55, 1.3],
+        [-0.3, 3.2, -0.1, 0.5, 1.3],
+      ].map(([px, py, pz, r, sy], i) => [
+        sph(r, sy),
+        px,
+        py,
+        pz,
+        0,
+        greens[(k + i) % 3],
+      ]);
+      // Manchas oscuras del tronco.
+      for (let i = 0; i < 4; i++)
+        leaves.push([
+          box(0.2, 0.05, 0.2),
+          0.02,
+          0.5 + i * 0.45,
+          0.04,
+          i,
+          0x3e3a36,
+        ]);
+    } else if (kind === "palmera") {
+      trunk = null;
+      leaves = [];
+      for (let i = 0; i < 6; i++)
+        leaves.push([
+          cylinder(0.15 - i * 0.012, 0.17 - i * 0.012, 0.55, 8),
+          i * 0.06,
+          0.28 + i * 0.52,
+          0,
+          0,
+          i % 2 ? 0xb58a5a : 0xa07a4f,
+        ]);
+      for (let i = 0; i < 7; i++) {
+        const leaf = box(0.32, 0.06, 1.9).clone().translate(0, 0, 0.95);
+        leaf.rotateX(0.45);
+        leaves.push([
+          leaf,
+          0.36,
+          3.25,
+          0,
+          (i / 7) * Math.PI * 2,
+          i % 2 ? 0x3fae5a : 0x58c46b,
+        ]);
+      }
+      leaves.push([sph(0.16, 1), 0.5, 3.1, 0.15, 0, 0x8b5a3c]);
+    } else {
+      trunk = [cylinder(0.17, 0.26, 1.6, 8), 0, 0.8, 0, 0x8b5a3c];
+      const dark = [0x3fa55a, 0x4bb05c, 0x379a4f][k % 3];
+      const light = [0x6fd67a, 0x7fdc6a, 0x63cc73][k % 3];
+      leaves = [
+        [0, 2.35, 0, 1.05, dark],
+        [0.62, 2.0, 0.25, 0.75, dark],
+        [-0.6, 2.1, -0.2, 0.72, dark],
+        [0.1, 2.05, -0.65, 0.7, dark],
+        [-0.2, 2.75, 0.35, 0.72, light],
+        [0.45, 2.55, -0.3, 0.6, light],
+        [-0.5, 2.5, 0.45, 0.55, light],
+      ].map(([px, py, pz, r, c]) => [sph(r), px, py, pz, 0, c]);
+    }
+    if (trunk) {
+      const [geo, tx, ty, tz, color] = trunk;
+      g.add(mesh(geo, mat(color), tx, ty, tz));
+    }
     g.add(mesh(mergeParts(leaves), TREE_MAT, 0, 0, 0));
     if (planter) {
       g.add(mesh(cylinder(0.75, 0.68, 0.45, 16), mat(0xd9cbb3), 0, 0.22, 0));
@@ -865,6 +1000,7 @@ export class World {
     this.fruitStand(-27.2, -9.0);
     for (const x of [16.2, 25.8]) this.cafeTable(x, -7.9);
     this.fountain(40, 29.5);
+    this.pigeonPlaza(17, 16);
     this.buildClouds();
     this.buildButterflies();
     this.bench(-36, 8.8, Math.PI);
@@ -1023,7 +1159,7 @@ export class World {
       },
       {
         id: "casa",
-        name: "Tu casa (barrio)",
+        name: "Mi casa (dormir)",
         icon: "🛏️",
         at: b.casa.doorPoint(1),
       },
@@ -1034,6 +1170,42 @@ export class World {
         at: { x: 58, z: 22 },
       },
     );
+  }
+
+  // Plaza de las palomas (donde antes estaba tu casa): adoquines, bancos,
+  // estatua de la moneda y árboles en flor. Las palomas las pone Critters.
+  pigeonPlaza(x, z) {
+    const paving = mesh(
+      box(11, SIDEWALK, 12),
+      mat(0xe8dcc4),
+      x,
+      SIDEWALK / 2,
+      z,
+      false,
+    );
+    this.scene.add(paving);
+    this.physics.addFloor(x - 5.5, z - 6, x + 5.5, z + 6, SIDEWALK);
+    const statue = new THREE.Group();
+    statue.add(mesh(roundedBox(1.6, 1.2, 1.6, 0.08), mat(0xd9cbb3), 0, 0.6, 0));
+    statue.add(mesh(roundedBox(1.2, 0.2, 1.2, 0.05), mat(0xbfae92), 0, 1.3, 0));
+    const coin = mesh(
+      cylinder(0.65, 0.65, 0.16, 24),
+      mat(0xf2c230, { metalness: 0.6, roughness: 0.3 }),
+      0,
+      2.1,
+      0,
+    );
+    coin.rotation.x = Math.PI / 2;
+    statue.add(coin);
+    statue.position.set(x, SIDEWALK, z + 1);
+    this.scene.add(statue);
+    this.physics.addCentered(x, z + 1, 1.7, 1.7);
+    this.bench(x - 3.6, z + 1, Math.PI / 2);
+    this.bench(x + 3.6, z + 1, -Math.PI / 2);
+    this.tree(x - 4, z + 4.8, 0.85, true, "cerezo");
+    this.tree(x + 4, z + 4.8, 0.85, true, "cerezo");
+    this.tree(x, z + 5.2, 0.8, true, "abedul");
+    this.plazas = [...(this.plazas ?? []), { x, z: z - 2, r: 3.5 }];
   }
 
   trashBin(x, z) {
