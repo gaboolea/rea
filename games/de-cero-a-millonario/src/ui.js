@@ -21,6 +21,7 @@ import {
   IDLE,
   upgradeUpkeep,
   upgradeDesc,
+  OFFER,
 } from "./config.js";
 import { isSmall } from "./rides.js";
 import { productIcon } from "./icons.js";
@@ -824,6 +825,16 @@ export class UI {
       await g.fire(b.id, d.fire);
       this.openManagement();
     });
+    this.bind("[data-offer]", (d) => {
+      if (b.startOffer(d.offer)) {
+        this.toast(
+          `🏷️ Oferta: ${PRODUCTS[d.offer].name} −${Math.round(OFFER.discount * 100)} %`,
+          "good",
+        );
+        g.audio.sfx("sparkle");
+      }
+      this.openManagement();
+    });
     this.bind("[data-threshold]", (d) => {
       g.state.auto.threshold = Number(d.threshold);
       g.save();
@@ -869,6 +880,7 @@ export class UI {
         <div><small>Clientes en el local</small><b>${b.customers.length}</b></div>
       </div>
       ${share}
+      ${this.streetFunnel(b)}
       <h3>Exposición</h3>${shelves || "<p>Sin muebles.</p>"}
       <h3>Almacén (${b.storageUnits()}/${b.storageCap()})</h3><p>${storage}</p>
       ${b.machine ? `<p>Máquina de café: <b>${b.machine.granos}</b> granos</p>` : ""}
@@ -876,6 +888,35 @@ export class UI {
       <p>Ventas totales: <b>${money(Math.round(s.stats.revenue))}</b> · Ganancia bruta total: <b>${money(Math.round(s.stats.grossProfit))}</b> · Gastos totales: <b>${money(Math.round(s.stats.expenses))}</b></p>
       <p>Patrimonio: <b>${money(Math.round(g.netWorth()))}</b></p>
       ${report}`;
+  }
+
+  // Gente de la calle hoy: pasó → se paró → entró → compró. Sirve para ver
+  // qué mejora funciona (cartel y fachada hacen que se paren; género,
+  // precios, reputación y ofertas, que entren).
+  streetFunnel(b) {
+    const t = b.today;
+    const pct = (a, of) => (of ? `${Math.round((a / of) * 100)} %` : "—");
+    const a = b.appeal();
+    const tips = [];
+    if (!b.upgrades.has("letrero")) tips.push("un letrero luminoso");
+    if (!b.upgrades.has("fachada") && b.layout.upgrades.includes("fachada"))
+      tips.push("la fachada de lujo");
+    if (!b.upgrades.has("plantas")) tips.push("plantas");
+    const why = a.empty
+      ? "❌ Las estanterías están casi vacías: la gente no entra."
+      : a.pricey
+        ? "💸 Tus precios parecen caros desde la calle."
+        : tips.length
+          ? `Para que se paren más: ${tips.join(", ")}.`
+          : "😍 Tu escaparate atrae a quien pasa.";
+    return `<h3>🚶 Gente de la calle hoy</h3>
+      <div class="stats funnel">
+        <div><small>Pasó por delante</small><b>${t.passed}</b></div>
+        <div><small>Se paró a mirar</small><b>${t.stopped}</b><em>${pct(t.stopped, t.passed)}</em></div>
+        <div><small>Entró</small><b>${t.entered}</b><em>${pct(t.entered, t.stopped)}</em></div>
+        <div><small>Compró</small><b>${t.streetBought}</b><em>${pct(t.streetBought, t.entered)}</em></div>
+      </div>
+      <p class="hint">Además llegaron ${t.walkIns} clientes por su cuenta. ${why}${b.offer ? ` 🏷️ Oferta activa: ${PRODUCTS[b.offer.product].name}.` : ""}</p>`;
   }
 
   tab_precios(b) {
@@ -890,10 +931,16 @@ export class UI {
         const mood = will >= 95 ? "good" : will >= 60 ? "warn" : "bad";
         return `<div class="row"><span class="chip" style="background:${hex(prod.color)}"></span>
         <div class="grow"><b>${prod.name}</b><small>Coste ${money(unitCost)} · margen ${money(Math.round(margin * 100) / 100)} · <span class="${mood}">clientes dispuestos ${will}%</span></small></div>
+        ${b.offer || b.offerCooldown > 0 ? (b.offer?.product === p ? `<span class="tag good">🏷️</span>` : "") : `<button class="offer-btn" data-offer="${p}" title="Poner de oferta">🏷️</button>`}
         <div class="stepper"><button data-price="${p}" data-step="-0.1">−</button><span>${money(price)}</span><button data-price="${p}" data-step="0.1">+</button></div></div>`;
       })
       .join("");
-    return `<p class="hint">Precios altos = más margen pero menos clientes. Precio de referencia en el Mayorista.</p><div class="list">${rows}</div>`;
+    const offer = b.offer
+      ? `<p class="hint">🏷️ Oferta del día: <b>${PRODUCTS[b.offer.product].name}</b> −${Math.round(OFFER.discount * 100)} % (${Math.ceil(b.offer.left)} s). Se para a mirar más gente.</p>`
+      : b.offerCooldown > 0
+        ? `<p class="hint">🏷️ Podrás lanzar otra oferta en ${Math.ceil(b.offerCooldown)} s.</p>`
+        : `<p class="hint">🏷️ Pulsa la etiqueta de un producto para ponerlo de oferta (−${Math.round(OFFER.discount * 100)} % durante ${OFFER.seconds / 60} min): atrae a más gente de la calle.</p>`;
+    return `<p class="hint">Precios altos = más margen pero menos clientes. Precio de referencia en el Mayorista.</p>${offer}<div class="list">${rows}</div>`;
   }
 
   tab_mejoras(b) {

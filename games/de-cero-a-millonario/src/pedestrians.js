@@ -7,7 +7,12 @@
 // grupos de amigos y repartidores con cajas.
 import { Agent } from "./npc.js";
 import { ToyCharacter } from "./character.js";
-import { randomPerson, workerLook, PERSON_TYPES } from "./look.js";
+import {
+  randomPerson,
+  workerLook,
+  PERSON_TYPES,
+  seedForType,
+} from "./look.js";
 import { PRODUCTS } from "./config.js";
 
 const CHAT_LINES = [
@@ -69,7 +74,10 @@ class Pedestrian extends Agent {
   // acompaña (familias y amigos).
   constructor(game, crowd, x, z, opts = {}) {
     const courier = opts.type === "repartidor";
-    const person = courier ? null : randomPerson(undefined, opts.type);
+    // La semilla determina tipo y aspecto: si entra en una tienda del
+    // jugador, el cliente (compartido online por su semilla) es idéntico.
+    const seed = courier ? null : seedForType(opts.type);
+    const person = courier ? null : randomPerson(seed, opts.type);
     super(
       game,
       new ToyCharacter(
@@ -81,7 +89,13 @@ class Pedestrian extends Agent {
       z,
     );
     this.crowd = crowd;
+    this.seed = seed;
     this.type = courier ? "repartidor" : person.type;
+    // Cliente en el que se ha convertido mientras compra en una tienda del
+    // jugador; null en la calle.
+    this.customer = null;
+    // Tiendas por las que ya pasó (no se vuelve a parar en seguida).
+    this.seenShops = new Map();
     this.walkSpeed = rand(1.4, 2.1) * (person?.speed ?? 1.15);
     this.speed = this.walkSpeed;
     this.state = "idle";
@@ -122,7 +136,10 @@ class Pedestrian extends Agent {
     // Quien lleva niños o amigos no se sube al autobús sin ellos.
     if (act === "bus" && this.followers.length) act = "walk";
     if (act === "walk")
-      this.go(c.randomSidewalkPoint(), () => this.idle(this.pause()));
+      this.go(
+        this.game.streetFlow?.strollPoint(this) ?? c.randomSidewalkPoint(),
+        () => this.idle(this.pause()),
+      );
     else if (act === "shop") this.visitShop();
     else if (act === "park")
       this.go(c.randomParkPoint(), () =>
@@ -187,6 +204,13 @@ class Pedestrian extends Agent {
   }
 
   visitShop() {
+    // Parte de la gente va a comprar a una tienda del jugador: se acerca
+    // al escaparate y allí decide si entra.
+    const own = this.game.streetFlow?.chooseShop(this);
+    if (own) {
+      this.lookWindow(own, true);
+      return;
+    }
     const b = pick(this.crowd.shops());
     const lane = rand(0.5, 1.1);
     if (b.shutter) {
@@ -217,6 +241,52 @@ class Pedestrian extends Agent {
         ),
       0.6,
     );
+  }
+
+  // Se para delante del escaparate de un negocio del jugador, lo mira y
+  // decide (streetflow.js) si entra. intent: venía a comprar.
+  lookWindow(biz, intent = false) {
+    const b = biz.building;
+    const side = (Math.random() < 0.5 ? -1 : 1) * rand(1.4, 2.4);
+    this.state = "window";
+    this.speed = this.walkSpeed;
+    this.moveTo(
+      b.doorPoint(2.3, side),
+      () => {
+        this.face(b.x, b.z);
+        this.state = "window";
+        this.timer = rand(1.4, 2.2);
+        this.windowShop = { biz, intent, decided: false };
+        this.game.streetFlow?.firstLook(this, biz);
+      },
+      0.7,
+    );
+  }
+
+  // Pasa a ser cliente: el personaje sigue siendo el mismo; mientras compra
+  // este peatón solo copia la posición del cliente (sus acompañantes lo
+  // siguen dentro de la tienda).
+  becomeCustomer(customer) {
+    this.customer = customer;
+    this.state = "customer";
+    this.target = null;
+    this.path = [];
+    this.windowShop = null;
+  }
+
+  // Sale con la compra y sigue su paseo.
+  endShopping() {
+    const c = this.customer;
+    this.customer = null;
+    this.pos.x = c.pos.x;
+    this.pos.z = c.pos.z;
+    this.pos.y = c.pos.y;
+    this.heading = c.heading;
+    this.speed = this.walkSpeed;
+    this.seenShops.set(c.business, performance.now() / 1000);
+    this.go(c.business.building.doorPoint(3.4, -rand(1, 2.5)), () =>
+      this.idle(rand(0.3, 1.2)),
+    0.9);
   }
 
   tryChat() {
@@ -328,7 +398,26 @@ class Pedestrian extends Agent {
   }
 
   update(dt) {
+    if (this.customer) {
+      // Mientras compra lo mueve su cliente: aquí solo se copia dónde está
+      // (para que los niños y amigos que lo acompañan lo sigan).
+      const c = this.customer;
+      this.pos.x = c.pos.x;
+      this.pos.z = c.pos.z;
+      this.pos.y = c.pos.y;
+      this.heading = c.heading;
+      this.speed = c.speed;
+      return;
+    }
     super.update(dt);
+    if (this.state === "window" && this.windowShop && !this.target) {
+      this.timer -= dt;
+      if (this.timer <= 0 && !this.windowShop.decided) {
+        this.windowShop.decided = true;
+        this.game.streetFlow?.decide(this, this.windowShop.biz);
+      }
+      return;
+    }
     if (this.leader) {
       this.follow(dt);
       this.mood(dt);
@@ -349,7 +438,7 @@ class Pedestrian extends Agent {
       this.char.playAction("wave", 1.2);
       this.char.think(pick(["¡Hola!", "👋", "¡Buenas!"]), "#2e8a43", 1.6);
     }
-    if (this.state === "walk") {
+    if (this.state === "walk" || this.state === "window") {
       // Si su compañero de charla se fue, cancelar.
       if (this.partner && this.partner.partner !== this) this.partner = null;
       this.mood(dt);
@@ -439,6 +528,12 @@ export class Crowd {
       const list = w.visitShops.filter((s) => w.zoneOf(s.x, s.z) === zone);
       if (list.length) return list;
     }
+    // Los negocios del jugador no: allí se entra de verdad, como cliente
+    // (streetflow.js), en vez de desaparecer por la puerta.
+    const mine = (x) =>
+      Object.values(this.game.businesses ?? {}).some(
+        (biz) => biz.owned && biz.building === x,
+      );
     return [
       b.boutique,
       b.mayorista,
@@ -446,7 +541,7 @@ export class Crowd {
       b.casagrande,
       b.minimercado,
       b.cafeteria,
-    ].filter(Boolean);
+    ].filter((x) => x && !mine(x));
   }
 
   // Punto al azar en una acera de la zona (por superficie).
@@ -548,7 +643,9 @@ export class Crowd {
       const far =
         me && Math.abs(p.pos.x - me.x) + Math.abs(p.pos.z - me.z) > 170;
       const extra = !p.leader && this.people.length > wanted + 6;
-      if (p.done || far || extra) {
+      // Quien está comprando (o acompaña a quien compra) no se retira.
+      const shopping = p.customer || p.leader?.customer;
+      if (!shopping && (p.done || far || extra)) {
         if (p.partner) p.partner.partner = null;
         if (p.leader)
           p.leader.followers = p.leader.followers.filter((f) => f !== p);
@@ -559,7 +656,12 @@ export class Crowd {
     }
   }
 
+  // Quien está comprando ya cuenta como cliente de la tienda.
+  walking() {
+    return this.people.filter((p) => !p.hidden() && !p.customer);
+  }
+
   positions() {
-    return this.people.filter((p) => !p.hidden()).map((p) => p.pos);
+    return this.walking().map((p) => p.pos);
   }
 }

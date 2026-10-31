@@ -377,6 +377,17 @@ export function personType(seed) {
   return "adulto";
 }
 
+// Semilla al azar cuyo tipo de persona es `type`: así la semilla sola
+// basta para reconstruir a la misma persona (los peatones que entran en
+// una tienda pasan a ser clientes compartidos por su semilla).
+export function seedForType(type) {
+  for (let i = 0; i < 400; i++) {
+    const seed = Math.floor(Math.random() * 1e9);
+    if (!type || personType(seed) === type) return seed;
+  }
+  return Math.floor(Math.random() * 1e9);
+}
+
 // { type, look, scale, speed } de una persona. Sin semilla, al azar.
 export function randomPerson(seed = Math.floor(Math.random() * 1e9), type) {
   type ??= personType(seed);

@@ -373,6 +373,63 @@ entre 2 y 4 pasajeros y, al llegar a una zona, la calle se llena antes.
 Los clientes de otros jugadores se ven del mismo tipo en todos los
 navegadores, porque el tipo sale de la misma semilla que ya se compartía.
 
+### La calle y la tienda conectadas
+
+Los peatones ya no desaparecen al «entrar» en tus negocios: parte de la
+gente que pasa por la calle se convierte en cliente de verdad
+(`src/streetflow.js`):
+
+- Quien pasa a menos de 8 m de la puerta de una tienda tuya puede pararse
+  a mirar el escaparate y piensa algo: 😍 (bonito), 👀, 🛒 (voy a entrar),
+  💸 (caro), ❌ (está vacía), 🤔 o ⏳ (está llena). Además, parte de la
+  gente que sale de compras va directamente a tus tiendas y parte de los
+  paseos pasan por delante de ellas.
+- Al entrar se convierte en cliente (`Customer`) con su mismo personaje,
+  tipo y semilla: no desaparece ni vuelve a aparecer. Al salir con la
+  compra vuelve a ser peatón y sigue su paseo. Las familias y los grupos
+  de amigos entran, esperan en la fila y salen juntos.
+- Pararse depende de lo que se ve desde la calle: cartel luminoso (×1,4),
+  fachada de lujo (×1,35), plantas, suelo, la **oferta del día** y la hora
+  punta. Entrar depende además de las estanterías con género, los precios
+  (`priceFactor`), la reputación y la oferta. Los oficinistas se paran
+  menos; turistas y personas mayores, más; los deportistas y repartidores
+  no se paran.
+- **Oferta del día** (Gestión → 💲 Precios, botón 🏷️): un producto con un
+  20 % de descuento durante 2 minutos (después hay que esperar 1 minuto
+  para lanzar otra).
+- **Equilibrio**: cada tienda mantiene su ritmo de clientes de siempre
+  (`spawnInterval`, con todas sus mejoras); quien entra desde la calle
+  gasta ese ritmo y los clientes que llegan solos solo cubren lo que la
+  calle no cubre (por ejemplo, cuando juegas en otra zona y no hay
+  peatones delante). La calle sustituye clientes, no los suma.
+- **Gestión → 📋 Resumen** muestra la gente de la calle de hoy: pasó por
+  delante → se paró a mirar → entró → compró (con porcentajes), cuántos
+  llegaron por su cuenta y un consejo (qué falta para que se paren más).
+- **Online**: los clientes de tu tienda (también los que vienen de la
+  calle, con sus niños o amigos) se comparten con su semilla, así que los
+  demás jugadores los ven entrar iguales; los peatones no se comparten.
+  La semilla de cada peatón determina su tipo para que esto funcione. El
+  servidor valida cada venta como siempre (precio máximo, existencias y el
+  mismo límite de frecuencia); las ventas a clientes de la calle llevan
+  `from: "street"` y solo se cuentan aparte (`streetSales`).
+
+Medido con el jugador simulado (`tools/`, ver «Jugador simulado»):
+
+| Medida (mediana)              | Antes (3 partidas) | Ahora (4 partidas) |
+| ----------------------------- | ------------------ | ------------------ |
+| Primera automatización        | 8,5 min            | 8,4 min            |
+| Camión propio                 | 27,1 min           | 28,3 min           |
+| Cinta                         | 93,9 min           | 77,9 min           |
+| Fachada                       | 202,7 min          | 183,1 min          |
+| Clientes por minuto (media)   | 8,25               | 8,49 (+3 %)        |
+| Clientes que vienen de la calle | —                | 16–20 %            |
+
+El total apenas cambia: el ritmo de llegada es el mismo y la pequeña
+mejora viene de que quien entra desde el escaparate puede ocupar un hueco
+más cuando la tienda va llena (antes esos clientes se perdían). Las
+partidas varían bastante entre sí (una de las cuatro tardó 121 min en la
+cinta), así que las diferencias de pocos minutos no son significativas.
+
 ### Árboles, palomas y mascotas
 
 - Cinco especies de árbol: frondoso, pino, cerezo en flor, abedul y
@@ -571,9 +628,33 @@ andando o en vehículo, sin teletransportes:
 | `src/surpriseplay.js` | Sucesos en el mundo: ladrón, objetos perdidos, dueños, HUD     |
 | `src/wayfinding.js`   | Carteles flotantes, postes indicadores y «¿Dónde comprar?»     |
 | `src/greenery.js`     | Vegetación de relleno en el césped vacío                       |
+| `src/streetflow.js`   | Peatones que se paran en el escaparate y entran como clientes  |
+| `tools/`              | Jugador simulado (Chromium sin pantalla) para medir equilibrio |
 | `server/server.js`    | Servidor HTTP + WebSocket: ciudades, sincronización, chat      |
 | `server/economy.js`   | Reglas de economía validadas en el servidor                    |
 | `server/store.js`     | Persistencia en JSON                                           |
+
+## Jugador simulado
+
+`tools/simplayer.js` es un jugador simulado que usa el código real del
+juego (clientes, navegación, precios) a paso fijo en Chromium sin
+pantalla: solo atiende la tienda (cobra, repone, compra en el Mayorista lo
+que tiene expuesto y sigue la ruta de la tienda automática con $40 de
+reserva), sin misiones, objetivos, encargos ni otros negocios, y se queda
+en la puerta de la tienda.
+
+```sh
+cd games/de-cero-a-millonario/server && npm start   # en otra terminal
+cd games/de-cero-a-millonario
+node tools/sim.cjs http://localhost:8080/ 260 3     # minutos, partidas
+```
+
+Imprime, por partida, el minuto de juego en que compra cada paso, los
+clientes por minuto y cuántos vinieron de la calle, y la mediana. El
+jugador simulado con el que se midieron las cifras anteriores del README
+(~9, ~42 y ~150 min) no estaba en el repositorio; este es otro, más
+lento, así que las comparaciones se hacen siempre con él antes y después
+de cada cambio.
 
 ## Pendiente
 

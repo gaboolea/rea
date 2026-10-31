@@ -457,7 +457,10 @@ export class Online {
     const list = [];
     for (const b of Object.values(this.game.businesses)) {
       if (!b.owned) continue;
-      for (const a of [...b.customers, ...b.employees]) {
+      // Con los clientes que vienen de la calle van sus acompañantes
+      // (niños, amigos), también por su semilla.
+      const companions = b.customers.flatMap((c) => c.street?.followers ?? []);
+      for (const a of [...b.customers, ...companions, ...b.employees]) {
         if (!a.char.root.visible) continue;
         list.push([
           a.netId,

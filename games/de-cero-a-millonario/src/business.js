@@ -1,6 +1,13 @@
 // Negocios del jugador: mobiliario según mejoras, existencias reales en
 // estanterías y almacén, cajas registradoras con filas, clientes y empleados.
-import { BUSINESSES, PRODUCTS, UPGRADES, STAFF, BOX_UNITS } from "./config.js";
+import {
+  BUSINESSES,
+  PRODUCTS,
+  UPGRADES,
+  STAFF,
+  BOX_UNITS,
+  OFFER,
+} from "./config.js";
 import {
   ProductDisplay,
   StoragePile,
@@ -24,6 +31,9 @@ import {
 import * as THREE from "three";
 
 const PI2 = Math.PI / 2;
+// Parte de una llegada de cliente que se espera a que la cubra la calle
+// antes de que el cliente llegue solo.
+const STREET_HOLD = 1.2;
 
 const DISPLAY_NAMES = {
   shelf: "Estantería",
@@ -285,9 +295,13 @@ export class Business {
     this.employees = [];
     this.decor = [];
     this.machine = null;
-    this.spawnTimer = 2;
+    // Demanda acumulada de clientes (ver update): la reparten los peatones
+    // que entran desde la calle y, si no llegan, los que vienen solos.
+    this.demand = 0.6;
     this.reputation = 50;
-    this.today = { revenue: 0, profit: 0, sales: 0, lost: 0 };
+    this.today = freshToday();
+    // Oferta del día: un producto rebajado un rato (atrae a más gente).
+    this.offer = null;
     this.interactables = [];
     this.saleInteractable = null;
   }
@@ -976,8 +990,23 @@ export class Business {
     return list.length ? list[Math.floor(Math.random() * list.length)] : null;
   }
 
+  // Precio que paga el cliente (con la oferta, si la hay).
+  priceOf(product) {
+    const p = this.prices[product];
+    return this.offer?.product === product
+      ? Math.round(p * (1 - OFFER.discount) * 100) / 100
+      : p;
+  }
+
+  startOffer(product) {
+    if (this.offer || (this.offerCooldown ?? 0) > 0) return false;
+    if (!this.catalog().includes(product)) return false;
+    this.offer = { product, left: OFFER.seconds };
+    return true;
+  }
+
   willingness(product) {
-    const r = this.prices[product] / PRODUCTS[product].base;
+    const r = this.priceOf(product) / PRODUCTS[product].base;
     if (r <= 0.85) return 1;
     if (r <= 1.0) return 0.97;
     return Math.max(0, 1 - (r - 1) * 1.4);
@@ -998,7 +1027,7 @@ export class Business {
     d.setStock(d.stock - qty);
     const items = [];
     for (let i = 0; i < qty; i++)
-      items.push({ product, price: this.prices[product] });
+      items.push({ product, price: this.priceOf(product) });
     return { ok: true, items };
   }
 
@@ -1049,22 +1078,31 @@ export class Business {
           : PRODUCTS[it.product].cost),
       0,
     );
-    this.game.earn(total, total - cost, c.basket, this, c.vip);
+    this.collect(c, total, cost);
     // El cliente se va contento con su compra.
     c.char?.express("joy", 1.4);
-    if (c.basket.some((i) => i.product === "cafe"))
-      this.game.state.stats.coffeeSold += c.basket.filter(
-        (i) => i.product === "cafe",
-      ).length;
     this.today.revenue += total;
     this.today.profit += total - cost;
     this.today.sales++;
+    if (c.street) this.today.streetBought++;
     this.reputation = Math.min(100, this.reputation + 0.6);
     c.paid();
     reg.queue.forEach((q) => q.goToQueueSpot());
     this.game.fx.coins(reg.pos, total);
-    this.game.onSale(this, c, total);
+    this.afterSale(c, total);
     return true;
+  }
+
+  // Cobro de una venta: el dinero es del jugador (en online lo valida el
+  // servidor).
+  collect(c, total, cost) {
+    this.game.earn(total, total - cost, c.basket, this, c.vip, !!c.street);
+    const coffees = c.basket.filter((i) => i.product === "cafe").length;
+    if (coffees) this.game.state.stats.coffeeSold += coffees;
+  }
+
+  afterSale(c, total) {
+    this.game.onSale(this, c, total);
   }
 
   priceFactor() {
@@ -1101,6 +1139,65 @@ export class Business {
       this.layout.spawnEvery /
       (stockFactor * repFactor * sign * this.priceFactor() * rush)
     );
+  }
+
+  // Lo que ve quien pasa por delante: si se para a mirar (notice), si
+  // entra (enter) y lo que piensa. Depende de lo que se ve desde la calle
+  // (cartel luminoso, fachada, plantas, suelo), de las estanterías con
+  // género, de los precios, la reputación, la oferta del día y la hora
+  // punta. La cantidad total de clientes la sigue marcando spawnInterval:
+  // esto solo decide cuántos de ellos llegan desde la calle.
+  appeal() {
+    const u = this.upgrades;
+    const stocked = this.displays.filter((d) => d.display.stock > 0).length;
+    const fill = this.displays.length ? stocked / this.displays.length : 0;
+    const looks =
+      (u.has("letrero") ? 1.4 : 1) *
+      (u.has("fachada") ? 1.35 : 1) *
+      (u.has("plantas") ? 1.12 : 1) *
+      (u.has("suelo") ? 1.08 : 1);
+    const price = this.priceFactor();
+    const offer = this.offer ? 1.35 : 1;
+    const rush = this.game.events?.rushFactor(this) ?? 1;
+    const rep = 0.55 + this.reputation / 100;
+    const notice = Math.min(0.9, 0.32 * looks * offer * (rush > 1 ? 1.3 : 1));
+    const enter = Math.max(
+      0.02,
+      Math.min(
+        0.92,
+        0.3 * (0.25 + fill) * price * price * rep * offer * Math.sqrt(looks) *
+          (rush > 1 ? 1.25 : 1),
+      ),
+    );
+    return {
+      notice,
+      enter,
+      empty: fill < 0.25,
+      pricey: price < 0.9,
+      pretty: looks >= 1.3,
+    };
+  }
+
+  // Puede recibir a alguien más ahora mismo (tope de clientes y demanda).
+  acceptsWalkIn() {
+    return (
+      this.owned &&
+      this.displays.length > 0 &&
+      // Quien entra desde el escaparate sustituye a un cliente que llegaría
+      // solo: puede entrar aunque la tienda vaya justa (uno más del tope).
+      this.customers.length <= this.maxCustomers() &&
+      this.demand >= 0.35
+    );
+  }
+
+  // Un peatón entra: pasa a ser cliente con su mismo personaje y semilla.
+  admit(ped) {
+    this.demand -= 1;
+    this.today.entered++;
+    const c = new Customer(this.game, this, ped.pos, false, ped.seed, ped);
+    this.customers.push(c);
+    ped.becomeCustomer(c);
+    return c;
   }
 
   // ---------- Empleados ----------
@@ -1330,25 +1427,42 @@ export class Business {
       this.detailTimer = 0.5;
       this.refreshDetails();
     }
-    this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
-      this.spawnTimer = this.spawnInterval() * (0.6 + Math.random() * 0.8);
-      this.spawnTimer = Math.min(this.spawnTimer, 25);
+    if (this.offer) {
+      this.offer.left -= dt;
+      if (this.offer.left <= 0) {
+        this.offer = null;
+        this.offerCooldown = OFFER.cooldown;
+      }
+    } else if (this.offerCooldown > 0) this.offerCooldown -= dt;
+    // Demanda: llega un cliente cada spawnInterval() segundos de media
+    // (como siempre, tope de 25 s). Los peatones que se paran y entran
+    // gastan esa demanda; si la calle no la cubre (no pasa nadie, o el
+    // jugador está en otra zona y no hay peatones aquí), el cliente llega
+    // por su cuenta. Así la calle sustituye clientes, no los suma.
+    const interval = Math.min(25, this.spawnInterval());
+    this.demand = Math.min(2.5, this.demand + dt / interval);
+    const hold = this.game.streetFlow?.covers(this) ? STREET_HOLD : 0;
+    if (this.demand >= 1 + hold + (this.spawnJitter ??= Math.random() * 0.3)) {
+      this.demand -= 1;
+      this.spawnJitter = Math.random() * 0.3;
       if (
         this.customers.length < this.maxCustomers() &&
         budget.customers > 0 &&
         this.displays.length
       ) {
         this.customers.push(new Customer(this.game, this, this.spawnPoint()));
+        this.today.walkIns++;
         budget.customers--;
       }
     }
     for (const c of this.customers) c.update(dt);
     for (let i = this.customers.length - 1; i >= 0; i--) {
-      if (this.customers[i].done) {
-        this.customers[i].dispose();
-        this.customers.splice(i, 1);
-      }
+      const c = this.customers[i];
+      if (!c.done) continue;
+      // Quien venía de la calle sigue paseando con su mismo personaje.
+      if (c.street) c.street.endShopping();
+      else c.dispose();
+      this.customers.splice(i, 1);
     }
     for (const e of this.employees) e.update(dt);
     this.conveyor?.update(dt);
@@ -1433,6 +1547,23 @@ export class Business {
     for (const role of data.employees ?? []) this.hire(role);
     this.updateStoragePile();
   }
+}
+
+// Contadores del día de cada negocio. passed/stopped/entered: gente de la
+// calle que pasó por delante, se paró a mirar y entró; streetBought: de
+// ellos, quienes compraron; walkIns: clientes que llegaron por su cuenta.
+export function freshToday() {
+  return {
+    revenue: 0,
+    profit: 0,
+    sales: 0,
+    lost: 0,
+    passed: 0,
+    stopped: 0,
+    entered: 0,
+    streetBought: 0,
+    walkIns: 0,
+  };
 }
 
 export function basketTotal(items) {

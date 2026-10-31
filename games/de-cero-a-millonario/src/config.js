@@ -291,6 +291,10 @@ export const PRODUCTS = {
   },
 };
 
+// Oferta del día en una tienda propia: un producto rebajado un rato.
+// Atrae a más gente de la calle (ver Business.appeal).
+export const OFFER = { discount: 0.2, seconds: 120, cooldown: 60 };
+
 export const STAGES = [
   { name: "Principiante", revenue: 0 },
   { name: "Comerciante", revenue: 300 },

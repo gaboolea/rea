@@ -4,13 +4,14 @@
 import * as THREE from "three";
 import { World } from "./world.js";
 import { Scenery } from "./scenery.js";
-import { Business } from "./business.js";
+import { Business, freshToday } from "./business.js";
 import { Player, CameraRig } from "./player.js";
 import { Input } from "./input.js";
 import { Fx } from "./fx.js";
 import { UI } from "./ui.js";
 import { AudioManager } from "./audio.js";
 import { Crowd } from "./pedestrians.js";
+import { StreetFlow } from "./streetflow.js";
 import { Wayfinding } from "./wayfinding.js";
 import { Surprises } from "./surpriseplay.js";
 import { Events } from "./events.js";
@@ -165,6 +166,7 @@ class Game {
     this.player = new Player(this, start.x, start.z, this.state.look);
     this.cameraRig = new CameraRig(this.camera, this.settings);
     this.crowd = new Crowd(this);
+    this.streetFlow = new StreetFlow(this);
     this.events = new Events(this);
     this.surprises = new Surprises(this);
     this.wardrobe = new Wardrobe(this);
@@ -431,7 +433,7 @@ class Game {
         lost: b.today.lost,
         cost,
       });
-      b.today = { revenue: 0, profit: 0, sales: 0, lost: 0 };
+      b.today = freshToday();
     }
     this.state.money = money;
     this.state.day = report.day + 1;
@@ -741,7 +743,9 @@ class Game {
 
   // Venta a un cliente del juego. En online el servidor valida existencias
   // y precio y es quien suma el dinero.
-  earn(total, profit, basket = [], business = null, vip = false) {
+  // street: el cliente entró desde la calle (el servidor lo cuenta aparte y
+  // lo valida igual que los demás).
+  earn(total, profit, basket = [], business = null, vip = false, street) {
     const s = this.state;
     s.stats.grossProfit += profit;
     s.stats.sales++;
@@ -752,7 +756,12 @@ class Game {
         price: Math.round(i.price * 100) / 100,
       }));
       this.net
-        .request("sale", { biz: business?.id ?? "tienda", items, vip })
+        .request("sale", {
+          biz: business?.id ?? "tienda",
+          items,
+          vip,
+          ...(street ? { from: "street" } : {}),
+        })
         .then((r) => this.applyServerMoney(r));
       return;
     }
@@ -1404,7 +1413,7 @@ class Game {
     const list = [];
     for (const b of Object.values(this.businesses))
       list.push(...b.customers, ...b.employees);
-    for (const p of this.crowd.people) if (!p.hidden()) list.push(p);
+    list.push(...this.crowd.walking());
     list.push(...this.warehouse.workers);
     return list;
   }
@@ -1565,6 +1574,7 @@ class Game {
     };
     for (const b of Object.values(this.businesses)) b.update(dt, budget);
     this.crowd.update(dt);
+    if (!title) this.streetFlow.update(dt);
     this.separateAgents(this.allAgents());
     for (let i = this.timers.length - 1; i >= 0; i--) {
       const t = this.timers[i];
@@ -1728,7 +1738,7 @@ class Game {
         lost: b.today.lost,
         cost,
       });
-      b.today = { revenue: 0, profit: 0, sales: 0, lost: 0 };
+      b.today = freshToday();
     }
     if (this.state.items.furgoneta) expenses += 10;
     s.money -= expenses;

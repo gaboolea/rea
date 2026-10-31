@@ -3069,3 +3069,19 @@ table.rank tr.me {
 .shop-row small + small {
   margin-top: 2px;
 }
+
+/* Embudo de la gente de la calle (Gestión → Resumen) */
+.stats.funnel em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: #2e8a43;
+  font-weight: 700;
+}
+.offer-btn {
+  min-width: 34px;
+  padding: 4px 6px;
+  margin-right: 6px;
+  background: #fff3c4;
+  border: 2px solid #f2c230;
+}

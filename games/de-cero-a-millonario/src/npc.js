@@ -50,6 +50,10 @@ export class Agent {
     this.stuck = 0;
   }
 
+  hidden() {
+    return !this.char.root.visible;
+  }
+
   get arrived() {
     return !this.target;
   }
@@ -135,24 +139,32 @@ export function turnTowards(current, target, maxStep) {
 }
 
 export class Customer extends Agent {
+  // street: peatón que se para en el escaparate y entra; el cliente usa su
+  // mismo personaje (no desaparece ni vuelve a aparecer) y su semilla, y al
+  // salir le devuelve el control para que siga paseando.
   constructor(
     game,
     business,
     spawn,
     vip = false,
     seed = Math.floor(Math.random() * 1e9),
+    street = null,
   ) {
     // Tipo de persona (niño, persona mayor, oficinista...) según la semilla.
     const person = randomPerson(seed);
     super(
       game,
-      new ToyCharacter({
-        look: vip ? VIP_LOOK : person.look,
-        scale: vip ? 0.95 : person.scale,
-      }),
+      street
+        ? street.char
+        : new ToyCharacter({
+            look: vip ? VIP_LOOK : person.look,
+            scale: vip ? 0.95 : person.scale,
+          }),
       spawn.x,
       spawn.z,
     );
+    if (street) this.heading = street.heading;
+    this.street = street;
     this.business = business;
     this.spawn = spawn;
     this.vip = vip;
@@ -277,7 +289,9 @@ export class Customer extends Agent {
         b.doorPoint(1.8, lane),
         () => {
           this.state = "exit";
-          this.moveTo(this.spawn, () => (this.done = true), 0.8);
+          // Quien venía de la calle vuelve a ser peatón aquí mismo.
+          if (this.street) this.done = true;
+          else this.moveTo(this.spawn, () => (this.done = true), 0.8);
         },
         0.6,
       );

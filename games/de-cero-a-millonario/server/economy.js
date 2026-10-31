@@ -197,9 +197,14 @@ export function buySupplies(cp, city, { order, deliver }) {
   return { ok: true, cost, items };
 }
 
-// Venta a un cliente controlado por el juego en un negocio propio.
-export function sale(cp, { biz, items, vip }, now = Date.now()) {
+// Venta a un cliente controlado por el juego en un negocio propio. from:
+// "street" si el cliente era un peatón que entró desde la calle; se valida
+// exactamente igual (precio máximo, existencias y el mismo límite de
+// frecuencia compartido) y solo se cuenta aparte.
+export function sale(cp, { biz, items, vip, from }, now = Date.now()) {
   if (!owns(cp, biz)) return fail("Ese negocio no es tuyo");
+  if (from !== undefined && from !== "street") return fail("Venta no válida");
+  if (from && vip) return fail("Venta no válida");
   if (
     !Array.isArray(items) ||
     items.length < 1 ||
@@ -236,6 +241,7 @@ export function sale(cp, { biz, items, vip }, now = Date.now()) {
   cp.stats.revenue = round2(cp.stats.revenue + total);
   cp.stats.grossProfit = round2(cp.stats.grossProfit + total - cost);
   cp.stats.sales += 1;
+  if (from === "street") cp.stats.streetSales = (cp.stats.streetSales ?? 0) + 1;
   cp.stats.coffeeSold += need.cafe ?? 0;
   return { ok: true, total };
 }

@@ -366,3 +366,35 @@ test("objetivos de sucesos: se pagan con las estadísticas del servidor", () => 
   assert.equal(r.reward, 150);
   assert.equal(eco.claimGoal(cp, { id: "heroe" }).ok, false);
 });
+
+test("las ventas a clientes que vienen de la calle se validan igual y comparten límite", () => {
+  const cp = eco.newCityProfile();
+  const t = 2e6;
+  const street = (items, now = t) =>
+    eco.sale(cp, { biz: "tienda", items, from: "street" }, now);
+  // Precio por encima del máximo y producto sin existencias: rechazadas.
+  assert.equal(street([{ p: "agua", price: 2 * eco.PRICE_CAP + 0.1 }]).ok, false);
+  assert.equal(street([{ p: "cereal", price: 4 }]).ok, false);
+  // Origen desconocido o VIP «de la calle»: rechazadas.
+  assert.equal(
+    eco.sale(cp, { biz: "tienda", items: [{ p: "agua", price: 2 }], from: "x" }, t).ok,
+    false,
+  );
+  assert.equal(
+    eco.sale(cp, { biz: "tienda", items: [{ p: "agua", price: 2 }], from: "street", vip: true }, t).ok,
+    false,
+  );
+  const r = street([{ p: "agua", price: 2 }]);
+  assert.equal(r.ok, true);
+  assert.equal(cp.stats.streetSales, 1);
+  assert.equal(cp.ledger.agua, 11);
+  // El límite de frecuencia es el mismo para todas las ventas: la calle no
+  // permite vender más deprisa.
+  let ok = 1;
+  for (let i = 0; i < 20; i++) {
+    const from = i % 2 ? "street" : undefined;
+    if (eco.sale(cp, { biz: "tienda", items: [{ p: "galletas", price: 2 }], from }, t).ok) ok++;
+  }
+  assert.ok(ok <= 8, `vendidas ${ok} de golpe`);
+  assert.equal(cp.ledger.galletas, 12 - (ok - 1));
+});
