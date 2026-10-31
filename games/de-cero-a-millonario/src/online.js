@@ -170,6 +170,9 @@ class NpcProxy {
       scale: person ? person.scale : seed === -9 ? 0.95 : 1,
       apron: seed < 0 && seed !== -9 ? 0xffffff : null,
     });
+    // Misma semilla → misma persona que en el navegador de su dueño.
+    this.seed = seed;
+    this.type = person?.type ?? null;
     this.buf = [];
     this.seen = 0;
     this.pos = { x: 0, z: 0 };

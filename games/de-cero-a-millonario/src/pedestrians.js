@@ -92,7 +92,7 @@ class Pedestrian extends Agent {
     this.seed = seed;
     this.type = courier ? "repartidor" : person.type;
     // Cliente en el que se ha convertido mientras compra en una tienda del
-    // jugador; null en la calle.
+    // jugador (o del rival); null en la calle.
     this.customer = null;
     // Tiendas por las que ya pasó (no se vuelve a parar en seguida).
     this.seenShops = new Map();

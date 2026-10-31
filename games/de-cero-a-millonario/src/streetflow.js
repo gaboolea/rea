@@ -1,5 +1,5 @@
 // La ciudad y las tiendas conectadas: parte de la gente que pasa por la
-// calle se para delante de una tienda del jugador, mira el
+// calle se para delante de una tienda del jugador (o del rival), mira el
 // escaparate, piensa algo (💸 caro, 😍 bonito, 🛒 voy a entrar, ❌ está
 // vacía) y puede entrar. Al entrar el peatón se convierte en cliente
 // (Customer) con su mismo personaje, tipo y semilla; al salir vuelve a ser
@@ -18,7 +18,7 @@ const NEVER = new Set(["repartidor", "deportista"]);
 // Pararse depende también de quién es.
 const NOTICE_BY_TYPE = { oficinista: 0.5, turista: 1.3, mayor: 1.2 };
 // Peatones que van a comprar a propósito (actividad «shop»): parte va a
-// las tiendas del jugador en vez de a los demás comercios.
+// las tiendas del jugador o del rival en vez de a los demás comercios.
 const SHOP_TRIP = 0.7;
 // Paseos que pasan por delante de una tienda del jugador.
 const STROLL_PAST = 0.3;
@@ -41,11 +41,12 @@ export class StreetFlow {
   }
 
   // Negocios donde puede entrar la gente de la calle: los propios (no los
-  // de otros jugadores, que son de su navegador).
+  // de otros jugadores, que son de su navegador) y los rivales del juego.
   shops() {
     const list = Object.values(this.game.businesses).filter(
       (b) => b.owned && !b.remote && b.displays.length,
     );
+    for (const r of this.game.competition?.active() ?? []) list.push(r);
     return list;
   }
 
@@ -96,7 +97,7 @@ export class StreetFlow {
     return true;
   }
 
-  // Quien sale a comprar elige tienda: la del jugador o
+  // Quien sale a comprar elige tienda: la del jugador, la del rival o
   // ninguna (null: va a otro comercio). Pesa lo atractiva que es (precio,
   // género, reputación, aspecto) y lo lejos que está.
   chooseShop(p) {

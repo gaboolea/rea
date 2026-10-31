@@ -1,5 +1,5 @@
 // Gimnasio y objetivos opcionales de la expansión.
-import { GYM, GOALS, goalProgress } from "./config.js";
+import { GYM, GOALS, SOLO_GOALS, goalProgress } from "./config.js";
 
 // Entrenamiento: se paga en el mostrador del gimnasio (el servidor cobra
 // en online) y da velocidad extra a pie durante GYM.seconds.
@@ -67,6 +67,7 @@ export class Goals {
     const g = this.game;
     for (const goal of GOALS) {
       if (this.claimed(goal) || this.pending.has(goal.id)) continue;
+      if (g.online && SOLO_GOALS.has(goal.id)) continue;
       if (!this.progress(goal).done) continue;
       this.pending.add(goal.id);
       let ok = true;

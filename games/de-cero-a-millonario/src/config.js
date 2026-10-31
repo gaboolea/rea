@@ -765,6 +765,85 @@ export const GOALS = [
   },
 ];
 
+// Objetivos que solo existen en el modo de un jugador (la competencia del
+// juego no está en online): el servidor no los paga.
+export const SOLO_GOALS = new Set(["sin_rival", "monopolio"]);
+GOALS.push(
+  {
+    id: "sin_rival",
+    name: "Sin competencia",
+    desc: "Compra la tienda rival del barrio",
+    reward: 800,
+  },
+  {
+    id: "monopolio",
+    name: "Rey del comercio",
+    desc: "Compra también la tienda rival de la zona comercial",
+    reward: 3000,
+  },
+);
+
+// Tiendas rivales del modo de un jugador (competition.js), en orden: al
+// comprar una aparece la siguiente. building: local libre que ocupan.
+// strength: parte del mercado que se llevaría con una tienda tan buena
+// como la tuya, por nivel (0–3); el nivel sigue a tu etapa y sube con los
+// días (como mucho una por encima de tu etapa). price: lo que cuesta
+// comprarla (desde la etapa buyStage). prices: precio medio (× base) con
+// el que empieza cada nivel y floor, lo más bajo que llega a bajarlo para
+// responderte.
+export const RIVALS = [
+  {
+    id: "ahorro",
+    building: "este",
+    name: "Súper Ahorro",
+    owner: "Don Ramiro",
+    sign: "SÚPER AHORRO",
+    colors: { bg: "#ffe14d", fg: "#c0392b" },
+    ownerSeed: 7711,
+    strength: [0.05, 0.1, 0.15, 0.2],
+    prices: [1.12, 1.06, 1.02, 0.98],
+    floor: [1.06, 0.97, 0.92, 0.88],
+    minLevel: 0,
+    price: 6000,
+    buyStage: 2,
+    goal: "sin_rival",
+  },
+  {
+    id: "mega",
+    building: "localcomercial",
+    name: "MegaPrecio",
+    owner: "Doña Celia",
+    sign: "MEGAPRECIO",
+    colors: { bg: "#e0464e", fg: "#ffffff" },
+    ownerSeed: 90210,
+    strength: [0.1, 0.14, 0.2, 0.26],
+    prices: [1.04, 1.0, 0.97, 0.94],
+    floor: [0.98, 0.94, 0.9, 0.85],
+    minLevel: 2,
+    price: 30000,
+    buyStage: 3,
+    goal: "monopolio",
+  },
+];
+
+// Mejoras que monta la tienda rival en cada nivel (acumuladas).
+export const RIVAL_UPGRADES = [
+  [],
+  ["estanteria1", "plantas"],
+  ["estanteria1", "plantas", "letrero", "estanteria2", "refrigerador"],
+  [
+    "estanteria1",
+    "plantas",
+    "letrero",
+    "estanteria2",
+    "refrigerador",
+    "fachada",
+    "congelador",
+    "caja2",
+    "suelo",
+  ],
+];
+
 // Progreso de un objetivo con los datos del jugador ({ items, home,
 // unlocked, stats }): { done, count }.
 export function goalProgress(id, p) {
@@ -792,6 +871,10 @@ export function goalProgress(id, p) {
       const count = p.stats?.thieves ?? 0;
       return { done: count >= 3, count };
     }
+    case "sin_rival":
+      return { done: (p.stats?.rivalsBought ?? 0) >= 1 };
+    case "monopolio":
+      return { done: (p.stats?.rivalsBought ?? 0) >= 2 };
     default:
       return { done: false };
   }

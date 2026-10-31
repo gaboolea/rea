@@ -282,6 +282,9 @@ export class Business {
     this.building = game.world.buildings[opts.building ?? id];
     this.layout = LAYOUTS[id];
     this.remote = !!opts.remote;
+    // Negocio que lleva el propio juego (la tienda rival): sin carteles ni
+    // puntos de uso para el jugador.
+    this.ai = !!opts.ai;
     this.openToPlayers = true;
     this.colliderTag = `biz:${this.building.id}`;
     this.owned = !!this.def.owned;
@@ -371,7 +374,7 @@ export class Business {
     }
     this.buildDecor();
     this.refreshFixtures();
-    if (!this.remote) {
+    if (!this.remote && !this.ai) {
       this.interactables.push(this.storageInteractable());
       this.buildUpgradeBoard();
     }
@@ -1094,7 +1097,7 @@ export class Business {
   }
 
   // Cobro de una venta: el dinero es del jugador (en online lo valida el
-  // servidor).
+  // servidor). La tienda rival del juego (competition.js) lo sustituye.
   collect(c, total, cost) {
     this.game.earn(total, total - cost, c.basket, this, c.vip, !!c.street);
     const coffees = c.basket.filter((i) => i.product === "cafe").length;
@@ -1135,9 +1138,12 @@ export class Business {
       (this.upgrades.has("letrero") ? 1.15 : 1) *
       (this.upgrades.has("fachada") ? 1.1 : 1);
     const rush = this.game.events?.rushFactor(this) ?? 1;
+    // La tienda rival se lleva parte de los clientes (o te los deja a ti si
+    // tu tienda es mejor): ver competition.js.
+    const market = this.ai ? 1 : (this.game.competition?.playerFactor(this) ?? 1);
     return (
       this.layout.spawnEvery /
-      (stockFactor * repFactor * sign * this.priceFactor() * rush)
+      (stockFactor * repFactor * sign * this.priceFactor() * rush * market)
     );
   }
 

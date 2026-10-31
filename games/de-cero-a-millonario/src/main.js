@@ -12,6 +12,7 @@ import { UI } from "./ui.js";
 import { AudioManager } from "./audio.js";
 import { Crowd } from "./pedestrians.js";
 import { StreetFlow } from "./streetflow.js";
+import { Competition } from "./competition.js";
 import { Wayfinding } from "./wayfinding.js";
 import { Surprises } from "./surpriseplay.js";
 import { Events } from "./events.js";
@@ -167,6 +168,7 @@ class Game {
     this.cameraRig = new CameraRig(this.camera, this.settings);
     this.crowd = new Crowd(this);
     this.streetFlow = new StreetFlow(this);
+    this.competition = new Competition(this);
     this.events = new Events(this);
     this.surprises = new Surprises(this);
     this.wardrobe = new Wardrobe(this);
@@ -246,6 +248,7 @@ class Game {
       ...this.home.interactables(),
       ...this.home.furnitureInteractables(),
       ...this.storeDoorHints(),
+      ...this.competition.interactables(),
       ...(this.online?.interactables() ?? []),
     ];
   }
@@ -493,6 +496,8 @@ class Game {
       this.online ? Math.max(0, PLOTS.indexOf(this.online.me.plot)) : 0,
     );
     this.district.apply();
+    // Un jugador: tienda rival del juego (en online compiten los jugadores).
+    if (!this.online) this.competition.setup();
     this.goals.check();
     this.automation.setup();
     this.rebuildInteractables();
@@ -1413,6 +1418,7 @@ class Game {
     const list = [];
     for (const b of Object.values(this.businesses))
       list.push(...b.customers, ...b.employees);
+    list.push(...this.competition.agents());
     list.push(...this.crowd.walking());
     list.push(...this.warehouse.workers);
     return list;
@@ -1555,6 +1561,7 @@ class Game {
     this._agents = [];
     for (const b of Object.values(this.businesses))
       this._agents.push(...b.actors());
+    this._agents.push(...this.competition.actors());
     this._agents.push(
       ...this.crowd.positions(),
       ...this.warehouse.positions(),
@@ -1569,10 +1576,12 @@ class Game {
               Object.values(this.businesses).reduce(
                 (a, b) => a + b.customers.length,
                 0,
-              ),
+              ) -
+              (this.competition.rival?.customers.length ?? 0),
           ),
     };
     for (const b of Object.values(this.businesses)) b.update(dt, budget);
+    this.competition.update(dt, budget);
     this.crowd.update(dt);
     if (!title) this.streetFlow.update(dt);
     this.separateAgents(this.allAgents());
@@ -1741,6 +1750,7 @@ class Game {
       b.today = freshToday();
     }
     if (this.state.items.furgoneta) expenses += 10;
+    this.competition.endDay();
     s.money -= expenses;
     s.stats.expenses += expenses;
     s.lastReport = { day: s.day, lines, expenses };
@@ -1865,6 +1875,7 @@ class Game {
       });
       return true;
     }
+    this.competition.save();
     // Para calcular lo que gana la tienda mientras la partida está cerrada.
     this.state.auto.savedAt = Date.now();
     const data = {

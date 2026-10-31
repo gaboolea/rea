@@ -430,6 +430,62 @@ más cuando la tienda va llena (antes esos clientes se perdían). Las
 partidas varían bastante entre sí (una de las cuatro tardó 121 min en la
 cinta), así que las diferencias de pocos minutos no son significativas.
 
+### Competencia (modo de un jugador)
+
+Una tienda rival que lleva el juego disputa tus clientes
+(`src/competition.js`, datos en `RIVALS` de `src/config.js`):
+
+- **Súper Ahorro**, de Don Ramiro, ocupa el local libre del este del
+  barrio (el que en online es de otro jugador), con su cartel amarillo,
+  su dueño en la caja (con su propio look) y un reponedor. Usa el mismo
+  local, mobiliario y clientes que tu tienda.
+- Tiene sus **precios, existencias y nivel** (1 a 4). El nivel sigue a tu
+  etapa y sube con los días, pero nunca más de uno por encima de tu
+  etapa: en Principiante es débil. Al subir de nivel monta mejoras
+  (estanterías, plantas, cartel luminoso, fachada…). **Reacciona**: si
+  bajas tus precios, baja los suyos poco a poco (hasta un suelo por
+  nivel) y lo avisa; si los subes, vuelve despacio a los suyos. Lanza
+  **ofertas**, a veces **se queda sin género** un rato y lo anuncia.
+- **En la calle**: los peatones que salen de compras eligen entre tu
+  tienda y la suya según lo atractiva que es cada una (precio, género,
+  reputación y aspecto) y la distancia; los que pasan por delante de la
+  suya también se paran y entran (punto anterior).
+- **Cuota de mercado**: si las dos tiendas son igual de atractivas, el
+  rival se lleva la mitad de su fuerza (5 % en Principiante, 10 %, 15 % y
+  20 % en Magnate); si la tuya es mucho mejor, le quitas clientes (hasta
+  +la mitad de su fuerza) y si es mucho peor, se lleva hasta 1,5 veces su
+  fuerza.
+- **Gestión → 🏁 Rival**: su nivel, si tiene género u oferta, cuánto te
+  quita (o le quitas), tu cuota de clientes de hoy, la reputación, precios
+  comparados producto a producto y sus últimas noticias. También se abre
+  con E en su puerta.
+- **Responder**: precios, la oferta del día, mejoras y, desde la etapa
+  Empresario, **comprar la tienda rival** por $6.000: cierra («COMPRADA
+  por ti»), sus clientes vienen a ti y cobras el objetivo **Sin
+  competencia** ($800). Entonces abre **MegaPrecio** (Doña Celia), más
+  fuerte, en un local nuevo de la zona comercial junto al gimnasio; se
+  compra en la etapa Magnate por $30.000 (objetivo **Rey del comercio**,
+  $3.000).
+- **Online**: no hay rival del juego; la competencia son los demás
+  jugadores. Los dos objetivos de la competencia no aparecen en online y
+  el servidor no los paga (prueba en `server/test`). El local de la zona
+  comercial queda cerrado («SE ALQUILA»).
+
+Medido con el jugador simulado (el rival se crea solo, como en una
+partida normal; el jugador simulado no cambia precios ni lo compra):
+
+| Medida (mediana)            | Sin rival (línea base) | Con rival (4 partidas) |
+| --------------------------- | ---------------------- | ---------------------- |
+| Primera automatización      | 8,5 min                | 8,8 min (+4 %)         |
+| Cinta                       | 93,9 min               | 85,2 min               |
+| Fachada                     | 202,7 min              | 209,8 min (+3,5 %)     |
+| Clientes por minuto (media) | 8,25                   | 8,27                   |
+
+Respecto a la versión con la calle conectada (sin rival) la fachada
+llega unos 25 minutos más tarde (183 → 210), que es lo que se lleva el
+rival; respecto a los tiempos de antes de estos cambios, ningún paso
+empeora más de un 4 % (el límite pedido era un 20 %).
+
 ### Árboles, palomas y mascotas
 
 - Cinco especies de árbol: frondoso, pino, cerezo en flor, abedul y
@@ -629,6 +685,7 @@ andando o en vehículo, sin teletransportes:
 | `src/wayfinding.js`   | Carteles flotantes, postes indicadores y «¿Dónde comprar?»     |
 | `src/greenery.js`     | Vegetación de relleno en el césped vacío                       |
 | `src/streetflow.js`   | Peatones que se paran en el escaparate y entran como clientes  |
+| `src/competition.js`  | Tienda rival del modo de un jugador: precios, nivel, compra    |
 | `tools/`              | Jugador simulado (Chromium sin pantalla) para medir equilibrio |
 | `server/server.js`    | Servidor HTTP + WebSocket: ciudades, sincronización, chat      |
 | `server/economy.js`   | Reglas de economía validadas en el servidor                    |

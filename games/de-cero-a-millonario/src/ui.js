@@ -22,6 +22,7 @@ import {
   upgradeUpkeep,
   upgradeDesc,
   OFFER,
+  SOLO_GOALS,
 } from "./config.js";
 import { isSmall } from "./rides.js";
 import { productIcon } from "./icons.js";
@@ -779,19 +780,23 @@ export class UI {
     });
   }
 
-  openManagement(bizId) {
+  openManagement(bizId, tab) {
     const g = this.game;
     const owned = Object.values(g.businesses).filter((b) => b.owned);
+    if (tab) this.tab = tab;
     if (bizId) this.selectedBiz = bizId;
     if (!g.businesses[this.selectedBiz]?.owned) this.selectedBiz = owned[0].id;
     const b = g.businesses[this.selectedBiz];
     if (this.tab === "auto" && b.id !== "tienda") this.tab = "resumen";
+    const rival = g.competition?.rival?.owned ? g.competition.rival : null;
+    if (this.tab === "rival" && !rival) this.tab = "resumen";
     const tabs = [
       ...(b.id === "tienda" ? [["auto", "⚙️ Automática"]] : []),
       ["mejoras", "⬆️ Mejoras"],
       ["personal", "👥 Personal"],
       ["precios", "💲 Precios"],
       ["resumen", "📋 Resumen"],
+      ...(rival ? [["rival", "🏁 Rival"]] : []),
     ];
     const bizTabs =
       owned.length > 1
@@ -824,6 +829,10 @@ export class UI {
     this.bind("[data-fire]", async (d) => {
       await g.fire(b.id, d.fire);
       this.openManagement();
+    });
+    this.bind("[data-buyrival]", () => {
+      if (g.competition.buy()) this.close();
+      else this.openManagement();
     });
     this.bind("[data-offer]", (d) => {
       if (b.startOffer(d.offer)) {
@@ -1842,7 +1851,9 @@ export class UI {
           <label class="field"><input type="checkbox" id="inv-open" ${h.open ? "checked" : ""}> Dejar que otros jugadores entren en mi casa (modo online)</label>`
         : `<p class="hint">Aún no tienes casa. La casita nº ${g.home.lot.number} de la zona residencial se vende por <b>${money(HOME.price)}</b>, con muebles básicos.</p><button data-act="gohome">📍 Llévame</button>`;
     } else {
-      body = `<div class="list">${GOALS.map((goal) => {
+      // Los de la competencia del juego no existen en online.
+      const goals = GOALS.filter((x) => !g.online || !SOLO_GOALS.has(x.id));
+      body = `<div class="list">${goals.map((goal) => {
         const p = g.goals.progress(goal);
         const claimed = g.goals.claimed(goal);
         const count = goal.target

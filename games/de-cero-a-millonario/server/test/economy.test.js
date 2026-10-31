@@ -398,3 +398,15 @@ test("las ventas a clientes que vienen de la calle se validan igual y comparten 
   assert.ok(ok <= 8, `vendidas ${ok} de golpe`);
   assert.equal(cp.ledger.galletas, 12 - (ok - 1));
 });
+
+test("los objetivos de la competencia (solo un jugador) no se cobran en online", () => {
+  const cp = eco.newCityProfile();
+  // Ni siquiera con estadísticas que lo cumplirían en el cliente.
+  cp.stats.rivalsBought = 2;
+  for (const id of ["sin_rival", "monopolio"]) {
+    const r = eco.claimGoal(cp, { id });
+    assert.equal(r.ok, false);
+  }
+  assert.equal(cp.money, 150);
+  assert.deepEqual(cp.goals, []);
+});

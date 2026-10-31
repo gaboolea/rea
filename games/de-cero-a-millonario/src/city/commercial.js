@@ -146,6 +146,28 @@ export function buildCommercial(world) {
       floor: ["#d9dde3", "#c9cfd8"],
     }),
   };
+  // Local libre junto al gimnasio, frente a la calle transversal. En una
+  // partida de un jugador lo ocupa el segundo rival (competition.js)
+  // cuando compras la primera tienda rival; mientras, se alquila.
+  const local = kit.building("localcomercial", {
+    name: "Local comercial",
+    x: -54,
+    z: -83,
+    w: 14,
+    d: 18,
+    rot: Math.PI,
+    partition: -3,
+    style: "barrio",
+    facade: "panel",
+    windows: "modern",
+    wallColor: 0xf3f6ff,
+    trimColor: 0xe0464e,
+    roofColor: 0xff6b6b,
+    awning: ["#e0464e", "#ffffff"],
+    sign: "LOCAL",
+    signColors: { bg: "#ffffff", fg: "#e0464e" },
+  });
+  local.setLocked(true, "SE ALQUILA");
   kit.plaza(-44, CROSS_Z + 7, -28, -91);
 
   // Pista de pruebas del concesionario (sale de la calle transversal).

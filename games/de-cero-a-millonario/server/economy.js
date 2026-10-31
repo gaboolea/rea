@@ -21,6 +21,7 @@ import {
   GYM,
   GOALS,
   goalProgress,
+  SOLO_GOALS,
   upgradeUpkeep,
   automationLevel,
   idleEarnings,
@@ -422,6 +423,9 @@ export function unlock(cp, { zone }) {
 export function claimGoal(cp, { id }) {
   const goal = GOALS.find((x) => x.id === id);
   if (!goal) return fail("Objetivo no válido");
+  // La competencia del juego solo existe en el modo de un jugador: el
+  // servidor no tiene con qué comprobarla, así que no la paga.
+  if (SOLO_GOALS.has(id)) return fail("Ese objetivo es del modo de un jugador");
   if (cp.goals.includes(id)) return fail("Ya cobrado");
   if (!goalProgress(id, cp).done) return fail("Aún no lo has cumplido");
   cp.goals.push(id);
