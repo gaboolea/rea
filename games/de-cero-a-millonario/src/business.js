@@ -11,7 +11,8 @@ import {
   tableSet,
 } from "./props.js";
 import { Customer, Employee } from "./npc.js";
-import { signMesh } from "./gfx.js";
+import { signMesh, mat, mesh, box } from "./gfx.js";
+import { WALL_HEIGHT, FLOOR_Y } from "./building.js";
 import * as decor from "./decor.js";
 import { cardboardBox } from "./props.js";
 import {
@@ -76,14 +77,25 @@ const GROCERY = {
 
 // Tienda inicial (y locales de jugadores online): sala de 14×12 m con
 // pasillos de 2,5 m, estanterías murales y centrales, frescos, frío, dos
-// cajas junto a la entrada y almacén pequeño. offsetZ: la sala delantera
+// cajas junto a la entrada y bodega al fondo. offsetZ: la sala delantera
 // está centrada 3 m por delante del centro del edificio.
 const STARTER = {
+  // Fila del fondo, contra el tabique: deja un pasillo de 2,2 m (lx -0.7 a
+  // 1.5) hacia la zona de la ampliación y, a la derecha, el paso a la
+  // puerta de la bodega. El congelador va en la pared derecha, junto a las
+  // cajas.
   displays: [
-    { id: "s1", kind: "shelf", lx: -4.6, lz: -5.35 },
-    { id: "s2", kind: "shelf", lx: -1.4, lz: -5.35 },
-    { id: "f1", kind: "fridge", lx: 1.75, lz: -5.3, req: "refrigerador" },
-    { id: "z1", kind: "freezer", lx: 4.65, lz: -5.25, req: "congelador" },
+    { id: "s1", kind: "shelf", lx: -5.2, lz: -5.35 },
+    { id: "s2", kind: "shelf", lx: -2.2, lz: -5.35 },
+    { id: "f1", kind: "fridge", lx: 2.6, lz: -5.3, req: "refrigerador" },
+    {
+      id: "z1",
+      kind: "freezer",
+      lx: 6.2,
+      lz: 1.2,
+      rot: -PI2,
+      req: "congelador",
+    },
     { id: "s3", kind: "shelf", lx: -2.6, lz: -1.8 },
     { id: "e1", kind: "shelf", lx: 1.0, lz: -1.8, req: "estanteria1" },
     { id: "p1", kind: "produce", lx: 6.25, lz: -1.6, rot: -PI2 },
@@ -111,29 +123,40 @@ const STARTER = {
       req: "caja2",
     },
   ],
-  storage: { lx: 5.8, lz: 1.5 },
+  // La mercadería se guarda en la bodega (ver bodega), al fondo a la
+  // derecha: palé contra la pared del fondo y se recoge delante de él.
+  storage: { lx: 5.7, lz: -10.95, point: [5.85, -9.5] },
+  // Bodega: cuarto aparte detrás de la sala, desde lx = x0 hasta la pared
+  // derecha, con puerta (de door[0] a door[1]) en el tabique del fondo.
+  // Los clientes no entran; el jugador y el reponedor, sí.
+  bodega: { x0: 3.6, door: [5.0, 6.7], doorH: 3.0 },
+  // Caja fuerte de la tienda automática: [lx, lz, giro].
+  safe: [4.3, -11.25, 0],
   plants: [
-    [-6.4, -5.3],
-    [6.4, -3.6],
-    [3.25, -5.5],
+    [-6.3, -3.7],
+    [6.35, 4.7],
   ],
-  // Decoración estática: [tipo, lx, lz, rotación, altura, colisión w, d]
+  // Decoración estática: [tipo, lx, lz, rotación, altura, colisión w, d].
+  // "poster:texto" lleva su texto; "rack:ancho", su ancho en metros.
   decor: [
     ["mat", 0, 5.25],
     ["baskets", -2.5, 5.3, 0, 0, 0.6, 0.45],
     ["cart", 2.5, 5.2, Math.PI, 0, 0.6, 0.9],
-    ["clock", 0.3, -5.83, 0, 2.55],
+    // En la pared izquierda: el tabique del fondo desaparece al ampliar.
+    ["clock", -6.66, -3.9, PI2, 2.55],
     ["poster:¡OFERTA 2×1!", -6.66, 2.0, PI2, 1.8],
     ["poster:¡PRECIOS BAJOS!", 6.66, 3.4, -PI2, 1.9],
     ["picture", -6.66, 4.2, PI2, 1.9],
     ["trash", -6.2, 3.1, 0, 0, 0.45, 0.45],
-    ["boxes", 6.3, 4.9, 0, 0, 0.7, 0.7],
     ["candy", -5.0, 3.3, 0, 1.04],
     ["plant", -6.4, 4.9, 0, 0, 0.5, 0.5],
     ["lamp", -3, -3.6, 0, 3.4],
     ["lamp", 2.2, -3.6, 0, 3.4],
     ["lamp", -3, 1.4, 0, 3.4],
     ["lamp", 2.2, 1.4, 0, 3.4],
+    // Dentro de la bodega.
+    ["rack:2.6", 4.3, -8.3, PI2, 0, 1.1, 2.6],
+    ["lamp", 5.7, -8.4, 0, 3.4],
   ],
   upgrades: [
     "estanteria1",
@@ -155,8 +178,8 @@ const STARTER = {
   // Cinta transportadora colgada del techo: del almacén al pasillo de las
   // estanterías del fondo.
   conveyor: [
-    [5.6, 1.2],
-    [5.6, -3.7],
+    [5.85, -9.3],
+    [5.85, -3.7],
     [-5.8, -3.7],
   ],
   offsetZ: 3,
@@ -322,10 +345,11 @@ export class Business {
   buildInterior() {
     const L = this.layout;
     const st = L.storage;
+    this.buildBodega();
     this.storagePile = new StoragePile(12);
     this.place(this.storagePile.group, st.lx, st.lz);
     this.collider(st.lx, st.lz, 2.0, 1.4);
-    this.storagePoint = this.local(st.lx - 1.6, st.lz);
+    this.storagePoint = this.local(...(st.point ?? [st.lx - 1.6, st.lz]));
     if (this.def.type === "cafe") this.buildCafeFixtures();
     for (const [lx, lz] of L.tables ?? []) {
       this.place(tableSet(), lx, lz);
@@ -338,6 +362,87 @@ export class Business {
       this.buildUpgradeBoard();
     }
     this.updateStoragePile();
+  }
+
+  // Bodega: cuarto aparte al fondo del local donde se guarda la mercadería,
+  // fuera de la vista de los clientes. Tiene tabiques propios (siguen ahí
+  // aunque la ampliación quite el tabique de la sala), puerta con cortina
+  // de tiras y cartel «BODEGA · solo personal».
+  buildBodega() {
+    const B = this.layout.bodega;
+    const bld = this.building;
+    const pz = bld.opts.partition;
+    if (!B || pz === undefined || bld.bodega) return;
+    bld.bodega = true;
+    const T = 0.3;
+    const color = bld.opts.wallColor;
+    const inner = bld.w / 2 - T;
+    const back = -bld.d / 2 + T;
+    const cut = B.x0 - T / 2;
+    // El tabique de la sala ya no llega hasta la bodega.
+    if (bld.partition) {
+      bld.removeWall(bld.partition);
+      bld.partition = bld.wall((cut - inner) / 2, pz, cut + inner, T, color);
+    }
+    const front = pz + T / 2;
+    bld.wall(B.x0, (back + front) / 2, T, front - back, color);
+    // Panel de luz del techo que quedaría partido por el tabique: a la sala.
+    for (const p of bld.ceilingPanels)
+      if (p.lz < pz && Math.abs(p.lx - B.x0) < 0.95) {
+        p.lx = B.x0 - T / 2 - 0.95;
+        bld.place(p.mesh, p.lx, p.lz, 0, p.mesh.position.y);
+      }
+    const [d0, d1] = B.door;
+    if (d0 - cut > 0.05) bld.wall((cut + d0) / 2, pz, d0 - cut, T, color);
+    if (inner - d1 > 0.05) bld.wall((d1 + inner) / 2, pz, inner - d1, T, color);
+    bld.wall(
+      (d0 + d1) / 2,
+      pz,
+      d1 - d0,
+      T,
+      color,
+      B.doorH,
+      WALL_HEIGHT - B.doorH,
+      false,
+    );
+    // Marco de la puerta y cortina de tiras de plástico (se atraviesa).
+    const trim = mat(bld.opts.trimColor);
+    const g = new THREE.Group();
+    for (const x of [d0, d1])
+      g.add(
+        mesh(box(0.14, B.doorH, 0.4), trim, x - (d0 + d1) / 2, B.doorH / 2, 0),
+      );
+    g.add(mesh(box(d1 - d0 + 0.14, 0.14, 0.4), trim, 0, B.doorH, 0));
+    const strip = new THREE.MeshStandardMaterial({
+      color: 0xd8f2ff,
+      transparent: true,
+      opacity: 0.4,
+      roughness: 0.2,
+    });
+    for (let x = d0 + 0.12; x < d1 - 0.05; x += 0.2)
+      g.add(
+        mesh(
+          box(0.16, B.doorH - 0.25, 0.02),
+          strip,
+          x - (d0 + d1) / 2,
+          (B.doorH - 0.25) / 2 + 0.2,
+          0,
+          false,
+        ),
+      );
+    bld.place(g, (d0 + d1) / 2, pz, 0, FLOOR_Y);
+    bld.group.add(g);
+    const sign = signMesh("BODEGA\nsolo personal", 1.25, 0.6, {
+      bg: "#7a4b12",
+      fg: "#ffd166",
+      font: "bold 70px",
+    });
+    bld.place(sign, (cut + d0) / 2 + 0.05, front + 0.02, 0, 2.25);
+    bld.group.add(sign);
+    // Zona marcada en el suelo delante de la puerta.
+    const zone = decor.floorZone(d1 - d0, 0.9, 0xffd23f);
+    bld.place(zone, (d0 + d1) / 2, front + 0.55);
+    bld.group.add(zone);
   }
 
   // Cartel amarillo en el escaparate, junto a la puerta: abre las mejoras
@@ -397,6 +502,8 @@ export class Business {
       else if (type === "candy") obj = decor.candyJars();
       else if (type === "plant") obj = pottedPlant(1);
       else if (type === "lamp") obj = decor.pendantLamp();
+      else if (type === "rack")
+        obj = decor.industrialRack([0x3d8bff, 0xff8a3d, 0x5bd47a], +text, 2);
       else if (type === "boxes") {
         obj = new THREE.Group();
         for (let i = 0; i < 3; i++) {
@@ -447,13 +554,8 @@ export class Business {
       this.addRegister(def);
     }
     if (this.upgrades.has("ampliacion") && this.building.partition) {
-      const p = this.building.partition;
-      this.building.group.remove(p.mesh);
-      this.game.world.occluders.splice(
-        this.game.world.occluders.indexOf(p.mesh),
-        1,
-      );
-      this.game.world.physics.remove(p.collider);
+      // La bodega tiene sus propias paredes: se queda al ampliar la sala.
+      this.building.removeWall(this.building.partition);
       this.building.partition = null;
     }
     if (this.upgrades.has("plantas") && !this.decor.includes("plantas")) {
@@ -1083,11 +1185,14 @@ export class Business {
       });
       return;
     }
+    // Sin trabajo, espera junto al almacén. Poco margen: un punto pegado a
+    // una pared caería en una celda bloqueada y la ruta podría acabar en la
+    // celda libre más cercana, al otro lado de la pared.
     e.idle = 2;
     const p = this.storagePoint;
     e.moveTo({
-      x: p.x + (Math.random() - 0.5) * 2,
-      z: p.z + Math.random() * 1.2,
+      x: p.x + (Math.random() - 0.5) * 0.6,
+      z: p.z + (Math.random() - 0.5) * 0.6,
     });
   }
 

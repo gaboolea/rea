@@ -55,9 +55,9 @@ const ONLINE_KEY = "de-cero-a-millonario-online";
 const SAVE_VERSION = 2;
 
 const QUALITY = {
-  baja: { ratio: 1, shadows: false, map: 1024, crowd: 5 },
-  media: { ratio: 1.25, shadows: true, map: 1024, crowd: 9 },
-  alta: { ratio: 1.75, shadows: true, map: 2048, crowd: 14 },
+  baja: { ratio: 1, shadows: false, map: 1024, crowd: 8 },
+  media: { ratio: 1.25, shadows: true, map: 1024, crowd: 14 },
+  alta: { ratio: 1.75, shadows: true, map: 2048, crowd: 20 },
 };
 
 // Recompensas que solo se consiguen jugando.

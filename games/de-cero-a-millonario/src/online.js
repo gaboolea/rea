@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { ToyCharacter } from "./character.js";
 import { rideModel } from "./vehicles.js";
 import { poseRider } from "./player.js";
-import { randomLook, workerLook } from "./look.js";
+import { randomPerson, workerLook } from "./look.js";
 import { VIP_LOOK } from "./npc.js";
 import { Business } from "./business.js";
 import { PRODUCTS, PLOTS, BUSINESSES, BOX_UNITS, VEHICLES } from "./config.js";
@@ -158,15 +158,16 @@ class RemoteAvatar {
 // Cliente o empleado del negocio de otro jugador (solo visual).
 class NpcProxy {
   constructor(game, seed) {
+    const person = seed >= 0 ? randomPerson(seed) : null;
     const look =
       seed === -9
         ? VIP_LOOK
-        : seed < 0
-          ? workerLook(WORKER_LOOKS[seed] ?? "azul")
-          : randomLook(seed);
+        : person
+          ? person.look
+          : workerLook(WORKER_LOOKS[seed] ?? "azul");
     this.char = new ToyCharacter({
       look,
-      scale: seed < 0 && seed !== -9 ? 1 : 0.9,
+      scale: person ? person.scale : seed === -9 ? 0.95 : 1,
       apron: seed < 0 && seed !== -9 ? 0xffffff : null,
     });
     this.buf = [];

@@ -64,6 +64,13 @@ export class World {
       { x: 5.5, z: 51, zone: "barrio" },
     ];
     this.visitShops = [];
+    // Zonas de parque del barrio donde pasean y descansan los peatones (la
+    // vegetación nueva no planta árboles en ellas).
+    this.parkAreas = [
+      [34, 32, 46, 34],
+      [24, 42.5, 36, 44],
+      [14, 30, 24, 32],
+    ];
     // Dependientes de las tiendas nuevas (solo se animan en reposo).
     this.storeClerks = [];
     this.turntables = [];
@@ -96,6 +103,8 @@ export class World {
       2,
       false,
     );
+    // Césped del suelo: la vegetación de relleno busca huecos sobre él.
+    grass.userData.ground = true;
     this.scene.add(grass);
     const asphalt = (w, d) =>
       new THREE.MeshStandardMaterial({

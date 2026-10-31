@@ -338,3 +338,142 @@ export function workerLook(color) {
     hat: { id: "gorra", color },
   };
 }
+
+// Tipos de persona para peatones y clientes. Con la misma semilla salen el
+// mismo tipo, look y tamaño en todos los clientes (los clientes de las
+// tiendas se comparten en online por su semilla). speed multiplica la
+// velocidad al andar.
+export const PERSON_TYPES = {
+  adulto: { name: "Vecino", weight: 30, scale: [0.84, 1.0], speed: 1 },
+  nino: { name: "Niño", weight: 10, scale: [0.58, 0.66], speed: 1.1 },
+  mayor: { name: "Persona mayor", weight: 12, scale: [0.8, 0.88], speed: 0.62 },
+  oficinista: {
+    name: "Oficinista",
+    weight: 12,
+    scale: [0.88, 1.0],
+    speed: 1.2,
+  },
+  deportista: { name: "Deportista", weight: 10, scale: [0.86, 1.0], speed: 1 },
+  turista: { name: "Turista", weight: 10, scale: [0.84, 0.98], speed: 0.85 },
+  estudiante: {
+    name: "Estudiante",
+    weight: 10,
+    scale: [0.8, 0.92],
+    speed: 1.05,
+  },
+};
+
+const TYPE_TOTAL = Object.values(PERSON_TYPES).reduce(
+  (a, t) => a + t.weight,
+  0,
+);
+
+export function personType(seed) {
+  let r = seededRandom((seed ^ 0x5bd1e995) >>> 0)() * TYPE_TOTAL;
+  for (const [id, t] of Object.entries(PERSON_TYPES)) {
+    r -= t.weight;
+    if (r < 0) return id;
+  }
+  return "adulto";
+}
+
+// { type, look, scale, speed } de una persona. Sin semilla, al azar.
+export function randomPerson(seed = Math.floor(Math.random() * 1e9), type) {
+  type ??= personType(seed);
+  const def = PERSON_TYPES[type];
+  const r = seededRandom(seed);
+  const pick = (list) => list[Math.floor(r() * list.length)];
+  const bright = [
+    "rojo",
+    "naranja",
+    "amarillo",
+    "menta",
+    "turquesa",
+    "azul",
+    "morado",
+    "rosa",
+  ];
+  const calm = ["marino", "gris", "negro", "marron"];
+  const look = randomLook(seed);
+  const set = (slot, id, color) =>
+    (look[slot] = color ? { id, color } : { id });
+  if (type === "nino") {
+    set("top", pick(["camiseta", "camiseta", "sudadera"]), pick(bright));
+    set("bottom", "shorts", pick(bright.concat(calm)));
+    set("shoes", pick(["zapatillas", "altas"]), pick(bright));
+    look.hair.color = pick(HAIR_COLORS.slice(0, 5));
+    set("hat", ...(r() < 0.4 ? ["gorra", pick(bright)] : ["none"]));
+    set("back", ...(r() < 0.6 ? ["mochila", pick(bright)] : ["none"]));
+    set("glasses", "none");
+    look.face = { id: pick(["risueno", "alegre", "feliz"]) };
+  } else if (type === "mayor") {
+    look.hair = {
+      id: pick(["corto", "mono", "rizado", "rapado"]),
+      color: "canoso",
+    };
+    set(
+      "top",
+      pick(["chaqueta", "chaqueta", "sudadera"]),
+      pick(["marron", "gris", "marino", "morado", "rojo"]),
+    );
+    set("bottom", "pantalon", pick(calm));
+    set("shoes", pick(["zapatos", "botas"]));
+    set(
+      "hat",
+      ...(r() < 0.4
+        ? ["sombrero"]
+        : r() < 0.5
+          ? ["gorro", pick(calm)]
+          : ["none"]),
+    );
+    set(
+      "glasses",
+      ...(r() < 0.6
+        ? ["redondas", pick(["marron", "negro", "oro"])]
+        : ["none"]),
+    );
+    set("neck", ...(r() < 0.45 ? ["bufanda", pick(bright)] : ["none"]));
+    set("back", "none");
+    look.face = { id: pick(["tranquilo", "feliz", "risueno"]) };
+  } else if (type === "oficinista") {
+    set(
+      "top",
+      r() < 0.7 ? "traje" : "chaqueta",
+      pick(["marino", "gris", "negro", "azul"]),
+    );
+    set("bottom", "pantalon_traje", pick(["marino", "gris", "negro"]));
+    set("shoes", "zapatos");
+    set("hat", "none");
+    set("neck", ...(r() < 0.4 ? ["pajarita", pick(bright)] : ["none"]));
+    set("back", ...(r() < 0.25 ? ["mochila", "negro"] : ["none"]));
+    look.face = { id: pick(["seguro", "tranquilo", "feliz"]) };
+  } else if (type === "deportista") {
+    set("top", pick(["camiseta", "camiseta", "sudadera"]), pick(bright));
+    set("bottom", "shorts", pick(["negro", "marino", "gris", "blanco"]));
+    set("shoes", "zapatillas", pick(["blanco", "rojo", "amarillo", "menta"]));
+    set("hat", ...(r() < 0.5 ? ["gorra", pick(bright)] : ["none"]));
+    set("glasses", ...(r() < 0.35 ? ["sol"] : ["none"]));
+    set("back", "none");
+    set("neck", "none");
+  } else if (type === "turista") {
+    set(
+      "top",
+      "camiseta",
+      pick(["amarillo", "naranja", "rosa", "turquesa", "blanco"]),
+    );
+    set("bottom", "shorts", pick(["marron", "blanco", "azul"]));
+    set("shoes", pick(["zapatillas", "botas"]), "blanco");
+    set("hat", ...(r() < 0.7 ? ["sombrero"] : ["gorra", pick(bright)]));
+    set("glasses", "sol");
+    set("back", ...(r() < 0.7 ? ["mochila", pick(bright)] : ["none"]));
+  } else if (type === "estudiante") {
+    set("top", pick(["sudadera", "sudadera", "camiseta"]), pick(bright));
+    set("bottom", pick(["vaqueros", "pantalon"]), pick(calm));
+    set("shoes", "altas", pick(["blanco", "negro", "rojo"]));
+    set("back", "mochila", pick(bright));
+    set("glasses", ...(r() < 0.3 ? ["redondas", pick(bright)] : ["none"]));
+    set("hat", ...(r() < 0.25 ? ["gorro", pick(bright)] : ["none"]));
+  }
+  const [s0, s1] = def.scale;
+  return { type, look, scale: s0 + r() * (s1 - s0), speed: def.speed };
+}

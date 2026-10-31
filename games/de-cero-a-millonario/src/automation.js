@@ -21,8 +21,6 @@ const RESERVE = 20;
 const RATE_WINDOW = 120;
 // Ausencias más cortas no cuentan como «fuera».
 const MIN_AWAY_MINUTES = 2;
-// Caja fuerte de la tienda (coordenadas del negocio).
-const SAFE_AT = [6.35, 3.5];
 
 export class Automation {
   constructor(game) {
@@ -144,9 +142,14 @@ export class Automation {
     );
     this.safeGlow.position.y = 0.78;
     g.add(this.safeGlow);
-    b.place(g, SAFE_AT[0], SAFE_AT[1], -Math.PI / 2);
-    b.collider(SAFE_AT[0], SAFE_AT[1], 0.6, 0.6);
-    this.safePoint = b.local(SAFE_AT[0] - 0.85, SAFE_AT[1]);
+    // En la bodega de la tienda (layout.safe, coordenadas del negocio).
+    const [lx, lz, rot] = b.layout.safe;
+    b.place(g, lx, lz, rot);
+    b.collider(lx, lz, 0.6, 0.6);
+    this.safePoint = b.local(
+      lx + Math.sin(rot) * 0.85,
+      lz + Math.cos(rot) * 0.85,
+    );
   }
 
   interactables() {

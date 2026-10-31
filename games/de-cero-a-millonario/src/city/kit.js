@@ -51,7 +51,7 @@ export class CityKit {
     const map = grassTex.clone();
     map.repeat.set((x1 - x0) / 6, (z1 - z0) / 6);
     map.needsUpdate = true;
-    this.add(
+    const lawn = this.add(
       mesh(
         box(x1 - x0, 0.2, z1 - z0),
         new THREE.MeshStandardMaterial({ map, roughness: 1 }),
@@ -61,6 +61,7 @@ export class CityKit {
         false,
       ),
     );
+    lawn.userData.ground = true;
     this.world.mapRects.push({ kind: "grass", rect: [x0, z0, x1, z1] });
   }
 
@@ -199,7 +200,8 @@ export class CityKit {
 
   // Edificio recorrible (clase Building) dentro del grupo de la zona.
   // Funde en pocas mallas la decoración estática de la zona (todo lo que
-  // no es un edificio ni se anima). Se llama al terminar de construirla.
+  // no es un edificio, ni se anima, ni viene ya fundido: userData.baked).
+  // Se llama al terminar de construirla.
   bake() {
     const w = this.world;
     // Los árboles de las zonas nuevas no se mecen: así se funden también.
@@ -222,7 +224,7 @@ export class CityKit {
     };
     const holder = new THREE.Group();
     for (const c of [...this.group.children])
-      if (!buildings.has(c) && !moves(c)) holder.add(c);
+      if (!buildings.has(c) && !moves(c) && !c.userData.baked) holder.add(c);
     this.group.add(bakeGroup(holder, { shadows: true }));
   }
 

@@ -24,7 +24,7 @@ function stockTarget(g) {
       )
     : null;
   if (box && spot) return { ...spot.approach, label: "Estantería" };
-  return { ...shop.storagePoint, label: "Almacén" };
+  return { ...shop.storagePoint, label: "Bodega" };
 }
 
 export const TUTORIAL_STEPS = [

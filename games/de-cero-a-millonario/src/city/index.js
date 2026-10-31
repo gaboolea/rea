@@ -11,6 +11,7 @@ import { buildDealership } from "../stores/vehicles.js";
 import { buildFurnitureStore, buildTechStore } from "../stores/furniture.js";
 import { buildLuxuryStore } from "../stores/luxury.js";
 import { buildGym } from "../stores/gym.js";
+import { plantGreenery } from "../greenery.js";
 
 // Distancia a partir de la cual una zona no se dibuja (la niebla ya la
 // oculta): menos objetos que recorrer en cada fotograma.
@@ -30,6 +31,13 @@ export function buildExpansion(world) {
     lujo: buildLuxuryStore(world, financial.lujo),
     gimnasio: buildGym(world, commercial.shops.gimnasio),
   };
+
+  // Vegetación en el césped que se había quedado vacío (todas las zonas).
+  world.greenery = plantGreenery(world, [
+    commercial.kit,
+    residential.kit,
+    financial.kit,
+  ]);
 
   // Decoración estática de cada zona: pocas mallas en vez de cientos.
   for (const zone of [commercial, residential, financial]) zone.kit.bake();

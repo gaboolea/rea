@@ -148,6 +148,16 @@ export class Building {
     return { mesh: m, collider };
   }
 
+  // Quita una pared creada con wall(): malla, oclusión y colisión.
+  removeWall(w) {
+    this.group.remove(w.mesh);
+    for (const list of [this.walls, this.world.occluders]) {
+      const i = list.indexOf(w.mesh);
+      if (i >= 0) list.splice(i, 1);
+    }
+    this.world.physics.remove(w.collider);
+  }
+
   build() {
     const { w, d, doorW, wallColor, trimColor } = this.opts;
     const floorTex = tileTexture(this.opts.floor[0], this.opts.floor[1], [
@@ -318,17 +328,15 @@ export class Building {
     });
     this.lightMats.push(m);
     const n = Math.max(1, Math.round(this.w / 7));
+    // { mesh, lx, lz }: se pueden mover si un tabique interior los cruza.
+    this.ceilingPanels = [];
     for (let i = 0; i < n; i++) {
       for (const lz of [-this.d / 4, this.d / 4]) {
         const panel = mesh(box(1.6, 0.06, 0.6), m, 0, 0, 0, false);
-        this.place(
-          panel,
-          -this.w / 2 + ((i + 0.5) * this.w) / n,
-          lz,
-          0,
-          H - 0.05,
-        );
+        const lx = -this.w / 2 + ((i + 0.5) * this.w) / n;
+        this.place(panel, lx, lz, 0, H - 0.05);
         this.group.add(panel);
+        this.ceilingPanels.push({ mesh: panel, lx, lz });
       }
     }
   }

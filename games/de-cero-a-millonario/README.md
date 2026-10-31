@@ -275,7 +275,7 @@ mundo:
 Con reponedor y cajero la tienda vende sola mientras conduces, decoras o
 juegas con amigos: el HUD muestra la ganancia por minuto y, si estás lejos,
 monedas volando hacia tu dinero. Mientras no juegas, la **caja fuerte**
-junto al almacén guarda ganancias ($0,50–$2,50/min según el nivel) hasta un
+de la bodega guarda ganancias ($0,50–$2,50/min según el nivel) hasta un
 tope de 30 min–6 h, y se cobran al volver a la tienda. Siempre se puede
 seguir haciendo todo a mano.
 
@@ -327,11 +327,67 @@ madera con tejado a cuatro aguas; la boutique, 3 plantas con balcones;
 Tecnología, 3 plantas de paneles con ventanas corridas; Vehículos y el
 gimnasio, 1 planta.
 
+### La bodega de la tienda
+
+La mercadería ya no está a la vista de los clientes: la tienda (y el local
+de cada jugador online) tiene una **bodega**, un cuarto aparte al fondo a
+la derecha, con su puerta desde la sala (cortina de tiras, cartel
+«BODEGA · solo personal» y zona marcada en el suelo). Dentro están el palé
+del almacén (donde descargas el carro y coges cajas), una estantería
+industrial con cajas y la caja fuerte de la tienda automática. El
+reponedor entra a por género y espera allí cuando no tiene trabajo; los
+clientes no entran. La cinta transportadora sale de la bodega por encima
+de la puerta.
+
+La bodega tiene tabiques propios, así que sigue en su sitio cuando la
+**ampliación** quita el tabique del fondo. Para que quepan la puerta y un
+pasillo hacia la ampliación se ha reordenado la fila del fondo: el
+congelador va ahora en la pared derecha, junto a las cajas, y queda un
+pasillo de 2,2 m hacia las estanterías nuevas (antes de este cambio esas
+estanterías no se podían alcanzar: la fila del fondo tapaba todo el
+ancho). El reloj pasa a la pared izquierda para no quedarse flotando al
+ampliar. La capacidad del almacén y los precios no cambian.
+
+### Más gente y más tipos de personas
+
+Los peatones y los clientes de las tiendas son ahora de siete tipos, cada
+uno con su ropa, su tamaño y su forma de moverse (`PERSON_TYPES` en
+`src/look.js`):
+
+| Tipo          | Cómo es                                                                    |
+| ------------- | -------------------------------------------------------------------------- |
+| Vecino        | Ropa variada, pasea, compra y charla                                       |
+| Niño          | Pequeño, gorra y mochila; siempre con una persona adulta, da saltitos      |
+| Persona mayor | Pelo canoso, chaqueta, sombrero o gafas; anda despacio, se para en parques |
+| Oficinista    | Traje y zapatos; va con prisa (📱, ☕) y no se para mucho                  |
+| Deportista    | Ropa de deporte; corre por las aceras y se para a estirar                  |
+| Turista       | Sombrero, gafas de sol y mochila; mira los edificios y les hace fotos (📸) |
+| Estudiante    | Sudadera, vaqueros y mochila; charla y pasea                               |
+
+Además hay **familias** (una persona adulta o mayor con uno o dos niños que
+la siguen, entran y salen de las tiendas con ella), **grupos de amigos** y
+**repartidores** con uniforme naranja que llevan una caja a la puerta de un
+comercio. Hay más gente por la calle (8/14/20 según la calidad gráfica,
+antes 5/9/14), más en la zona comercial y el distrito, el autobús deja
+entre 2 y 4 pasajeros y, al llegar a una zona, la calle se llena antes.
+Los clientes de otros jugadores se ven del mismo tipo en todos los
+navegadores, porque el tipo sale de la misma semilla que ya se compartía.
+
 ### Árboles, palomas y mascotas
 
 - Cinco especies de árbol: frondoso, pino, cerezo en flor, abedul y
   palmera (en la plaza del distrito financiero). Sin especie indicada se
   elige una fija según la posición.
+- **Vegetación en los huecos** (`src/greenery.js`): el césped que se había
+  quedado vacío en el barrio y en las tres zonas nuevas se rellena con
+  bosquecillos (sobre todo pinos y abedules, palmeras en el distrito),
+  arbustos (algunos con flores o bayas), macizos de flores, matas de
+  hierba y piedras. Se planta una sola vez al construir la ciudad, con
+  semilla fija (todos ven lo mismo), y solo donde no hay nada: ni aceras,
+  calles, suelos o colisiones, ni otros objetos, ni los parques por donde
+  pasean los peatones. Solo los árboles tienen colisión. Son unos 190
+  árboles y 1.200 plantas, fundidos en pocas mallas por parcelas de 50 m
+  para que la cámara descarte las que no ve.
 - **Palomas** (`src/critters.js`) en la plaza de las palomas, junto a la
   fuente, en el parque residencial y en el distrito financiero: picotean y
   salen volando si te acercas; vuelven cuando te alejas.
@@ -477,7 +533,7 @@ andando o en vehículo, sin teletransportes:
 | `src/building.js`     | Edificio genérico: paredes, puertas, techo, letreros, luces    |
 | `src/business.js`     | Negocios: mobiliario, existencias, cajas, clientes y empleados |
 | `src/npc.js`          | Agentes con navegación; clientes (y VIP) y empleados           |
-| `src/pedestrians.js`  | Peatones y sus actividades                                     |
+| `src/pedestrians.js`  | Peatones, sus tipos, familias, grupos y repartidores           |
 | `src/vehicles.js`     | Coches, autobús, camiones, semáforos                           |
 | `src/events.js`       | Eventos, encargos, monedas y descubrimientos                   |
 | `src/audio.js`        | Música, efectos y ambiente sintetizados                        |
@@ -514,6 +570,7 @@ andando o en vehículo, sin teletransportes:
 | `src/surprises.js`    | Reglas de los sucesos (cliente y servidor): caminos, puntos    |
 | `src/surpriseplay.js` | Sucesos en el mundo: ladrón, objetos perdidos, dueños, HUD     |
 | `src/wayfinding.js`   | Carteles flotantes, postes indicadores y «¿Dónde comprar?»     |
+| `src/greenery.js`     | Vegetación de relleno en el césped vacío                       |
 | `server/server.js`    | Servidor HTTP + WebSocket: ciudades, sincronización, chat      |
 | `server/economy.js`   | Reglas de economía validadas en el servidor                    |
 | `server/store.js`     | Persistencia en JSON                                           |

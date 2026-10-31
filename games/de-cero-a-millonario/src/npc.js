@@ -2,7 +2,7 @@
 // navegación y respetan las colisiones. Los clientes y empleados añaden su
 // propia máquina de estados encima.
 import { ToyCharacter } from "./character.js";
-import { randomLook, workerLook } from "./look.js";
+import { randomPerson, workerLook } from "./look.js";
 
 export const VIP_LOOK = {
   skin: "melocoton",
@@ -142,11 +142,13 @@ export class Customer extends Agent {
     vip = false,
     seed = Math.floor(Math.random() * 1e9),
   ) {
+    // Tipo de persona (niño, persona mayor, oficinista...) según la semilla.
+    const person = randomPerson(seed);
     super(
       game,
       new ToyCharacter({
-        look: vip ? VIP_LOOK : randomLook(seed),
-        scale: 0.85 + Math.random() * 0.15,
+        look: vip ? VIP_LOOK : person.look,
+        scale: vip ? 0.95 : person.scale,
       }),
       spawn.x,
       spawn.z,
@@ -156,7 +158,7 @@ export class Customer extends Agent {
     this.vip = vip;
     // Semilla del look para compartirlo con otros jugadores (-9 = VIP).
     this.seed = vip ? -9 : seed;
-    this.speed = 2.1 + Math.random() * 0.6;
+    this.speed = (2.1 + Math.random() * 0.6) * (vip ? 1 : person.speed);
     this.wants = business.rollWants(vip ? 4 : 0);
     if (vip) this.char.think("★", "#e0a100", 4);
     this.basket = [];
