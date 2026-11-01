@@ -327,14 +327,22 @@ export class Customer extends Agent {
 export class Employee extends Agent {
   constructor(game, business, role) {
     const door = business.building.doorPoint(-1.5);
-    const colors = { cajero: "menta", reponedor: "azul", barista: "marron" };
+    const colors = {
+      cajero: "menta",
+      reponedor: "azul",
+      barista: "marron",
+      cocinero: "blanco",
+      camarero: "negro",
+    };
     super(
       game,
       new ToyCharacter({ look: workerLook(colors[role]), apron: 0xffffff }),
       door.x,
       door.z,
     );
-    this.seed = -1 - ["cajero", "reponedor", "barista"].indexOf(role);
+    this.seed =
+      -1 -
+      ["cajero", "reponedor", "barista", "cocinero", "camarero"].indexOf(role);
     this.business = business;
     this.role = role;
     this.speed = 2.3;
@@ -353,5 +361,7 @@ export class Employee extends Agent {
     if (this.role === "cajero") b.cashierTick(this);
     else if (this.role === "reponedor") b.stockerTick(this);
     else if (this.role === "barista") b.baristaTick(this);
+    else if (this.role === "cocinero") b.cookTick(this);
+    else if (this.role === "camarero") b.waiterTick(this);
   }
 }

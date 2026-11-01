@@ -3085,3 +3085,25 @@ table.rank tr.me {
   background: #fff3c4;
   border: 2px solid #f2c230;
 }
+
+/* Celebración del millón */
+.million {
+  text-align: center;
+}
+.million-big {
+  font-size: 44px;
+  font-weight: 900;
+  color: #e0a100;
+  text-shadow: 0 3px 0 #fff3c4;
+  margin: 6px 0 10px;
+}
+.million .stats {
+  text-align: left;
+  margin: 10px 0;
+}
+.stats em.good,
+.stats em.bad {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+}

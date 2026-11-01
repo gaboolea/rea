@@ -7,7 +7,6 @@ import {
   STAFF,
   SHOP_ITEMS,
   BOX_UNITS,
-  DAY_SECONDS,
   CATEGORIES,
   CART_CAPACITY,
   VEHICLES,
@@ -21,6 +20,12 @@ import {
   IDLE,
   upgradeUpkeep,
   upgradeDesc,
+  unitCost as costOf,
+  clockHour,
+  daylight,
+  EMPIRE,
+  franchisePrice,
+  empireIncome,
   OFFER,
   SOLO_GOALS,
 } from "./config.js";
@@ -162,12 +167,20 @@ export class UI {
     $("today").textContent =
       `${today >= 0 ? "+" : ""}${money(Math.round(today))} hoy`;
     $("stage").textContent = STAGES[g.stageIndex()].name;
-    const hour = 7 + (s.clock / DAY_SECONDS) * 15;
-    const hh = Math.floor(hour);
-    const mm = Math.floor(((hour - hh) * 60) / 10) * 10;
+    const hour = clockHour(s.clock);
+    const hh = Math.floor(hour) % 24;
+    const mm = Math.floor(((hour - Math.floor(hour)) * 60) / 10) * 10;
     $("clock").textContent =
       `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
-    $("clock-icon").textContent = hour < 17 ? "☀️" : hour < 19.5 ? "🌇" : "🌙";
+    const light = daylight(hour);
+    $("clock-icon").textContent =
+      g.weather?.raining
+        ? "🌧️"
+        : light.night > 0.5
+          ? "🌙"
+          : light.dusk > 0.3
+            ? "🌇"
+            : "☀️";
     $("day").textContent = `Día ${s.day}`;
     const m = currentMission(g);
     $("objective-text").textContent = m
@@ -659,7 +672,9 @@ export class UI {
         const stock = g.shelfStock(id);
         const locked = (p.stage ?? 0) > stage;
         const needs = !types.has(p.kind)
-          ? "Necesitas la cafetería"
+          ? p.kind === "restaurant"
+            ? "Necesitas el restaurante"
+            : "Necesitas la cafetería"
           : p.cold
             ? "Necesita refrigerador"
             : p.frozen
@@ -667,7 +682,9 @@ export class UI {
               : p.fresh
                 ? "Puesto de frutas"
                 : p.ingredient
-                  ? "Para la máquina de café"
+                  ? p.kind === "restaurant"
+                    ? "Ingrediente para la cocina"
+                    : "Para la máquina de café"
                   : "";
         const blocked = locked || !types.has(p.kind);
         return `<div class="pcard ${blocked ? "locked" : ""} ${inCart ? "picked" : ""}">
@@ -797,6 +814,7 @@ export class UI {
       ["precios", "💲 Precios"],
       ["resumen", "📋 Resumen"],
       ...(rival ? [["rival", "🏁 Rival"]] : []),
+      ...(g.empire.unlocked() ? [["imperio", "🏙️ Imperio"]] : []),
     ];
     const bizTabs =
       owned.length > 1
@@ -830,6 +848,7 @@ export class UI {
       await g.fire(b.id, d.fire);
       this.openManagement();
     });
+    if (this.tab === "imperio") this.bindEmpire(() => this.openManagement());
     this.bind("[data-buyrival]", () => {
       if (g.competition.buy()) this.close();
       else this.openManagement();
@@ -928,13 +947,161 @@ export class UI {
       <p class="hint">Además llegaron ${t.walkIns} clientes por su cuenta. ${why}${b.offer ? ` 🏷️ Oferta activa: ${PRODUCTS[b.offer.product].name}.` : ""}</p>`;
   }
 
+  // Etapa Magnate dentro de Gestión: el mismo contenido que la oficina.
+  tab_imperio() {
+    return this.empireHtml();
+  }
+
+  empireHtml() {
+    const g = this.game;
+    const e = g.empire.data;
+    const price = g.empire.price();
+    const fundValue = g.empire.fundValue();
+    const gain = fundValue - e.fundPaid;
+    const next = e.franchises < EMPIRE.franchises ? franchisePrice(e.franchises) : null;
+    const perMin = Math.round(empireIncome(e) * 60);
+    const worth = Math.round(g.netWorth());
+    const pct = Math.min(100, Math.round((worth / 1e6) * 100));
+    return `<p class="hint">Metas de la etapa Magnate: todo se ve en la ciudad y te acerca al millón.</p>
+      <div class="bar"><span>Patrimonio</span><i style="width:${pct}%;background:#f2c230"></i><em>${pct} %</em></div>
+      <div class="stats">
+        <div><small>Patrimonio</small><b>${money(worth)}</b></div>
+        <div><small>Rentas</small><b>${money(perMin)}/min</b></div>
+        <div><small>Fondo</small><b>${money(Math.round(fundValue))}</b>${e.fundUnits ? `<em class="${gain >= 0 ? "good" : "bad"}">${gain >= 0 ? "+" : ""}${money(Math.round(gain))}</em>` : ""}</div>
+      </div>
+      <h3>🏪 Cadena Mi Tiendita Express (${e.franchises}/${EMPIRE.franchises})</h3>
+      <div class="row"><div class="grow"><b>Nueva franquicia</b><small>Un quiosco con tu marca en una plaza de la ciudad: +${money(Math.round(EMPIRE.franchiseIncome * 60))}/min mientras juegas.</small></div>
+      ${next === null ? `<span class="tag good">Completa</span>` : `<button data-franchise ${g.state.money < next ? "class=poor" : ""}>${money(next)}</button>`}</div>
+      <h3>🏙️ Torre Imperio</h3>
+      <div class="row"><div class="grow"><b>El rascacielos del distrito con tu nombre</b><small>Corona luminosa y +${money(Math.round(EMPIRE.tower.income * 60))}/min. Requiere 3 franquicias y el distrito desbloqueado.</small></div>
+      ${e.tower ? `<span class="tag good">Tuya</span>` : `<button data-tower ${g.state.money < EMPIRE.tower.price || e.franchises < 3 ? "class=poor" : ""}>${money(EMPIRE.tower.price)}</button>`}</div>
+      <h3>📈 Fondo Millonario</h3>
+      <p>Participación: <b>${money(Math.round(price * 100) / 100)}</b> · tienes <b>${e.fundUnits.toFixed(2)}</b> (${money(Math.round(fundValue))}). Sube con el tiempo de juego, con altibajos: puede bajar un rato.</p>
+      <div class="row"><div class="grow"><small>Invertir (mínimo ${money(EMPIRE.fund.min)})</small></div>
+        <button data-invest="0.25">25 %</button><button data-invest="0.5">50 %</button><button data-invest="0.9">90 %</button>
+        ${e.fundUnits ? `<button data-sellfund>VENDER TODO</button>` : ""}</div>`;
+  }
+
+  bindEmpire(reopen) {
+    const g = this.game;
+    this.bind("[data-franchise]", async () => {
+      await g.empire.buyFranchise();
+      reopen();
+    });
+    this.bind("[data-tower]", async () => {
+      await g.empire.buyTower();
+      reopen();
+    });
+    this.bind("[data-invest]", async (d) => {
+      await g.empire.invest(g.state.money * Number(d.invest));
+      reopen();
+    });
+    this.bind("[data-sellfund]", async () => {
+      await g.empire.sellAll();
+      reopen();
+    });
+  }
+
+  // Oficina del Fondo Millonario (plaza del distrito financiero).
+  openEmpire() {
+    const g = this.game;
+    if (!g.empire.unlocked()) {
+      this.open(
+        "empire",
+        "🏦 Fondo Millonario",
+        `<p>Las franquicias, la Torre Imperio y el fondo de inversión se abren en la etapa <b>${STAGES[EMPIRE.stage].name}</b> (${money(STAGES[EMPIRE.stage].revenue)} en ventas).</p>`,
+      );
+      return;
+    }
+    this.open("empire", "🏦 Fondo Millonario", this.empireHtml());
+    this.bindEmpire(() => this.openEmpire());
+  }
+
+  // ¡Millonario! Celebración con las estadísticas de la partida.
+  showMillion(st) {
+    const g = this.game;
+    const h = Math.floor(st.minutes / 60);
+    const m = st.minutes % 60;
+    this.open(
+      "million",
+      "🏆 ¡ERES MILLONARIO!",
+      `<div class="million"><div class="million-big">${money(st.worth)}</div>
+      <p>De $150 y una tienda de barrio a un millón de patrimonio en <b>${st.days} ${st.days === 1 ? "día" : "días"}</b> (${h} h ${m} min de juego).</p>
+      <div class="stats">
+        <div><small>Ventas totales</small><b>${money(st.revenue)}</b></div>
+        <div><small>Clientes atendidos</small><b>${st.sales}</b></div>
+        <div><small>Gastos pagados</small><b>${money(st.expenses)}</b></div>
+        <div><small>Negocios</small><b>${st.businesses.length}</b></div>
+        <div><small>Franquicias</small><b>${st.franchises}</b></div>
+        <div><small>Rentas cobradas</small><b>${money(st.passive)}</b></div>
+        <div><small>Fondo</small><b>${money(st.fund)}</b></div>
+        <div><small>Rivales comprados</small><b>${st.rivals}</b></div>
+        <div><small>Sucesos resueltos</small><b>${st.surprises}</b></div>
+        <div><small>Encargos</small><b>${st.encargos}</b></div>
+      </div>
+      <p class="hint">${st.businesses.join(" · ")}${st.tower ? " · Torre Imperio" : ""}</p>
+      <button class="primary" data-close>¡A SEGUIR CRECIENDO!</button></div>`,
+    );
+    this.bind("[data-close]", () => this.close());
+    this.coinBurst?.(24);
+    for (let i = 0; i < 4; i++)
+      g.timers.push({ t: i * 0.5, fn: () => g.fx.confetti(g.player.pos, 80) });
+  }
+
+  // Competencia (un jugador): precios comparados, cuota de clientes del
+  // día, cómo va el rival y comprarlo en etapas altas.
+  tab_rival(b) {
+    const g = this.game;
+    const comp = g.competition;
+    const r = comp.rival;
+    const share = comp.share();
+    const pct = Math.round(share.pct * 100);
+    const factor = comp.playerFactor(b);
+    const shown = b
+      .catalog()
+      .filter((p) => (PRODUCTS[p].stage ?? 0) <= Math.max(r.level, g.stageIndex()))
+      .filter((p) => b.shelfStock(p) > 0 || r.shelfStock(p) > 0)
+      .slice(0, 10);
+    const rows = shown
+      .map((p) => {
+        const mine = b.priceOf(p);
+        const theirs = r.priceOf(p);
+        const cls = mine < theirs - 0.04 ? "good" : mine > theirs + 0.04 ? "bad" : "";
+        return `<div class="row"><span class="chip" style="background:${hex(PRODUCTS[p].color)}"></span><div class="grow"><b>${PRODUCTS[p].name}</b>${r.offer?.product === p ? ' <span class="tag">🏷️ oferta rival</span>' : ""}</div><span class="${cls}">Tú ${money(mine)}</span>&nbsp;·&nbsp;<span>${r.displays.some((d) => d.display.product === p) ? `${r.name} ${money(theirs)}${r.shelfStock(p) ? "" : " (agotado)"}` : `${r.name}: no lo vende`}</span></div>`;
+      })
+      .join("");
+    const buy = comp.canBuy();
+    const status = [
+      r.outage > 0 ? "📦 sin género ahora mismo" : "con género",
+      r.offer ? `🏷️ oferta en ${PRODUCTS[r.offer.product].name}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const effect =
+      factor >= 1
+        ? `Tu tienda es mejor: le quitas clientes (+${Math.round((factor - 1) * 100)} %).`
+        : `Se lleva un ${Math.round((1 - factor) * 100)} % de tus clientes. Mejora precios, género, fachada o lanza una oferta.`;
+    return `<p class="hint">🏪 <b>${r.name}</b>, de ${r.rival.owner}, nivel ${r.level + 1}/4 · ${status}. ${effect}</p>
+      <div class="stats">
+        <div><small>Tu cuota de clientes hoy</small><b>${pct} %</b></div>
+        <div><small>Clientes tuyos hoy</small><b>${share.mine}</b></div>
+        <div><small>Clientes de ${r.name}</small><b>${share.theirs}</b></div>
+        <div><small>Reputación rival</small><b>${Math.round(r.reputation)}/100</b></div>
+      </div>
+      <h3>Precios comparados</h3><div class="list">${rows || "<p>Aún no hay productos que comparar.</p>"}</div>
+      ${r.news.length ? `<h3>Últimas noticias</h3><p>${r.news.map((n) => n.text).join("<br>")}</p>` : ""}
+      <h3>Comprar ${r.name}</h3>
+      <div class="row"><div class="grow"><b>${money(r.rival.price)}</b><small>Cierra la tienda rival y sus clientes vienen a ti (objetivo con recompensa). Después abrirá otra competencia más fuerte.</small></div>
+      ${buy.ok ? `<button data-buyrival>COMPRAR</button>` : `<span class="tag">${buy.why ?? ""}</span>`}</div>`;
+  }
+
   tab_precios(b) {
     const rows = b
       .catalog()
       .map((p) => {
         const prod = PRODUCTS[p];
         const price = b.prices[p];
-        const unitCost = p === "cafe" ? PRODUCTS.granos.cost : prod.cost;
+        const unitCost = costOf(p);
         const margin = price - unitCost;
         const will = Math.round(b.willingness(p) * 100);
         const mood = will >= 95 ? "good" : will >= 60 ? "warn" : "bad";

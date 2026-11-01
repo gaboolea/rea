@@ -185,6 +185,31 @@ export function productIcon(id) {
         ctx.fill();
       }
     },
+    plate: () => {
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(48, 52, 32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(48, 50, 20, 0, Math.PI * 2);
+      ctx.fill();
+    },
+    burger: () => {
+      ctx.fillStyle = "#e0a040";
+      ctx.beginPath();
+      ctx.ellipse(48, 40, 30, 16, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = "#5bd47a";
+      ctx.fillRect(18, 44, 60, 6);
+      ctx.fillStyle = col;
+      ctx.fillRect(20, 50, 56, 10);
+      ctx.fillStyle = "#e0a040";
+      ctx.beginPath();
+      ctx.roundRect(20, 60, 56, 12, 6);
+      ctx.fill();
+    },
     pizza: () => {
       ctx.fillStyle = "#f5d6a1";
       ctx.beginPath();

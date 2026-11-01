@@ -4,7 +4,8 @@
 import * as THREE from "three";
 import { World } from "./world.js";
 import { Scenery } from "./scenery.js";
-import { Business, freshToday } from "./business.js";
+import { freshToday } from "./business.js";
+import { makeBusiness } from "./restaurant.js";
 import { Player, CameraRig } from "./player.js";
 import { Input } from "./input.js";
 import { Fx } from "./fx.js";
@@ -48,8 +49,15 @@ import {
   CATEGORIES,
   VEHICLES,
   upgradeUpkeep,
+  clockHour,
+  daylight,
 } from "./config.js";
+import { Weather } from "./weather.js";
+import { Empire } from "./empire.js";
 
+// Luz ambiente de noche (azulada) para el cielo y el suelo.
+const NIGHT_SKY = new THREE.Color(0x5b6fb0);
+const NIGHT_GROUND = new THREE.Color(0x283048);
 const SAVE_KEY = "de-cero-a-millonario-v1";
 const SETTINGS_KEY = "de-cero-a-millonario-settings";
 const AUTOPLAY_KEY = "de-cero-a-millonario-autoplay";
@@ -162,13 +170,17 @@ class Game {
     this.input.settings = this.settings;
     this.businesses = {};
     for (const id of Object.keys(BUSINESSES))
-      this.businesses[id] = new Business(this, id);
+      this.businesses[id] = makeBusiness(this, id);
     const start = this.startPoint();
     this.player = new Player(this, start.x, start.z, this.state.look);
     this.cameraRig = new CameraRig(this.camera, this.settings);
     this.crowd = new Crowd(this);
     this.streetFlow = new StreetFlow(this);
     this.competition = new Competition(this);
+    this.weather = new Weather(this);
+    this.empire = new Empire(this);
+    // Hora y luz del momento (las usan la gente, la música y el cielo).
+    this.light = { hour: 6, night: 0, dusk: 0 };
     this.events = new Events(this);
     this.surprises = new Surprises(this);
     this.wardrobe = new Wardrobe(this);
@@ -249,6 +261,7 @@ class Game {
       ...this.home.furnitureInteractables(),
       ...this.storeDoorHints(),
       ...this.competition.interactables(),
+      ...this.empire.interactables(),
       ...(this.online?.interactables() ?? []),
     ];
   }
@@ -318,6 +331,7 @@ class Game {
       furniture: { ...cp.furniture },
       unlocked: { ...cp.unlocked },
       goals: [...cp.goals],
+      empire: { ...cp.empire },
     });
     // La caja fuerte la llena el servidor (ganancias mientras no juegas).
     this.state.auto = {
@@ -329,6 +343,8 @@ class Game {
       ...fresh.stats,
       ...(blob.state?.stats ?? {}),
       ...cp.stats,
+      // Reloj del fondo de inversión: el del servidor.
+      playSeconds: cp.played ?? 0,
     };
     this.state.missionBase ??= { ...this.state.stats };
     this.businesses = {};
@@ -338,7 +354,7 @@ class Game {
         this.online.addRemoteExclusive(id, owner);
         continue;
       }
-      const b = new Business(
+      const b = makeBusiness(
         this,
         id,
         id === "tienda" ? { building: res.you.plot } : {},
@@ -498,6 +514,7 @@ class Game {
     this.district.apply();
     // Un jugador: tienda rival del juego (en online compiten los jugadores).
     if (!this.online) this.competition.setup();
+    this.empire.setup();
     this.goals.check();
     this.automation.setup();
     this.rebuildInteractables();
@@ -780,6 +797,17 @@ class Game {
     this.events.onSold(customer.basket);
   }
 
+  // Subir de etapa suena con fanfarria (y se anuncia).
+  watchStage() {
+    const st = this.stageIndex();
+    if (this.lastStage !== undefined && st > this.lastStage) {
+      this.audio.cue("stage");
+      this.ui.toast(`🎉 ¡Nueva etapa: ${STAGES[st].name}!`, "good");
+      this.fx.confetti?.(this.player.pos);
+    }
+    this.lastStage = st;
+  }
+
   stageIndex() {
     let idx = 0;
     STAGES.forEach((st, i) => {
@@ -789,7 +817,7 @@ class Game {
   }
 
   netWorth() {
-    let worth = this.state.money;
+    let worth = this.state.money + this.empire.worth();
     for (const b of Object.values(this.businesses))
       if (b.owned) worth += b.def.price * 0.8;
     for (const [id, owned] of Object.entries(this.state.items))
@@ -969,6 +997,7 @@ class Game {
     if (id === "suelo" || id === "fachada")
       b.reputation = Math.min(100, b.reputation + 10);
     this.ui.toast(`¡${u.name} instalada en ${b.name}!`, "good");
+    if (u.price >= 500) this.audio.cue("bigbuy");
     this.ui.floatMoney(-u.price);
     this.audio.sfx("sparkle");
     this.save();
@@ -1006,6 +1035,7 @@ class Game {
     b.buy();
     this.ui.toast(`¡Ahora eres dueño/a de ${b.name}!`, "good");
     this.audio.sfx("mission");
+    this.audio.cue("bigbuy");
     this.player.char.playAction("cheer", 1);
     this.save();
   }
@@ -1292,15 +1322,6 @@ class Game {
           };
         },
         action: () => this.buyItem("casa"),
-      },
-      {
-        ...w.buildings.restaurante.doorPoint(1.5),
-        radius: 2.4,
-        label: () => ({
-          text: "Restaurante en obras · todavía no se puede visitar",
-          enabled: false,
-        }),
-        action: () => {},
       },
     ];
     for (const [biz, owner] of Object.entries(this.online?.owners ?? {})) {
@@ -1596,6 +1617,7 @@ class Game {
     const focus = title ? this.titleSpot() : this.player.pos;
     this.world.update(dt, [...this._agents, this.player.pos], focus);
     this.fx.update(dt, this.elapsed);
+    this.weather.update(dt, this.camera);
     this.critters.update(dt, this.elapsed);
     this.updateSun(focus);
   }
@@ -1662,6 +1684,8 @@ class Game {
     this.shopping.update();
     this.rides.update(dt);
     this.automation.update(dt);
+    this.empire.update(dt);
+    this.watchStage();
     this.district.update(dt);
     this.carryHint();
     this.guide.update(dt, this.elapsed);
@@ -1682,15 +1706,25 @@ class Game {
   }
 
   audioInfo(pos, title, inside = false) {
-    const t = this.state.clock / DAY_SECONDS;
-    const hour = 7 + t * 15;
     let near = 0;
     for (const a of this._agents)
       if (Math.abs(a.x - pos.x) < 14 && Math.abs(a.z - pos.z) < 14) near++;
+    // Dentro de un negocio propio suena la música de tienda.
+    const shop =
+      !title &&
+      Object.values(this.businesses).some(
+        (b) => b.owned && !b.remote && b.building.contains(pos.x, pos.z),
+      );
     return {
       title,
       inside,
-      night: Math.max(0, Math.min(1, (hour - 18.5) / 3)),
+      night: this.light.night,
+      dusk: this.light.dusk,
+      zone: this.world.zoneOf(pos.x, pos.z),
+      rush: !title && this.events.active?.type === "rush",
+      surprise: !title && !!this.surprises.target(),
+      shop,
+      rain: this.weather.rain,
       carDist: this.world.traffic.nearestDistance(pos),
       peopleNear: near,
     };
@@ -1760,14 +1794,14 @@ class Game {
     this.save();
   }
 
-  // Día → tarde → noche, con cielo y luces que cambian gradualmente.
+  // Día completo: mañana → tarde → atardecer → noche → amanecer, con cielo,
+  // luces y lluvia que cambian poco a poco (reloj visual: config.js).
   updateSun(focus) {
-    const t = this.state.clock / DAY_SECONDS; // 0 = 7:00, 1 = 22:00
-    const hour = 7 + t * 15;
-    const dusk =
-      Math.max(0, Math.min(1, (hour - 16.5) / 2.5)) *
-      (1 - Math.max(0, Math.min(1, (hour - 19.5) / 1.5)));
-    const night = Math.max(0, Math.min(1, (hour - 18.5) / 3));
+    const hour = clockHour(this.state.clock);
+    const { night, dusk } = daylight(hour);
+    this.light = { hour, night, dusk };
+    const rain = this.weather.rain;
+    const t = Math.min(1, Math.max(0, (hour - 6) / 15));
     const angle = 0.35 + t * 2.4;
     this.sun.position.set(
       focus.x + Math.cos(angle) * 30,
@@ -1775,21 +1809,28 @@ class Game {
       focus.z + 18,
     );
     this.sun.target.position.set(focus.x, 0, focus.z);
-    this.sun.intensity = 3.0 * (1 - night * 0.65);
+    // De noche la luz es la de la luna: fría y suave.
+    this.sun.intensity = 3.0 * (1 - night * 0.86) * (1 - rain * 0.5);
     this.sun.color.setHSL(
-      0.09 - dusk * 0.04,
-      0.6 + dusk * 0.35,
-      0.9 - night * 0.2,
+      0.09 - dusk * 0.04 + night * 0.5,
+      0.6 + dusk * 0.35 - night * 0.3,
+      0.9 - night * 0.15,
     );
-    this.hemi.intensity = 1.0 - night * 0.3;
+    this.hemi.intensity = (1.0 - night * 0.5) * (1 - rain * 0.18);
+    this.hemi.color.setHex(0xcfeaff).lerp(NIGHT_SKY, night);
+    this.hemi.groundColor.setHex(0xa8d878).lerp(NIGHT_GROUND, night);
     const horizon = this.scenery.update(
       this.camera,
       dusk * 0.7,
       night,
       this.elapsed,
+      rain,
     );
     this.scene.background.copy(horizon);
     this.scene.fog.color.copy(horizon);
+    // Con lluvia se ve menos lejos.
+    this.scene.fog.near = 95 - rain * 55;
+    this.scene.fog.far = 240 - rain * 120;
     this.world.setNight(night);
   }
 
@@ -1855,6 +1896,7 @@ class Game {
         "furniture",
         "unlocked",
         "goals",
+        "empire",
       ])
         delete state[k];
       this.net.send("save", {

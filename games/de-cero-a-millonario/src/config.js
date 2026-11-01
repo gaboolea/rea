@@ -2,6 +2,30 @@
 // La lógica vive en otros módulos; aquí solo hay números y textos ajustables.
 
 export const DAY_SECONDS = 300;
+
+// Reloj visual del día completo: de 6:00 a 21:00 en el 72 % del día y la
+// noche (21:00 → 6:00) en el resto. Es solo visual: el día (gastos) sigue
+// durando DAY_SECONDS y en online lo cierra el servidor.
+const DAYLIGHT_PART = 0.72;
+export function clockHour(clock) {
+  const t = Math.max(0, Math.min(1, clock / DAY_SECONDS));
+  return t < DAYLIGHT_PART
+    ? 6 + (t / DAYLIGHT_PART) * 15
+    : 21 + ((t - DAYLIGHT_PART) / (1 - DAYLIGHT_PART)) * 9;
+}
+
+// Luz a una hora (6 a 30, es decir, hasta las 6:00 del día siguiente):
+// night 0–1 (de 19:00 a 21:00 oscurece y de 4:30 a 6:00 amanece), dusk
+// para el cielo del atardecer y del amanecer.
+export function daylight(hour) {
+  const c = (x) => Math.max(0, Math.min(1, x));
+  const night = Math.min(c((hour - 19) / 2), c((30 - hour) / 1.5));
+  const dusk = Math.max(
+    c((hour - 17) / 2) * (1 - c((hour - 20.5) / 1)),
+    c((hour - 28.4) / 0.8) * (1 - c((hour - 29.4) / 0.6)),
+  );
+  return { night, dusk };
+}
 export const BOX_UNITS = 10;
 // Cajas que caben en un carro de carga del Mayorista.
 export const CART_CAPACITY = 10;
@@ -289,7 +313,110 @@ export const PRODUCTS = {
     kind: "cafe",
     crafted: true,
   },
+  // Restaurante: ingredientes del Mayorista (estantería COCINA) y platos
+  // que prepara la cocina con ellos (ver RECIPES).
+  carne: {
+    cat: "cocina",
+    name: "Carne",
+    cost: 1.6,
+    base: 0,
+    color: 0xc0392b,
+    shape: "box",
+    kind: "restaurant",
+    ingredient: true,
+  },
+  hortalizas: {
+    cat: "cocina",
+    name: "Hortalizas",
+    cost: 0.7,
+    base: 0,
+    color: 0x5bd47a,
+    shape: "veg",
+    kind: "restaurant",
+    ingredient: true,
+  },
+  masa: {
+    cat: "cocina",
+    name: "Masa y pan",
+    cost: 0.6,
+    base: 0,
+    color: 0xf2d3a8,
+    shape: "loaf",
+    kind: "restaurant",
+    ingredient: true,
+  },
+  queso_cocina: {
+    cat: "cocina",
+    name: "Queso de cocina",
+    cost: 1.2,
+    base: 0,
+    color: 0xffd54f,
+    shape: "wedge",
+    kind: "restaurant",
+    ingredient: true,
+  },
+  hamburguesa: {
+    cat: "cocina",
+    name: "Hamburguesa",
+    cost: 0,
+    base: 7.5,
+    color: 0xb5651d,
+    shape: "burger",
+    kind: "restaurant",
+    crafted: true,
+  },
+  ensalada: {
+    cat: "cocina",
+    name: "Ensalada",
+    cost: 0,
+    base: 5.5,
+    color: 0x6fcf6f,
+    shape: "plate",
+    kind: "restaurant",
+    crafted: true,
+  },
+  pizza_casera: {
+    cat: "cocina",
+    name: "Pizza casera",
+    cost: 0,
+    base: 8.5,
+    color: 0xe74c3c,
+    shape: "pizza",
+    kind: "restaurant",
+    crafted: true,
+  },
+  menu: {
+    cat: "cocina",
+    name: "Menú del día",
+    cost: 0,
+    base: 14,
+    color: 0xf2a531,
+    shape: "plate",
+    kind: "restaurant",
+    crafted: true,
+    stage: 3,
+  },
 };
+
+// Recetas: unidades de ingredientes por plato (el café sale de los granos
+// de la máquina). La cocina del restaurante (o el cocinero) convierte los
+// ingredientes del almacén en platos; en online lo valida el servidor.
+export const RECIPES = {
+  cafe: { granos: 1 },
+  hamburguesa: { carne: 1, masa: 1 },
+  ensalada: { hortalizas: 2 },
+  pizza_casera: { masa: 1, queso_cocina: 1, hortalizas: 1 },
+  menu: { carne: 1, hortalizas: 1, masa: 1, queso_cocina: 1 },
+};
+
+// Coste en ingredientes de una unidad (lo que cuesta venderla).
+export function unitCost(id) {
+  const r = RECIPES[id];
+  if (!r) return PRODUCTS[id].cost;
+  let c = 0;
+  for (const [ing, n] of Object.entries(r)) c += PRODUCTS[ing].cost * n;
+  return c;
+}
 
 // Oferta del día en una tienda propia: un producto rebajado un rato.
 // Atrae a más gente de la calle (ver Business.appeal).
@@ -320,6 +447,18 @@ export const STAFF = {
     salary: 24,
     stage: 2,
     desc: "Prepara café en la máquina.",
+  },
+  cocinero: {
+    name: "Cocinero/a",
+    salary: 28,
+    stage: 2,
+    desc: "Cocina los platos con los ingredientes del almacén.",
+  },
+  camarero: {
+    name: "Camarero/a",
+    salary: 22,
+    stage: 2,
+    desc: "Lleva los platos a las mesas y cobra en la barra.",
   },
 };
 
@@ -357,6 +496,16 @@ export const BUSINESSES = {
     rent: 180,
     stage: 3,
     staff: ["cajero", "reponedor"],
+  },
+  // Restaurante: mesas, cocina y barra. Los platos se cocinan con
+  // ingredientes del Mayorista (RECIPES); los clientes se sientan a comer.
+  restaurante: {
+    name: "Restaurante La Plaza",
+    type: "restaurant",
+    price: 4500,
+    rent: 60,
+    stage: 2,
+    staff: ["cocinero", "camarero"],
   },
 };
 
@@ -473,6 +622,19 @@ export const UPGRADES = {
     price: 220,
     desc: "Más espacio para pasteles y sándwiches.",
     types: ["cafe"],
+  },
+  terraza: {
+    name: "Mesas extra",
+    price: 400,
+    desc: "Dos mesas más en el comedor: más clientes a la vez.",
+    types: ["restaurant"],
+  },
+  horno: {
+    name: "Horno de leña",
+    price: 650,
+    desc: "La cocina prepara el doble de platos cada vez.",
+    types: ["restaurant"],
+    upkeep: 6,
   },
 };
 
@@ -1105,6 +1267,7 @@ export const CATEGORIES = {
   snacks: { name: "SNACKS", color: "#ff8a3d" },
   frescos: { name: "PRODUCTOS FRESCOS", color: "#3fbf5f" },
   cafeteria: { name: "CAFETERÍA", color: "#8b5a3c" },
+  cocina: { name: "COCINA", color: "#c0392b" },
 };
 
 // Locales iniciales del modo online: cada jugador recibe uno.
@@ -1112,3 +1275,52 @@ export const PLOTS = ["tienda", "oeste", "este", "sur"];
 export const ROOM_MAX_PLAYERS = PLOTS.length;
 
 export const GOAL_NET_WORTH = 1000000;
+
+// ---------- Etapa Magnate: el camino al millón ----------
+// Metas grandes de la última etapa, todas visibles en la ciudad:
+// - Cadena de tiendas: franquicias «Mi Tiendita Express» en quioscos de
+//   cada zona. Cada una cuesta más que la anterior y deja dinero cada
+//   segundo mientras juegas.
+// - Fondo de inversión (distrito financiero): compras participaciones y
+//   su valor sube con el tiempo de juego, con altibajos.
+// - Torre Imperio: el rascacielos del distrito pasa a llevar el nombre de
+//   tu empresa y deja una renta grande.
+// En online lo valida el servidor (economy.js): precios, etapa, número de
+// franquicias, valor del fondo con su propio reloj y las rentas.
+export const EMPIRE = {
+  stage: 3,
+  franchises: 6,
+  franchiseBase: 12000,
+  franchiseGrowth: 1.4,
+  // $ por segundo de cada franquicia.
+  franchiseIncome: 2.5,
+  tower: { price: 150000, income: 12 },
+  fund: { min: 1000, growth: 0.004 },
+};
+
+export function franchisePrice(owned) {
+  return Math.round(EMPIRE.franchiseBase * EMPIRE.franchiseGrowth ** owned);
+}
+
+// Renta por segundo de lo que tienes en la etapa Magnate.
+export function empireIncome(e) {
+  return (
+    (e?.franchises ?? 0) * EMPIRE.franchiseIncome +
+    (e?.tower ? EMPIRE.tower.income : 0)
+  );
+}
+
+// Valor de una participación del fondo a los `minutes` minutos de juego
+// (crece un 0,4 % por minuto, con ondas de ±9 %).
+export function fundPrice(minutes) {
+  // A partir de 20 h de juego deja de crecer (las ondas siguen).
+  const m = Math.max(0, Math.min(1200, minutes));
+  return (
+    Math.round(
+      100 *
+        Math.exp(EMPIRE.fund.growth * m) *
+        (1 + 0.06 * Math.sin(m / 7) + 0.03 * Math.sin(m / 2.3 + 1)) *
+        100,
+    ) / 100
+  );
+}

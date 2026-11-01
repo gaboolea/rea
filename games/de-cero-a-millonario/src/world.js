@@ -388,7 +388,6 @@ export class World {
       sign: "RESTAURANTE",
       signColors: { bg: "#ffffff", fg: "#c0392b" },
     });
-    this.buildings.restaurante.setLocked(true, "PRÓXIMAMENTE\nen obras");
     // Tu casa: en la zona residencial (calle transversal, junto a las
     // casas de los vecinos).
     this.building("casa", {
@@ -448,8 +447,9 @@ export class World {
       add(decor.hangingSign(name, color, 3.6), lx, -7.2, 0, 3.0);
     });
     // Pasillo central con más estanterías y palés.
-    add(decor.industrialRack([0xff4d4d, 0xffc22e, 0x3d8bff], 4, 2), -6.5, -2.6);
+    add(decor.industrialRack([0xc0392b, 0x5bd47a, 0xf2d3a8], 4, 2), -6.5, -2.6);
     b.addLocalCollider(-6.5, -2.6, 4.2, 1.2);
+    add(decor.hangingSign("COCINA", "#c0392b", 3.2), -6.5, -1.7, 0, 3.0);
     add(decor.industrialRack([0x8b5a3c, 0xffd1dc, 0xf2a531], 4, 2), -0.5, -2.6);
     b.addLocalCollider(-0.5, -2.6, 4.2, 1.2);
     add(decor.hangingSign("CAFETERÍA", "#8b5a3c", 3.2), -0.5, -1.7, 0, 3.0);
@@ -563,6 +563,7 @@ export class World {
       racks: [
         ...cats.map((_, i) => b.toWorld(-9.6 + i * 4.8, -6.8)),
         b.toWorld(-0.5, -1.5),
+        b.toWorld(-6.5, -1.5),
       ],
       rackCats: [
         "bebidas",
@@ -571,6 +572,7 @@ export class World {
         "snacks",
         "frescos",
         "cafeteria",
+        "cocina",
       ],
       pallet: b.toWorld(-7, 3.2),
       counter: b.toWorld(6, 2.9),

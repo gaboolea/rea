@@ -22,6 +22,12 @@ import {
   GOALS,
   goalProgress,
   SOLO_GOALS,
+  RECIPES,
+  unitCost,
+  EMPIRE,
+  franchisePrice,
+  empireIncome,
+  fundPrice,
   upgradeUpkeep,
   automationLevel,
   idleEarnings,
@@ -44,7 +50,12 @@ import {
 
 export const WAREHOUSE_MAX = 30;
 export const PRICE_CAP = 2.5; // precio de venta máximo = base × 2.5
-const EXCLUSIVE = new Set(["cafeteria", "minimercado", "supermercado"]);
+const EXCLUSIVE = new Set([
+  "cafeteria",
+  "minimercado",
+  "supermercado",
+  "restaurante",
+]);
 const PLACES = new Set([
   "mayorista",
   "cafeteria",
@@ -59,6 +70,7 @@ const PLACES = new Set([
 
 const fail = (error) => ({ ok: false, error });
 const round2 = (n) => Math.round(n * 100) / 100;
+const round3 = (n) => Math.round(n * 1000) / 1000;
 const isInt = (n, min, max) => Number.isInteger(n) && n >= min && n <= max;
 const boxUnits = (p) => PRODUCTS[p].boxUnits ?? BOX_UNITS;
 
@@ -109,6 +121,10 @@ function expansionFields() {
     goals: [],
     vault: 0,
     lastSeen: null,
+    // Etapa Magnate: franquicias, torre y fondo; played: segundos jugados
+    // en esta ciudad (reloj del fondo de inversión).
+    empire: { franchises: 0, tower: false, fundUnits: 0, fundPaid: 0 },
+    played: 0,
   };
 }
 
@@ -169,6 +185,8 @@ export function buySupplies(cp, city, { order, deliver }) {
       return fail(`${def.name} requiere la etapa ${STAGES[def.stage].name}`);
     if (def.kind === "cafe" && !owns(cp, "cafeteria"))
       return fail("Necesitas la cafetería para ese producto");
+    if (def.kind === "restaurant" && !owns(cp, "restaurante"))
+      return fail("Necesitas el restaurante para ese producto");
     if ((city.warehouse[p] ?? 0) < n)
       return fail(`No quedan suficientes cajas de ${def.name}`);
     cost += def.cost * boxUnits(p) * n * (stage >= 3 ? 0.85 : 1);
@@ -231,7 +249,7 @@ export function sale(cp, { biz, items, vip, from }, now = Date.now()) {
       return fail("Precio no válido");
     need[it.p] = (need[it.p] ?? 0) + 1;
     total += price;
-    cost += it.p === "cafe" ? PRODUCTS.granos.cost : def.cost;
+    cost += unitCost(it.p);
   }
   for (const [p, n] of Object.entries(need))
     if ((cp.ledger[p] ?? 0) < n) return fail("No tienes esas existencias");
@@ -254,6 +272,23 @@ export function brew(cp, { units }) {
   if ((cp.ledger.granos ?? 0) < units) return fail("No tienes granos");
   take(cp, "granos", units);
   give(cp, "cafe", units);
+  return { ok: true };
+}
+
+// Cocina del restaurante: convierte ingredientes del inventario en platos
+// según la receta (como brew con los granos).
+export function cook(cp, { dish, units }) {
+  if (!owns(cp, "restaurante")) return fail("No tienes restaurante");
+  const recipe = Object.hasOwn(RECIPES, dish) ? RECIPES[dish] : null;
+  if (!recipe || PRODUCTS[dish]?.kind !== "restaurant")
+    return fail("Plato no válido");
+  if ((PRODUCTS[dish].stage ?? 0) > stageIndex(cp))
+    return fail(`Requiere la etapa ${STAGES[PRODUCTS[dish].stage].name}`);
+  if (!isInt(units, 1, 12)) return fail("Cantidad no válida");
+  for (const [ing, n] of Object.entries(recipe))
+    if ((cp.ledger[ing] ?? 0) < n * units) return fail("Faltan ingredientes");
+  for (const [ing, n] of Object.entries(recipe)) take(cp, ing, n * units);
+  give(cp, dish, units);
   return { ok: true };
 }
 
@@ -569,10 +604,91 @@ export function tickDay(cp, seconds) {
   return report;
 }
 
+// ---------- Etapa Magnate ----------
+
+const magnate = (cp) =>
+  stageIndex(cp) >= EMPIRE.stage
+    ? null
+    : fail(`Requiere la etapa ${STAGES[EMPIRE.stage].name}`);
+
+export function buyFranchise(cp) {
+  const e = cp.empire;
+  const locked = magnate(cp);
+  if (locked) return locked;
+  if (e.franchises >= EMPIRE.franchises) return fail("Ya tienes todas las franquicias");
+  const price = franchisePrice(e.franchises);
+  if (cp.money < price) return fail(`Te faltan $${round2(price - cp.money).toFixed(2)}`);
+  cp.money = round2(cp.money - price);
+  e.franchises += 1;
+  return { ok: true, price, empire: e };
+}
+
+export function buyTower(cp) {
+  const e = cp.empire;
+  const locked = magnate(cp);
+  if (locked) return locked;
+  if (!cp.unlocked.financiero) return fail("Desbloquea el distrito financiero");
+  if (e.tower) return fail("La torre ya es tuya");
+  if (e.franchises < 3) return fail("Antes ten 3 franquicias");
+  if (cp.money < EMPIRE.tower.price)
+    return fail(`Te faltan $${round2(EMPIRE.tower.price - cp.money).toFixed(2)}`);
+  cp.money = round2(cp.money - EMPIRE.tower.price);
+  e.tower = true;
+  return { ok: true, empire: e };
+}
+
+// Fondo de inversión: el precio lo calcula el servidor con los segundos
+// que has jugado en la ciudad (no con un reloj del cliente).
+export function fund(cp, { op, amount, units }) {
+  const e = cp.empire;
+  const price = fundPrice(cp.played / 60);
+  if (op === "quote") return { ok: true, price, empire: e };
+  const locked = magnate(cp);
+  if (locked) return locked;
+  if (op === "buy") {
+    if (!Number.isFinite(amount) || amount < EMPIRE.fund.min)
+      return fail(`Mínimo $${EMPIRE.fund.min}`);
+    if (amount > cp.money) return fail("No tienes tanto dinero");
+    const u = Math.floor((amount / price) * 1000) / 1000;
+    const cost = round2(u * price);
+    cp.money = round2(cp.money - cost);
+    e.fundUnits = round3(e.fundUnits + u);
+    e.fundPaid = round2(e.fundPaid + cost);
+    return { ok: true, price, units: u, cost, empire: e };
+  }
+  if (op === "sell") {
+    if (!Number.isFinite(units) || units <= 0 || units > e.fundUnits + 1e-6)
+      return fail("No tienes tantas participaciones");
+    const value = round2(units * price);
+    e.fundPaid = round2(e.fundPaid * (1 - units / e.fundUnits));
+    e.fundUnits = round3(e.fundUnits - units);
+    cp.money = round2(cp.money + value);
+    return { ok: true, price, value, empire: e };
+  }
+  return fail("Operación no válida");
+}
+
+// Cada segundo conectado: renta de franquicias y torre, y reloj del fondo.
+export function tickEmpire(cp, seconds) {
+  cp.played = (cp.played ?? 0) + seconds;
+  const income = empireIncome(cp.empire) * seconds;
+  if (income > 0) {
+    cp.money = round2(cp.money + income);
+    cp.stats.passive = round2((cp.stats.passive ?? 0) + income);
+  }
+  return income;
+}
+
 export function netWorth(cp) {
   let worth = cp.money;
   for (const id of Object.keys(cp.businesses))
     worth += (BUSINESSES[id].price ?? 0) * 0.8;
+  const e = cp.empire;
+  if (e) {
+    for (let i = 0; i < e.franchises; i++) worth += franchisePrice(i) * 0.8;
+    if (e.tower) worth += EMPIRE.tower.price * 0.8;
+    worth += e.fundUnits * fundPrice((cp.played ?? 0) / 60);
+  }
   for (const [id, v] of Object.entries(cp.items))
     if (v && SHOP_ITEMS[id]) worth += SHOP_ITEMS[id].price * 0.5;
   return Math.round(worth);

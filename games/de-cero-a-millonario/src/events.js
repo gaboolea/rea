@@ -256,8 +256,9 @@ export class Events {
         "event",
       );
     } else {
+      // Los VIP van a las tiendas y la cafetería (no al restaurante).
       const owned = Object.values(g.businesses).filter(
-        (b) => b.owned && b.displays.length,
+        (b) => b.owned && b.displays.length && b.def.type !== "restaurant",
       );
       const biz = pick(owned);
       const c = biz.spawnVip();

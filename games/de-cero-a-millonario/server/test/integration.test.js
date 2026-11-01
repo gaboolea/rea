@@ -28,6 +28,15 @@ function autoProfile() {
   return cp;
 }
 
+// Etapa Magnate con el distrito abierto y mucho dinero.
+function magnateProfile() {
+  const cp = eco.newCityProfile();
+  cp.money = 600000;
+  cp.stats.revenue = 9000;
+  cp.unlocked.financiero = true;
+  return cp;
+}
+
 // Ciudad sembrada con dos jugadores ricos para probar la carrera por un local.
 before(async () => {
   const profiles = {};
@@ -42,7 +51,7 @@ before(async () => {
       name: id,
       look: null,
       wardrobe: [],
-      cities: { RICH1: cp, AUTO1: autoProfile() },
+      cities: { RICH1: cp, AUTO1: autoProfile(), REST1: magnateProfile() },
       createdAt: 0,
     };
   }
@@ -59,6 +68,18 @@ before(async () => {
       shops: {},
       // Guardada antes de que existiera el pan.
       warehouse: { agua: 30, galletas: 30 },
+    },
+    REST1: {
+      code: "REST1",
+      name: "Restaurantes",
+      public: false,
+      members: {
+        [pid(KEYS[0])]: { plot: "tienda" },
+        [pid(KEYS[1])]: { plot: "oeste" },
+      },
+      exclusive: {},
+      shops: {},
+      warehouse: eco.newWarehouse(),
     },
     RICH1: {
       code: "RICH1",
@@ -333,4 +354,52 @@ test("los sucesos se validan con la posición que ve el servidor", async () => {
   const gone = await a.req("surpriseStep");
   assert.equal(gone.error, "El suceso ya terminó");
   a.ws.close();
+});
+
+test("restaurante, ventas desde la calle y rentas de la etapa Magnate, de punta a punta", async () => {
+  const a = client(KEYS[0], "Chef A");
+  const b = client(KEYS[1], "Chef B");
+  await Promise.all([a.open(), b.open()]);
+  await Promise.all([a.hello(), b.hello()]);
+  await Promise.all([
+    a.req("join", { code: "REST1" }),
+    b.req("join", { code: "REST1" }),
+  ]);
+  // El restaurante es único por ciudad aunque lo pidan a la vez.
+  const [ra, rb] = await Promise.all([
+    a.req("business", { biz: "restaurante" }),
+    b.req("business", { biz: "restaurante" }),
+  ]);
+  assert.equal([ra.ok, rb.ok].filter(Boolean).length, 1);
+  const [chef, other] = ra.ok ? [a, b] : [b, a];
+  // Ingredientes, cocina y venta de un plato a un cliente que vino de la calle.
+  assert.equal((await other.req("buy", { order: { carne: 1 } })).ok, false);
+  assert.equal((await chef.req("buy", { order: { carne: 1, masa: 1 } })).ok, true);
+  assert.equal((await chef.req("cook", { dish: "hamburguesa", units: 2 })).ok, true);
+  assert.equal((await chef.req("cook", { dish: "hamburguesa", units: 9 })).ok, false);
+  const sale = await chef.req("sale", {
+    biz: "restaurante",
+    items: [{ p: "hamburguesa", price: 8 }],
+    from: "street",
+  });
+  assert.equal(sale.ok, true);
+  assert.equal(sale.ledger.hamburguesa, 1);
+  // Precio por encima del máximo: rechazada aunque venga de la calle.
+  const bad = await chef.req("sale", {
+    biz: "restaurante",
+    items: [{ p: "hamburguesa", price: 100 }],
+    from: "street",
+  });
+  assert.equal(bad.ok, false);
+  // Franquicia y renta: el servidor suma el dinero mientras juegas.
+  const fr = await chef.req("franchise");
+  assert.equal(fr.ok, true);
+  const before = fr.money;
+  const msg = await chef.wait((m) => m.t === "money" && m.money > before, 8000);
+  assert.ok(msg.passive > 0);
+  // El fondo se cotiza con el reloj del servidor, no con el del cliente.
+  const q = await chef.req("fund", { op: "quote", minutes: 99999 });
+  assert.ok(q.price < 200);
+  a.ws.close();
+  b.ws.close();
 });

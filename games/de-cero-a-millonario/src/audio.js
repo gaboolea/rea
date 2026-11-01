@@ -1,120 +1,38 @@
-// Audio sintetizado en tiempo real con Web Audio: música en bucle generada
-// por un secuenciador, efectos de sonido y ambiente urbano. No usa archivos.
-// El contexto se crea tras la primera interacción (política de autoplay).
+// Audio sintetizado en tiempo real con Web Audio: música generativa con
+// estructura (music.js), efectos de sonido y ambiente urbano (con lluvia).
+// No usa archivos. El contexto se crea tras la primera interacción
+// (política de autoplay).
+import { Music, STYLES } from "./music.js";
+
+// Estilo de cada zona y sus variantes de atardecer y noche (más lentas y
+// suaves; de noche, lo-fi en la tonalidad relativa menor).
+const ZONE_STYLE = {
+  barrio: "barrio",
+  comercial: "comercial",
+  residencial: "residencial",
+  financiero: "financiero",
+};
+for (const z of Object.values(ZONE_STYLE)) {
+  const base = STYLES[z];
+  STYLES[`${z}_tarde`] = {
+    ...base,
+    bpm: Math.round(base.bpm * 0.88),
+    lead: base.lead === "square" ? "soft" : base.lead,
+    groove: base.groove === "funk" ? "pop" : base.groove,
+    comp: base.comp === "stabs" ? "offbeat" : base.comp,
+    swing: Math.max(base.swing ?? 0, 0.08),
+  };
+  STYLES[`${z}_noche`] = { ...STYLES.noche, key: base.key - 3 };
+}
 
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
-
-// Frases de melodía (una por compás, 16 semicorcheas; null = silencio).
-const A = [
-  72,
-  null,
-  76,
-  null,
-  79,
-  null,
-  76,
-  null,
-  74,
-  null,
-  72,
-  null,
-  69,
-  null,
-  null,
-  null,
-];
-const B = [
-  72,
-  null,
-  74,
-  null,
-  76,
-  null,
-  79,
-  null,
-  81,
-  null,
-  79,
-  76,
-  74,
-  null,
-  null,
-  null,
-];
-const C = [
-  76,
-  null,
-  74,
-  72,
-  null,
-  69,
-  72,
-  null,
-  74,
-  null,
-  null,
-  null,
-  67,
-  null,
-  null,
-  null,
-];
-const D = [
-  72,
-  null,
-  null,
-  null,
-  74,
-  null,
-  76,
-  null,
-  72,
-  null,
-  null,
-  null,
-  null,
-  null,
-  null,
-  null,
-];
-
-const SONGS = {
-  title: {
-    bpm: 84,
-    chords: [
-      [65, 69, 72, 76],
-      [64, 67, 71, 74],
-      [62, 65, 69, 72],
-      [60, 64, 67, 71],
-    ],
-    bass: [41, 40, 38, 36],
-    bells: [
-      { 0: 81, 8: 79 },
-      { 0: 76 },
-      { 0: 77, 8: 76, 12: 74 },
-      { 0: 72, 10: 74 },
-    ],
-  },
-  city: {
-    bpm: 112,
-    chords: [
-      [60, 64, 67, 71],
-      [57, 60, 64, 67],
-      [53, 57, 60, 64],
-      [55, 59, 62, 65],
-    ],
-    bass: [36, 33, 29, 31],
-    melody: [A, B, A, D, null, null, C, D],
-  },
-};
 
 export class AudioManager {
   constructor(settings) {
     this.settings = settings;
     this.ctx = null;
     this.mood = "title";
-    this.step = 0;
-    this.nextTime = 0;
+    this.style = "title";
     this.chatterTimer = 3;
     this.birdTimer = 5;
   }
@@ -147,6 +65,8 @@ export class AudioManager {
       .connect(this.musicFade)
       .connect(this.musicGain)
       .connect(this.master);
+    // Entrada del bus de música (el compositor mezcla aquí).
+    this.musicIn = this.musicFilter;
     this.sfxGain = ctx.createGain();
     this.sfxGain.connect(this.master);
     this.ambGain = ctx.createGain();
@@ -154,8 +74,9 @@ export class AudioManager {
     this.noise = this.makeNoise();
     this.applySettings();
     this.startAmbience();
-    this.nextTime = ctx.currentTime + 0.1;
-    this.timer = setInterval(() => this.schedule(), 25);
+    this.music = new Music(this);
+    this.music.request(this.style);
+    this.timer = setInterval(() => this.music.schedule(), 25);
   }
 
   applySettings() {
@@ -167,18 +88,37 @@ export class AudioManager {
     this.sfxGain.gain.setTargetAtTime(s.sfx, t, 0.05);
   }
 
+  // "title" o "city": en la ciudad el estilo lo decide update() según la
+  // zona, la hora y lo que pasa.
   setMood(mood) {
     if (mood === this.mood) return;
     this.mood = mood;
-    if (!this.ctx) return;
-    // Fundido corto y reinicio del compás para cambiar de canción sin cortes.
-    const t = this.ctx.currentTime;
-    this.musicFade.gain.cancelScheduledValues(t);
-    this.musicFade.gain.setValueAtTime(this.musicFade.gain.value, t);
-    this.musicFade.gain.linearRampToValueAtTime(0, t + 0.6);
-    this.musicFade.gain.linearRampToValueAtTime(1, t + 1.6);
-    this.step = 0;
-    this.nextTime = t + 0.7;
+    if (mood === "title") this.setStyle("title", true);
+  }
+
+  setStyle(style, urgent = false) {
+    if (style === this.style) return;
+    this.style = style;
+    this.music?.request(style, urgent);
+  }
+
+  // Fanfarria: "bigbuy" (compra grande), "stage" (subes de etapa) o
+  // "million" (llegas al millón).
+  cue(kind) {
+    if (this.ready) this.music.stinger(kind);
+  }
+
+  // Estilo de música según dónde y cuándo: situación > tienda > noche >
+  // atardecer > zona.
+  pickStyle(info) {
+    if (info.title || this.mood === "title") return "title";
+    if (info.surprise) return "suceso";
+    if (info.rush) return "hora_punta";
+    if (info.shop) return "tienda";
+    const zone = ZONE_STYLE[info.zone] ?? "barrio";
+    if (info.night > 0.55) return `${zone}_noche`;
+    if (info.dusk > 0.5) return `${zone}_tarde`;
+    return zone;
   }
 
   makeNoise() {
@@ -189,47 +129,7 @@ export class AudioManager {
     return buf;
   }
 
-  // ---------- Secuenciador ----------
-
-  schedule() {
-    if (!this.ctx || this.ctx.state !== "running") return;
-    const song = SONGS[this.mood] ?? SONGS.city;
-    const sixteenth = 60 / song.bpm / 4;
-    while (this.nextTime < this.ctx.currentTime + 0.15) {
-      this.playStep(song, this.step, this.nextTime, sixteenth);
-      this.nextTime += sixteenth;
-      this.step = (this.step + 1) % (16 * 8);
-    }
-  }
-
-  playStep(song, step, t, sx) {
-    const bar = Math.floor(step / 16);
-    const s = step % 16;
-    const chord = song.chords[bar % 4];
-    const root = song.bass[bar % 4];
-    if (this.mood === "title") {
-      if (s === 0) this.pad(chord, t, sx * 16);
-      if (s % 4 === 0) this.keys(chord[(s / 4) % 4] + 12, t, 0.08, 0.035);
-      if (s === 0 || s === 10) this.bass(root, t, sx * 5, 0.12);
-      if (s % 2 === 0) this.hat(t, 0.012, 9000);
-      const bell = song.bells[bar % 4][s];
-      if (bell && bar % 8 < 6) this.bell(bell, t, 0.05);
-      return;
-    }
-    if (s === 0) this.pad(chord, t, sx * 16, 0.022);
-    const arp = [0, 1, 2, 3, 2, 1, 2, 3];
-    if (s % 2 === 0) this.keys(chord[arp[(s / 2) % 8]] + 12, t, 0.12, 0.03);
-    const bassPattern = { 0: 0, 6: 0, 8: 7, 12: 12, 14: 7 };
-    if (bassPattern[s] !== undefined)
-      this.bass(root + bassPattern[s], t, sx * 1.6, 0.14);
-    if (s === 0 || s === 8 || (s === 11 && bar % 2)) this.kick(t, 0.2);
-    if (s === 4 || s === 12) this.clap(t, 0.05);
-    if (s % 2 === 0) this.hat(t, s % 4 === 2 ? 0.022 : 0.012, 8000);
-    const phrase = song.melody[bar];
-    if (phrase && phrase[s]) this.lead(phrase[s], t, sx * 1.8, 0.045);
-  }
-
-  // ---------- Instrumentos ----------
+  // ---------- Instrumentos de los efectos ----------
 
   env(gain, t, a, peak, d, sustain = 0.0001) {
     gain.gain.setValueAtTime(0.0001, t);
@@ -256,97 +156,6 @@ export class AudioManager {
     return o;
   }
 
-  pad(chord, t, dur, vol = 0.03) {
-    const ctx = this.ctx;
-    for (const n of chord) {
-      for (const det of [-6, 6]) {
-        const o = ctx.createOscillator();
-        o.type = "triangle";
-        o.frequency.value = mtof(n);
-        o.detune.value = det;
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.linearRampToValueAtTime(vol, t + 0.5);
-        g.gain.setValueAtTime(vol, t + dur - 0.4);
-        g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.3);
-        const f = ctx.createBiquadFilter();
-        f.type = "lowpass";
-        f.frequency.value = 1400;
-        o.connect(f).connect(g).connect(this.musicFilter);
-        o.start(t);
-        o.stop(t + dur + 0.4);
-      }
-    }
-  }
-
-  keys(n, t, dur, vol) {
-    this.voice("triangle", mtof(n), t, dur + 0.2, vol, this.musicFilter, 2600);
-    this.voice("sine", mtof(n + 12), t, dur, vol * 0.4, this.musicFilter, 5000);
-  }
-
-  lead(n, t, dur, vol) {
-    this.voice(
-      "square",
-      mtof(n),
-      t,
-      dur,
-      vol * 0.5,
-      this.musicFilter,
-      2200,
-      0.01,
-    );
-    this.voice(
-      "triangle",
-      mtof(n),
-      t,
-      dur + 0.1,
-      vol,
-      this.musicFilter,
-      3000,
-      0.01,
-    );
-  }
-
-  bell(n, t, vol) {
-    this.voice("sine", mtof(n), t, 1.6, vol, this.musicFilter, 8000, 0.003);
-    this.voice(
-      "sine",
-      mtof(n) * 2.01,
-      t,
-      0.8,
-      vol * 0.35,
-      this.musicFilter,
-      8000,
-      0.003,
-    );
-  }
-
-  bass(n, t, dur, vol) {
-    this.voice("sine", mtof(n), t, dur, vol, this.musicFilter, 600, 0.01);
-    this.voice(
-      "triangle",
-      mtof(n),
-      t,
-      dur * 0.8,
-      vol * 0.4,
-      this.musicFilter,
-      500,
-      0.01,
-    );
-  }
-
-  kick(t, vol) {
-    const ctx = this.ctx;
-    const o = ctx.createOscillator();
-    o.frequency.setValueAtTime(130, t);
-    o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
-    const g = ctx.createGain();
-    this.env(g, t, 0.003, vol, 0.25);
-    o.connect(g).connect(this.musicFilter);
-    o.start(t);
-    o.stop(t + 0.3);
-  }
-
   noiseHit(t, vol, type, freq, dur, dest, q = 1) {
     const ctx = this.ctx;
     const src = ctx.createBufferSource();
@@ -361,14 +170,6 @@ export class AudioManager {
     src.start(t, Math.random() * 1.5);
     src.stop(t + dur + 0.05);
     return { src, f, g };
-  }
-
-  clap(t, vol) {
-    this.noiseHit(t, vol, "bandpass", 1600, 0.12, this.musicFilter, 0.8);
-  }
-
-  hat(t, vol, freq) {
-    this.noiseHit(t, vol, "highpass", freq, 0.04, this.musicFilter);
   }
 
   // ---------- Efectos ----------
@@ -485,12 +286,36 @@ export class AudioManager {
     this.humGain.gain.value = 0;
     hum.connect(hf).connect(this.humGain).connect(this.ambGain);
     hum.start();
+    // Lluvia: ruido filtrado (rumor) más gotas sueltas en update().
+    const rain = ctx.createBufferSource();
+    rain.buffer = this.noise;
+    rain.loop = true;
+    const rf = ctx.createBiquadFilter();
+    rf.type = "bandpass";
+    rf.frequency.value = 2600;
+    rf.Q.value = 0.4;
+    this.rainGain = ctx.createGain();
+    this.rainGain.gain.value = 0;
+    rain.connect(rf).connect(this.rainGain).connect(this.ambGain);
+    rain.start();
+    this.dropTimer = 0;
   }
 
-  // info: { night, carDist, peopleNear, inside }
+  // info: { title, night, dusk, zone, rush, surprise, shop, rain, carDist,
+  // peopleNear, inside }
   update(dt, info) {
     if (!this.ready) return;
     const t = this.ctx.currentTime;
+    const style = this.pickStyle(info);
+    // Las situaciones (suceso, hora punta) entran en el siguiente tiempo.
+    this.setStyle(style, style === "suceso" || style === "hora_punta");
+    const rain = info.rain ?? 0;
+    this.rainGain.gain.setTargetAtTime(rain * (info.inside ? 0.05 : 0.11), t, 0.8);
+    this.dropTimer -= dt;
+    if (rain > 0.2 && !info.inside && this.dropTimer <= 0) {
+      this.dropTimer = 0.03 + Math.random() * 0.12 / rain;
+      this.noiseHit(t + 0.01, 0.02 * rain, "bandpass", 3000 + Math.random() * 3000, 0.02, this.ambGain, 6);
+    }
     const dayLevel = info.title ? 0.035 : info.inside ? 0.03 : 0.06;
     this.bedGain.gain.setTargetAtTime(
       dayLevel * (1 - info.night * 0.4),
@@ -512,7 +337,7 @@ export class AudioManager {
     this.birdTimer -= dt;
     if (this.birdTimer <= 0) {
       this.birdTimer = 4 + Math.random() * 7;
-      if (info.night < 0.4 && !info.inside) this.birds();
+      if (info.night < 0.4 && !info.inside && rain < 0.2) this.birds();
     }
   }
 

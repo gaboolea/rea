@@ -32,6 +32,9 @@ const productGeometries = {
   wedge: () =>
     new THREE.CylinderGeometry(0.13, 0.13, 0.1, 12, 1, false, 0, Math.PI / 1.5),
   pizza: () => new THREE.BoxGeometry(0.26, 0.05, 0.26),
+  // Platos del restaurante.
+  plate: () => new THREE.CylinderGeometry(0.15, 0.12, 0.06, 16),
+  burger: () => new THREE.SphereGeometry(0.1, 12, 8),
 };
 const geoCache = {};
 function productGeometry(shape) {
@@ -83,6 +86,16 @@ export const DISPLAYS = {
     levels: [0.42, 0.78],
     cols: 6,
     accepts: (p) => p.kind === "cafe" && !p.ingredient && !p.crafted,
+  },
+  // Pase de la cocina del restaurante: platos recién hechos.
+  pass: {
+    w: 1.3,
+    d: 0.6,
+    h: 1.0,
+    levels: [1.02],
+    cols: 4,
+    rows: 2,
+    accepts: (p) => p.kind === "restaurant" && p.crafted,
   },
   coffee: {
     w: 1.3,

@@ -58,6 +58,15 @@ const SOLO = Object.fromEntries(
     .map(([id, t]) => [id, t.weight]),
 );
 
+// Quién pasea solo de noche.
+const NIGHT_SOLO = {
+  oficinista: 25,
+  estudiante: 28,
+  adulto: 25,
+  deportista: 12,
+  mayor: 5,
+};
+
 function weighted(table) {
   let total = 0;
   for (const w of Object.values(table)) total += w;
@@ -204,8 +213,8 @@ class Pedestrian extends Agent {
   }
 
   visitShop() {
-    // Parte de la gente va a comprar a una tienda del jugador: se acerca
-    // al escaparate y allí decide si entra.
+    // Parte de la gente va a comprar a una tienda del jugador (o del
+    // rival): se acerca al escaparate y allí decide si entra.
     const own = this.game.streetFlow?.chooseShop(this);
     if (own) {
       this.lookWindow(own, true);
@@ -502,9 +511,20 @@ export class Crowd {
     this.target = n;
   }
 
-  // Cuántas personas debe haber donde está el jugador.
+  // Cuántas personas debe haber donde está el jugador: menos de noche y
+  // con lluvia.
   wanted() {
-    return Math.round(this.target * (ZONE_DENSITY[this.zone()] ?? 1));
+    const night = this.game.light?.night ?? 0;
+    const weather = this.game.weather?.crowdFactor() ?? 1;
+    return Math.max(
+      2,
+      Math.round(
+        this.target *
+          (ZONE_DENSITY[this.zone()] ?? 1) *
+          (1 - 0.55 * night) *
+          weather,
+      ),
+    );
   }
 
   // Zona donde está el jugador: los peatones viven donde se les ve.
@@ -582,6 +602,19 @@ export class Crowd {
       this.people.push(ped);
       return ped;
     };
+    // De noche no hay familias con niños ni turistas: gente que vuelve
+    // del trabajo o de clase, amigos que salen y alguien que corre.
+    const night = (this.game.light?.night ?? 0) > 0.5;
+    if (night) {
+      if (r < 0.03) return add({ type: "repartidor" });
+      if (r < 0.3) {
+        const type = pick(["estudiante", "adulto", "oficinista"]);
+        const lead = add({ type });
+        add({ type, leader: lead, offset: { x: 0.85, z: 0 } }, 0.7);
+        return lead;
+      }
+      return add({ type: weighted(NIGHT_SOLO) });
+    }
     if (r < 0.07) return add({ type: "repartidor" });
     if (r < 0.2) {
       // Familia: una persona adulta (o mayor) con uno o dos niños.

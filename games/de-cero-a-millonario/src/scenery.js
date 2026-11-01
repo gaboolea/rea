@@ -15,6 +15,9 @@ const color = (hex) => new THREE.Color(hex);
 const TOP = [color(SKY.day[0]), color(SKY.dusk[0]), color(SKY.night[0])];
 const HORIZON = [color(SKY.day[1]), color(SKY.dusk[1]), color(SKY.night[1])];
 const SEA = color(0x0aa6e8);
+// Cielo encapotado cuando llueve.
+const RAIN_TOP = color(0x6d7a8c);
+const RAIN_HORIZON = color(0xa7b3c2);
 
 export class Scenery {
   constructor(scene) {
@@ -25,6 +28,34 @@ export class Scenery {
     this.buildOuterGround();
     this.buildSea();
     this.buildMountains();
+    this.buildStars();
+  }
+
+  // Estrellas: se ven de noche (sin lluvia).
+  buildStars() {
+    const r = seededRandom(99);
+    const pos = [];
+    for (let i = 0; i < 420; i++) {
+      const a = r() * Math.PI * 2;
+      const y = 0.15 + r() * 0.85;
+      const k = Math.sqrt(1 - y * y);
+      pos.push(Math.cos(a) * k * 280, y * 280, Math.sin(a) * k * 280);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    this.starMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 1.6,
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: 0,
+      fog: false,
+      depthWrite: false,
+    });
+    this.stars = new THREE.Points(geo, this.starMat);
+    this.stars.frustumCulled = false;
+    this.stars.renderOrder = -1;
+    this.scene.add(this.stars);
   }
 
   buildSky() {
@@ -164,13 +195,21 @@ export class Scenery {
   }
 
   // night/dusk: 0..1. Devuelve el color del horizonte (para la niebla).
-  update(camera, dusk, night, time) {
+  update(camera, dusk, night, time, rain = 0) {
     this.sky.position.copy(camera.position);
+    this.stars.position.copy(camera.position);
+    this.starMat.opacity = Math.max(0, night - 0.3) * 1.3 * (1 - rain);
+    this.stars.visible = this.starMat.opacity > 0.01;
     this.ranges.position.set(camera.position.x, 0, camera.position.z);
-    this.top.copy(TOP[0]).lerp(TOP[1], dusk).lerp(TOP[2], night);
+    this.top
+      .copy(TOP[0])
+      .lerp(TOP[1], dusk)
+      .lerp(RAIN_TOP, rain * 0.75 * (1 - night))
+      .lerp(TOP[2], night);
     this.horizon
       .copy(HORIZON[0])
       .lerp(HORIZON[1], dusk)
+      .lerp(RAIN_HORIZON, rain * 0.7 * (1 - night))
       .lerp(HORIZON[2], night);
     this.skyMat.uniforms.top.value.copy(this.top);
     this.skyMat.uniforms.horizon.value.copy(this.horizon);

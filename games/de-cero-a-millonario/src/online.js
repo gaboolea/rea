@@ -9,11 +9,18 @@ import { poseRider } from "./player.js";
 import { randomPerson, workerLook } from "./look.js";
 import { VIP_LOOK } from "./npc.js";
 import { Business } from "./business.js";
+import { makeBusiness } from "./restaurant.js";
 import { PRODUCTS, PLOTS, BUSINESSES, BOX_UNITS, VEHICLES } from "./config.js";
 
 const DELAY = 0.15; // s de retraso de interpolación de jugadores
 const NPC_DELAY = 0.35;
-const WORKER_LOOKS = { "-1": "menta", "-2": "azul", "-3": "marron" };
+const WORKER_LOOKS = {
+  "-1": "menta",
+  "-2": "azul",
+  "-3": "marron",
+  "-4": "blanco",
+  "-5": "negro",
+};
 
 function labelSprite(
   text,
@@ -305,6 +312,11 @@ export class Online {
       shop?.applySnapshot(m.shop);
     });
     n.on("npcs", (m) => this.receiveNpcs(m));
+    // Rentas de franquicias y torre que suma el servidor cada segundo.
+    n.on("money", (m) => {
+      this.game.state.stats.passive = m.passive;
+      this.game.applyServerMoney({ money: m.money });
+    });
     n.on("owner", (m) => {
       this.owners[m.biz] = { id: m.id, name: m.name };
       this.game.onRemoteOwner(m.biz, m.name, m.id);
@@ -353,7 +365,7 @@ export class Online {
     const key = `${owner.id}:${biz}`;
     if (this.remoteShops.has(key)) return;
     const member = this.members.get(owner.id);
-    const shop = new Business(this.game, biz, {
+    const shop = makeBusiness(this.game, biz, {
       remote: true,
       name: `${BUSINESSES[biz].name} · de ${owner.name}`,
     });
@@ -368,7 +380,8 @@ export class Online {
     const list = [];
     for (const shop of this.remoteShops.values()) {
       for (const entry of shop.displays) {
-        if (entry.def.kind === "coffee") continue;
+        // Cafés y platos se sirven en el local, no se venden a jugadores.
+        if (entry.def.kind === "coffee" || entry.def.kind === "pass") continue;
         list.push({
           x: entry.approach.x,
           z: entry.approach.z,

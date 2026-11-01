@@ -83,6 +83,8 @@ export function buildFinancial(world) {
       const tower = skyscraper(w, d, h, color, label, world.nightMats);
       tower.position.set(x, 0, z);
       kit.add(tower);
+      // La Torre Imperio se puede comprar en la etapa Magnate (empire.js).
+      if (label === "TORRE IMPERIO") world.empireTower = { group: tower, w, d, h };
       world.physics.addCentered(x, z, w, d);
       world.mapRects.push({
         kind: "tower",
@@ -91,6 +93,20 @@ export function buildFinancial(world) {
     }
     // Fuente grande y bancos en la plaza.
     world.fountain(-251, 30);
+    // Oficina del Fondo Millonario: atril con pantalla de cotizaciones.
+    const office = new THREE.Group();
+    office.add(mesh(roundedBox(1.6, 1.1, 0.8, 0.08), mat(0x1d2b44), 0, 0.55, 0));
+    const screen = signMesh("🏦 FONDO MILLONARIO\n📈 invierte aquí", 1.8, 0.9, {
+      bg: "#0b1a33",
+      fg: "#5bd47a",
+    });
+    screen.position.set(0, 1.6, 0.42);
+    office.add(screen);
+    office.add(mesh(box(0.1, 1.2, 0.1), mat(0x3e4a59), 0, 1.0, 0.3));
+    office.position.set(-251, 0.12, 40.5);
+    kit.add(office);
+    world.physics.addCentered(-251, 40.5, 1.6, 0.8);
+    world.empireOffice = { x: -251, z: 42.2 };
     world.bench(-262, 30, Math.PI / 2);
     world.bench(-240, 30, -Math.PI / 2);
     for (const [x, z] of [

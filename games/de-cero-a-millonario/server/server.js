@@ -268,6 +268,10 @@ const ECONOMY = {
   buy: (s, cp, city, m) => eco.buySupplies(cp, city, m),
   sale: (s, cp, city, m) => eco.sale(cp, m),
   brew: (s, cp, city, m) => eco.brew(cp, m),
+  cook: (s, cp, city, m) => eco.cook(cp, m),
+  franchise: (s, cp) => eco.buyFranchise(cp),
+  tower: (s, cp) => eco.buyTower(cp),
+  fund: (s, cp, city, m) => eco.fund(cp, m),
   upgrade: (s, cp, city, m) => eco.buyUpgrade(cp, m),
   hire: (s, cp, city, m) => eco.hire(cp, m),
   fire: (s, cp, city, m) => eco.fire(cp, m),
@@ -723,6 +727,9 @@ setInterval(() => {
     }
     for (const s of set) {
       const cp = cityProfile(s);
+      // Rentas de la etapa Magnate (solo mientras juegas).
+      if (eco.tickEmpire(cp, 1) > 0 && regen % 5 === 0)
+        send(s.ws, { t: "money", money: cp.money, passive: cp.stats.passive });
       const report = eco.tickDay(cp, 1);
       if (report) {
         send(s.ws, { t: "day", report, money: cp.money });

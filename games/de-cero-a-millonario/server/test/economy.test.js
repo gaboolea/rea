@@ -410,3 +410,98 @@ test("los objetivos de la competencia (solo un jugador) no se cobran en online",
   assert.equal(cp.money, 150);
   assert.deepEqual(cp.goals, []);
 });
+
+test("restaurante: compra única por ciudad, ingredientes, cocina y ventas validadas", () => {
+  const c = city();
+  const a = eco.newCityProfile();
+  const b = eco.newCityProfile();
+  for (const cp of [a, b]) {
+    cp.money = 20000;
+    cp.stats.revenue = 1500; // etapa Empresario
+  }
+  // Sin restaurante no se compran sus ingredientes ni se cocina.
+  assert.equal(eco.buySupplies(a, c, { order: { carne: 1 } }).ok, false);
+  assert.equal(eco.cook(a, { dish: "hamburguesa", units: 1 }).ok, false);
+  // Compra única por ciudad.
+  assert.equal(eco.buyBusiness(a, c, "A", { biz: "restaurante" }).ok, true);
+  assert.equal(eco.buyBusiness(b, c, "B", { biz: "restaurante" }).ok, false);
+  assert.equal(a.money, 20000 - 4500);
+  // Personal propio del restaurante.
+  assert.equal(eco.hire(a, { biz: "restaurante", role: "cocinero" }).ok, true);
+  assert.equal(eco.hire(a, { biz: "restaurante", role: "camarero" }).ok, true);
+  assert.equal(eco.hire(a, { biz: "restaurante", role: "barista" }).ok, false);
+  // Ingredientes del Mayorista.
+  const r = eco.buySupplies(a, c, { order: { carne: 1, masa: 1 } });
+  assert.equal(r.ok, true);
+  assert.equal(a.ledger.carne, 10);
+  assert.equal(a.ledger.masa, 10);
+  // Cocinar: receta, cantidades y etapa.
+  assert.equal(eco.cook(a, { dish: "ensalada", units: 1 }).ok, false); // sin hortalizas
+  assert.equal(eco.cook(a, { dish: "agua", units: 1 }).ok, false);
+  assert.equal(eco.cook(a, { dish: "hamburguesa", units: 11 }).ok, false);
+  assert.equal(eco.cook(a, { dish: "hamburguesa", units: 0 }).ok, false);
+  assert.equal(eco.cook(a, { dish: "menu", units: 1 }).ok, false); // etapa Magnate
+  assert.equal(eco.cook(a, { dish: "hamburguesa", units: 3 }).ok, true);
+  assert.equal(a.ledger.hamburguesa, 3);
+  assert.equal(a.ledger.carne, 7);
+  assert.equal(a.ledger.masa, 7);
+  // Vender platos: existencias y precio máximo como el resto.
+  const t = 3e6;
+  const sell = (n, price) =>
+    eco.sale(a, { biz: "restaurante", items: Array.from({ length: n }, () => ({ p: "hamburguesa", price })) }, t);
+  assert.equal(sell(1, 7.5 * eco.PRICE_CAP + 1).ok, false);
+  assert.equal(sell(4, 7.5).ok, false);
+  const before = a.stats.grossProfit;
+  const ok = sell(2, 8);
+  assert.equal(ok.ok, true);
+  assert.equal(a.ledger.hamburguesa, 1);
+  // El coste de un plato es el de sus ingredientes (1,6 + 0,6).
+  assert.equal(Math.round((a.stats.grossProfit - before) * 100) / 100, 16 - 4.4);
+  // Desde la calle también se valida igual.
+  assert.equal(
+    eco.sale(a, { biz: "restaurante", items: [{ p: "hamburguesa", price: 8 }], from: "street" }, t).ok,
+    true,
+  );
+  assert.equal(a.ledger.hamburguesa ?? 0, 0);
+});
+
+test("etapa Magnate: franquicias, torre, fondo y rentas validadas en el servidor", () => {
+  const cp = eco.newCityProfile();
+  cp.money = 1e6;
+  // Antes de la etapa Magnate no se puede.
+  assert.equal(eco.buyFranchise(cp).ok, false);
+  assert.equal(eco.fund(cp, { op: "buy", amount: 5000 }).ok, false);
+  cp.stats.revenue = 8000;
+  // Franquicias: cada una más cara, como mucho 6.
+  const prices = [];
+  for (let i = 0; i < 6; i++) prices.push(eco.buyFranchise(cp).price);
+  assert.deepEqual(prices, [12000, 16800, 23520, 32928, 46099, 64539]);
+  assert.equal(eco.buyFranchise(cp).ok, false);
+  // La torre exige el distrito desbloqueado.
+  assert.equal(eco.buyTower(cp).ok, false);
+  cp.unlocked.financiero = true;
+  assert.equal(eco.buyTower(cp).ok, true);
+  assert.equal(eco.buyTower(cp).ok, false);
+  // Rentas: solo las suma el servidor con el tiempo conectado.
+  const before = cp.money;
+  eco.tickEmpire(cp, 10);
+  assert.equal(Math.round((cp.money - before) * 100) / 100, (6 * 2.5 + 12) * 10);
+  assert.equal(cp.played, 10);
+  // Fondo: el precio sale del tiempo jugado; no se puede vender más de lo
+  // que tienes ni comprar por debajo del mínimo o sin dinero.
+  assert.equal(eco.fund(cp, { op: "buy", amount: 10 }).ok, false);
+  assert.equal(eco.fund(cp, { op: "buy", amount: cp.money + 1 }).ok, false);
+  const buy = eco.fund(cp, { op: "buy", amount: 10000 });
+  assert.equal(buy.ok, true);
+  assert.equal(eco.fund(cp, { op: "sell", units: buy.units + 1 }).ok, false);
+  cp.played += 600 * 60; // 10 horas de juego después
+  const quote = eco.fund(cp, { op: "quote" });
+  assert.ok(quote.price > buy.price * 2);
+  const worth = eco.netWorth(cp);
+  const sell = eco.fund(cp, { op: "sell", units: buy.units });
+  assert.equal(sell.ok, true);
+  assert.ok(sell.value > buy.cost * 2);
+  assert.equal(cp.empire.fundUnits, 0);
+  assert.ok(Math.abs(eco.netWorth(cp) - worth) <= 1);
+  assert.equal(eco.fund(cp, { op: "hack" }).ok, false);
+});

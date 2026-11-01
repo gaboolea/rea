@@ -67,8 +67,8 @@ Qué hace el servidor:
   mejoras, el personal, las propiedades y la ropa se guardan y validan en el
   servidor. Las ventas tienen precio máximo y límite de frecuencia, las
   misiones se cobran una sola vez y los gastos del día los descuenta el
-  servidor. La cafetería, el minimercado, el supermercado y Villa Bonita
-  son únicos por ciudad: si dos jugadores los compran a la vez, solo uno lo
+  servidor. La cafetería, el minimercado, el supermercado, el restaurante
+  y Villa Bonita son únicos por ciudad: si dos jugadores los compran a la vez, solo uno lo
   consigue.
 - **Expansión validada en el servidor**: vehículos (etapa, distrito),
   grúa, la casita, cada mueble (hace falta casa, etapa, tope por mueble y
@@ -116,7 +116,8 @@ Límites conocidos:
   otro jugador, y borrar los datos del navegador pierde el acceso.
 - El progreso online es por ciudad e independiente de la partida de un
   jugador.
-- Los peatones, el tráfico y el reloj visual se simulan en cada navegador;
+- Los peatones, el tráfico, el reloj visual, la noche y la lluvia se
+  simulan en cada navegador y no cambian la economía online;
   solo los jugadores, las tiendas, sus clientes y el Mayorista se
   comparten.
 - Los sucesos se comprueban con la posición que el servidor ya valida por
@@ -486,6 +487,140 @@ llega unos 25 minutos más tarde (183 → 210), que es lo que se lleva el
 rival; respecto a los tiempos de antes de estos cambios, ningún paso
 empeora más de un 4 % (el límite pedido era un 20 %).
 
+### Restaurante
+
+El restaurante del barrio ya no está «en obras»: es un negocio comprable
+(**Restaurante La Plaza**, $4.500, etapa Empresario, alquiler $60/día;
+`src/restaurant.js`, datos en `src/config.js`).
+
+- **Interior**: comedor con 4 mesas de dos sillas (6 con la mejora **Mesas
+  extra**, $400), cocina abierta con fogones, campana y cazuelas, **pase**
+  con los platos listos, barra con caja y pizarra del menú. Mejoras:
+  Mesas extra, **Horno de leña** ($650, el doble de platos por tanda,
+  $6/día), plantas, letrero y suelo.
+- **Platos** con ingredientes del Mayorista (estantería **COCINA**, en el
+  pasillo central): carne, hortalizas, masa y pan, y queso de cocina.
+  Recetas (`RECIPES`): hamburguesa (carne + masa, $7,50), ensalada (2
+  hortalizas, $5,50), pizza casera (masa + queso + hortalizas, $8,50) y
+  menú del día (los cuatro, $14, etapa Magnate). Como el café con los
+  granos: los ingredientes van al almacén del restaurante y en los
+  fogones se convierten en platos del pase (E «Cocinar», o el cocinero).
+- **Clientes que se sientan a comer**: entran (también desde la calle),
+  buscan mesa libre, se sientan, piden (🍔 🥗 🍕 🍽️), esperan el plato, lo
+  comen (😋, plato en la mesa) y pagan en la barra con la misma caja que
+  los demás negocios. Sin mesa libre esperan un poco; sin platos ni
+  ingredientes se van (❌). Si tardan demasiado, se van enfadados.
+- **Personal**: **cocinero/a** ($28/día) cocina lo que piden las mesas
+  y repone el pase; **camarero/a** ($22/día) lleva los platos a las mesas
+  y cobra en la barra (primero cobra si hay cola). Sin camarero, cada
+  cliente va a por su plato al pase.
+- **Online**: es único por ciudad (si dos jugadores lo compran a la vez,
+  solo uno lo consigue), y el servidor valida comprar ingredientes (hace
+  falta el restaurante), cocinar (`cook`: receta, cantidades, etapa del
+  plato y existencias de cada ingrediente), las ventas (precio máximo,
+  existencias, límite de frecuencia; el coste es el de los ingredientes)
+  y el personal. Los platos del pase no se venden a otros jugadores.
+
+### Música
+
+La música sigue siendo sintetizada en tiempo real (Web Audio, sin
+archivos), pero ahora se compone (`src/music.js`):
+
+- **Piezas con estructura**: intro → estrofa → estribillo → estrofa →
+  puente → estribillo → final (44 compases, de 1,5 a 2 minutos). Cada
+  pieza sale de una semilla: progresión de acordes de la estrofa, del
+  estribillo y del puente, motivos de melodía con su variación en la
+  segunda estrofa y el segundo estribillo, y un final que resuelve en la
+  tónica. Al acabar se compone otra con otra semilla, así que no hay un
+  bucle corto.
+- **Estilos por zona**: barrio (pop alegre, Do mayor, 104 bpm), zona
+  comercial (funk, Sol mixolidio, 116), zona residencial (bossa, Fa mayor,
+  92), distrito financiero (jazz con swing, Re dórico, 98); **por
+  momento**: atardecer (cada zona más lenta y suave) y noche (lo-fi en la
+  relativa menor); **por situación**: hora punta (rápida y con fuerza),
+  suceso inesperado (tensión en menor), dentro de tu tienda (lounge) y la
+  pantalla de inicio. Prioridad: suceso > hora punta > tienda > noche >
+  atardecer > zona.
+- **Transiciones suaves**: el cambio de estilo espera al siguiente compás
+  (al siguiente tiempo si es urgente) con un fundido, y entra en la
+  estrofa (sin repetir la intro).
+- **Fanfarrias**: compras grandes (negocios, mejoras de $500 o más,
+  franquicias), subida de etapa (con aviso «¡Nueva etapa!») y el millón;
+  bajan la música un momento (ducking) y suenan en la tonalidad de lo que
+  está sonando.
+- **Instrumentos**: bajo de sierra filtrada con sub, piano eléctrico,
+  colchón de sierras desafinadas, arpegios, melodía según el estilo
+  (campana, onda cuadrada, flauta, vibráfono…) con vibrato, y batería
+  (bombo, caja, aro, charles cerrado y abierto, shaker, ride). Mezcla por
+  buses (batería, bajo, acordes, melodía, eco) que respeta los volúmenes
+  de música y efectos de Opciones. Medido sin conexión
+  (`OfflineAudioContext`, 24 s por estilo): todos los estilos de zona
+  quedan entre −24 y −27 dB RMS, las situaciones urgentes a −24 dB, y
+  ninguno pasa de 0,63 de pico (sin saturar).
+
+### Día y noche completos, lluvia
+
+- **Día completo** (reloj en `config.js`: `clockHour`, `daylight`): de
+  6:00 a 21:00 en el 72 % del día y la noche hasta las 6:00 en el resto,
+  con atardecer y amanecer. El día sigue durando 5 minutos y en online lo
+  sigue cerrando el servidor; el reloj es visual y de cada navegador.
+- **Noche**: luz de luna azulada, estrellas, farolas con halo, ventanas
+  y escaparates encendidos y rascacielos iluminados.
+  Hay un 55 % menos de peatones y son otros: sin familias ni turistas;
+  gente que vuelve del trabajo o de clase, grupos de amigos y alguien
+  que sale a correr.
+- **Lluvia** (`src/weather.js`): uno de cada cuatro días (desde el día 2)
+  llueve un rato. Gotas alrededor de la cámara (250/600/900 según la
+  calidad gráfica), cielo encapotado y niebla más cercana, charcos que
+  aparecen al mojarse el suelo y se secan después, paraguas de colores
+  para quien va por la calle (se cierran al entrar), rumor de lluvia y
+  gotas en el audio, y el reloj del HUD con 🌧️. El tiempo de cada día sale
+  de su número, así que en online todos ven la misma lluvia.
+- **Economía**: en un jugador, con lluvia llegan un 20 % menos de
+  clientes y hay un 40 % menos de gente por la calle; la noche solo
+  cambia la gente por la calle (el ritmo de clientes es el mismo). **En
+  online nada de esto cambia la economía**: el tiempo y la noche son
+  visuales.
+
+### Etapa Magnate: el camino al millón
+
+Metas grandes para la última etapa, todas visibles en la ciudad
+(`src/empire.js`, reglas en `EMPIRE` de `src/config.js`, panel en
+Gestión → 🏙️ Imperio o en la oficina del **Fondo Millonario**, en la plaza
+de la fuente del distrito financiero):
+
+- **Cadena Mi Tiendita Express**: hasta 6 franquicias ($12.000, $16.800,
+  $23.520, $32.928, $46.099 y $64.539). Cada una monta un quiosco con tu
+  marca en una plaza de la zona comercial o del distrito y deja
+  $150/min mientras juegas.
+- **Torre Imperio** ($150.000, con 3 franquicias y el distrito abierto):
+  el rascacielos del distrito lleva el nombre de tu empresa, con letrero
+  luminoso y corona dorada, y deja $720/min.
+- **Fondo Millonario**: compras participaciones (desde $1.000) cuyo valor
+  sube un 0,4 % por minuto de juego con altibajos de hasta ±9 % (deja de
+  crecer a las 20 h de juego); puedes venderlas todas cuando quieras.
+- Franquicias, torre y fondo cuentan en el patrimonio.
+- **¡Millonario!**: al llegar al millón de patrimonio suena una
+  fanfarria, cae confeti y un panel resume la partida: días y tiempo de
+  juego, ventas, clientes atendidos, gastos, negocios, franquicias,
+  rentas cobradas, fondo, rivales comprados, sucesos y encargos.
+- **Online**: lo valida el servidor: precios y número de franquicias,
+  etapa, distrito, la torre, el valor del fondo con los segundos que has
+  jugado en esa ciudad según el servidor (no con un reloj del cliente) y
+  las rentas, que suma el propio servidor cada segundo mientras estás
+  conectado.
+
+**Equilibrio** (`tools/endgame.cjs`, con el código real del juego): una
+tienda completa y automática en la etapa Magnate gana unos $23/min netos
+($63/min en ventas, 10 ventas/min). Solo con ella, el millón quedaba a
+unas **717 horas** de juego desde la entrada en la etapa Magnate: en la
+práctica no se llegaba. Con la estrategia sencilla de comprar franquicias
+en cuanto se puede, después la torre y meter el resto en el fondo, se
+llega en unas **14 horas** (franquicias a los 2, 3,5, 4,5, 5,7, 6,7 y 8
+h; torre a las 10 h). Con más negocios (minimercado, supermercado,
+restaurante), misiones y objetivos se llega antes. Es una proyección con
+la ganancia medida, no una partida completa jugada hasta el millón.
+
 ### Árboles, palomas y mascotas
 
 - Cinco especies de árbol: frondoso, pino, cerezo en flor, abedul y
@@ -597,10 +732,9 @@ andando o en vehículo, sin teletransportes:
   autobús; tráfico con semáforos funcionales en el cruce, autobús con
   parada, camiones de reparto, papeleras, bancos, puestos de fruta, terraza
   de café, fuente, mariposas, nubes y árboles que se mecen.
-- **Día y tarde**: la luz cambia poco a poco hasta el anochecer; las
-  farolas y las luces interiores de las tiendas se encienden.
+- **Día y noche completos** (ver arriba), con lluvia algunos días.
 - **Audio sintetizado** en tiempo real (Web Audio, sin archivos): música
-  distinta en el inicio y en la ciudad, efectos de venta, compra, cajas,
+  con estructura según zona, hora y situación (ver arriba), efectos de venta, compra, cajas,
   misiones, pasos y saltos, y ambiente urbano (rumor de calle, coches,
   conversaciones lejanas, pájaros). Empieza tras el primer toque o clic.
 - **Movimiento**: aceleración y frenado suaves, polvo al correr, rebote al
@@ -686,6 +820,10 @@ andando o en vehículo, sin teletransportes:
 | `src/greenery.js`     | Vegetación de relleno en el césped vacío                       |
 | `src/streetflow.js`   | Peatones que se paran en el escaparate y entran como clientes  |
 | `src/competition.js`  | Tienda rival del modo de un jugador: precios, nivel, compra    |
+| `src/restaurant.js`   | Restaurante: mesas, cocina, pase, comensales, cocinero/camarero |
+| `src/music.js`        | Compositor de música con estructura, estilos y fanfarrias      |
+| `src/weather.js`      | Lluvia: gotas, charcos y paraguas                              |
+| `src/empire.js`       | Etapa Magnate: franquicias, torre, fondo y el millón           |
 | `tools/`              | Jugador simulado (Chromium sin pantalla) para medir equilibrio |
 | `server/server.js`    | Servidor HTTP + WebSocket: ciudades, sincronización, chat      |
 | `server/economy.js`   | Reglas de economía validadas en el servidor                    |
@@ -713,9 +851,53 @@ jugador simulado con el que se midieron las cifras anteriores del README
 lento, así que las comparaciones se hacen siempre con él antes y después
 de cada cambio.
 
+## Comprobaciones
+
+- **Jugador simulado con todo lo nuevo** (rival, lluvia, noche; 4
+  partidas, mediana): primera automatización 8,5 min, cinta 101,3 y
+  fachada 211,1 (antes de estos cambios: 8,5 / 93,9 / 202,7); 8,0
+  clientes por minuto (antes 8,25). Ningún paso empeora más de un 8 %.
+- **Dos navegadores reales** contra el servidor: en el navegador A una
+  familia (adulto y dos niños) entra desde la calle en su tienda; el
+  navegador B ve a los tres con la misma semilla y el mismo tipo, y el
+  servidor valida y cuenta la venta de la calle.
+- **Rutas dentro de los locales** (6 minutos de juego con tienda,
+  restaurante y rival a la vez): todos los clientes y comensales acaban
+  su recorrido (el más largo, 112 s con la espera en caja) y ningún
+  empleado sale de su local.
+- `cd server && npm test`: 30 pruebas (economía e integración con
+  clientes WebSocket reales), entre ellas las ventas desde la calle, el
+  restaurante, los objetivos del rival y la etapa Magnate.
+
+## Rendimiento
+
+`tools/perf.cjs` arranca el juego en Chromium sin pantalla con SwiftShader
+(render por CPU) y mide el arranque, los triángulos y llamadas de dibujo
+en cuatro sitios, el coste de un paso de simulación sin dibujar y la
+memoria. Mediana de 3 arranques, antes de estos cambios y ahora:
+
+| Medida                                   | Antes    | Ahora    |
+| ---------------------------------------- | -------- | -------- |
+| Arranque hasta poder jugar               | 5,53 s   | 5,81 s   |
+| Triángulos junto a tu tienda             | 930.436  | 969.166  |
+| Llamadas de dibujo junto a tu tienda     | 1.937    | 2.069    |
+| Triángulos / llamadas, zona comercial    | 373 k / 1.074 | 345 k / 1.001 |
+| Triángulos / llamadas, distrito          | 260 k / 449 | 290 k / 480 |
+| Paso de simulación (1/15 s, sin dibujar) | 1,14 ms  | 1,87 ms  |
+| Heap de JavaScript                       | 163 MB   | 149 MB   |
+| Memoria de todos los procesos de Chromium| 1.240 MB | 1.244 MB |
+
+El paso de simulación cuesta más porque hay más gente con navegación (la
+tienda rival con su personal y sus clientes, peatones que entran en las
+tiendas); sigue siendo menos del 3 % de un fotograma a 60 fps. Los
+tiempos de fotograma con SwiftShader no representan una GPU real; **no
+se ha medido en un móvil real ni en una GPU**, ni el consumo de batería.
+
 ## Pendiente
 
-- El restaurante está construido pero cerrado («en obras»).
-- El equilibrio económico de la etapa Magnate hasta el millón está poco
-  probado; los valores están en `src/config.js`.
-- La música es generativa y sencilla; no hay pistas grabadas.
+- La competencia del juego (rival) solo existe en el modo de un jugador;
+  en online compiten los jugadores entre sí.
+- El final de partida está equilibrado con una proyección a partir de la
+  ganancia medida, no con una partida completa jugada hasta el millón.
+- La música sigue sin pistas grabadas (todo es síntesis).
+- No se ha probado en un móvil real.

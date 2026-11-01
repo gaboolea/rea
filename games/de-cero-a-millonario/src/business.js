@@ -7,6 +7,8 @@ import {
   STAFF,
   BOX_UNITS,
   OFFER,
+  unitCost,
+  clockHour,
 } from "./config.js";
 import {
   ProductDisplay,
@@ -197,7 +199,7 @@ const STARTER = {
   spawnEvery: 7,
 };
 
-const LAYOUTS = {
+export const LAYOUTS = {
   tienda: STARTER,
   minimercado: { ...GROCERY, spawnEvery: 6 },
   supermercado: {
@@ -639,7 +641,8 @@ export class Business {
       ),
     };
     this.displays.push(entry);
-    if (def.kind !== "coffee")
+    // El café y los platos del pase no se reponen a mano: se preparan.
+    if (def.kind !== "coffee" && def.kind !== "pass")
       this.interactables.push(this.displayInteractable(entry));
     return entry;
   }
@@ -1073,14 +1076,7 @@ export class Business {
     reg.queue.shift();
     // Los clientes VIP pagan el doble y dejan buena fama.
     const total = basketTotal(c.basket) * (c.vip ? 2 : 1);
-    const cost = c.basket.reduce(
-      (a, it) =>
-        a +
-        (it.product === "cafe"
-          ? PRODUCTS.granos.cost
-          : PRODUCTS[it.product].cost),
-      0,
-    );
+    const cost = c.basket.reduce((a, it) => a + unitCost(it.product), 0);
     this.collect(c, total, cost);
     // El cliente se va contento con su compra.
     c.char?.express("joy", 1.4);
@@ -1141,9 +1137,12 @@ export class Business {
     // La tienda rival se lleva parte de los clientes (o te los deja a ti si
     // tu tienda es mejor): ver competition.js.
     const market = this.ai ? 1 : (this.game.competition?.playerFactor(this) ?? 1);
+    // Con lluvia sale menos gente a comprar (solo en un jugador: en online
+    // el tiempo es visual y no cambia la economía).
+    const weather = this.game.weather?.customerFactor() ?? 1;
     return (
       this.layout.spawnEvery /
-      (stockFactor * repFactor * sign * this.priceFactor() * rush * market)
+      (stockFactor * repFactor * sign * this.priceFactor() * rush * market * weather)
     );
   }
 
@@ -1196,11 +1195,16 @@ export class Business {
     );
   }
 
+  // Cliente nuevo (el restaurante crea comensales).
+  makeCustomer(spawn, seed, street) {
+    return new Customer(this.game, this, spawn, false, seed, street);
+  }
+
   // Un peatón entra: pasa a ser cliente con su mismo personaje y semilla.
   admit(ped) {
     this.demand -= 1;
     this.today.entered++;
-    const c = new Customer(this.game, this, ped.pos, false, ped.seed, ped);
+    const c = this.makeCustomer(ped.pos, ped.seed, ped);
     this.customers.push(c);
     ped.becomeCustomer(c);
     return c;
@@ -1419,7 +1423,7 @@ export class Business {
         p && price !== undefined ? `$${price.toFixed(2)}` : "",
       );
     }
-    const hour = 7 + (this.game.state.clock / 300) * 15;
+    const hour = clockHour(this.game.state.clock) % 24;
     for (const c of this.clocks ?? []) c.userData.setTime(hour);
   }
 
@@ -1456,7 +1460,7 @@ export class Business {
         budget.customers > 0 &&
         this.displays.length
       ) {
-        this.customers.push(new Customer(this.game, this, this.spawnPoint()));
+        this.customers.push(this.makeCustomer(this.spawnPoint()));
         this.today.walkIns++;
         budget.customers--;
       }
